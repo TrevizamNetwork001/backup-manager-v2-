@@ -39,4 +39,9 @@ class Device extends Model
     {
         return $this->hasMany(Credential::class);
     }
+
+    public function deviceBackupPolicies(): HasMany
+    {
+        return $this->hasMany(DeviceBackupPolicy::class);
+    }
 }

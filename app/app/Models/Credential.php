@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Credential extends Model
 {
@@ -33,5 +34,10 @@ class Credential extends Model
     public function device(): BelongsTo
     {
         return $this->belongsTo(Device::class);
+    }
+
+    public function deviceBackupPolicies(): HasMany
+    {
+        return $this->hasMany(DeviceBackupPolicy::class);
     }
 }

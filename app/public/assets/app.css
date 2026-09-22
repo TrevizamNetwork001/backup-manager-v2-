@@ -1070,3 +1070,16 @@ input {
 
     font-size: 11px;
 }
+
+.policy-associations {
+    margin-top: 18px;
+}
+
+.policy-associations .data-table {
+    margin-bottom: 20px;
+}
+
+.muted-text {
+    color: var(--muted);
+    font-size: 11px;
+}

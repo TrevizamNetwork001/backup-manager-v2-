@@ -50,6 +50,11 @@
 
             <div class="nav-section">Backup</div>
 
+            <a href="{{ route('backup-policies.index') }}" class="nav-link {{ request()->routeIs('backup-policies.*') ? 'active' : '' }}">
+                <span class="nav-icon">◷</span>
+                Políticas
+            </a>
+
             <span class="nav-link disabled">
                 <span class="nav-icon">↻</span>
                 Execuções

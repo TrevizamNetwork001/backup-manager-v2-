@@ -1,6 +1,8 @@
 <?php
 
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\BackupPolicyController;
+use App\Http\Controllers\DeviceBackupPolicyController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\CredentialController;
 use App\Http\Controllers\DeviceController;
@@ -23,6 +25,12 @@ Route::middleware('auth')->group(function () {
 
     Route::resource('credentials', CredentialController::class)
         ->except(['show']);
+
+    Route::resource('backup-policies', BackupPolicyController::class)
+        ->except(['show']);
+    Route::post('backup-policies/{backup_policy}/associations', [DeviceBackupPolicyController::class, 'store'])->name('backup-policies.associations.store');
+    Route::patch('backup-policies/{backup_policy}/associations/{association}', [DeviceBackupPolicyController::class, 'update'])->name('backup-policies.associations.update');
+    Route::delete('backup-policies/{backup_policy}/associations/{association}', [DeviceBackupPolicyController::class, 'destroy'])->name('backup-policies.associations.destroy');
 
     Route::post('/logout', [AuthController::class, 'destroy'])->name('logout');
 });

@@ -103,6 +103,11 @@ class DeviceController extends Controller
 
     public function destroy(Device $device): RedirectResponse
     {
+        if ($device->deviceBackupPolicies()->exists()) {
+            return redirect()->route('devices.index')
+                ->with('warning', 'Remova as políticas associadas antes de remover este equipamento.');
+        }
+
         if ($device->credentials()->exists()) {
             return redirect()->route('devices.index')
                 ->with('warning', 'Remova as credenciais antes de remover este equipamento.');

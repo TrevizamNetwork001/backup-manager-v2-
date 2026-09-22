@@ -10,6 +10,10 @@
     <div class="alert-success">{{ session('success') }}</div>
 @endif
 
+@if(session('warning'))
+    <div class="alert-warning">{{ session('warning') }}</div>
+@endif
+
 <div class="page-toolbar">
     <div>
         <strong>{{ $credentials->total() }}</strong>

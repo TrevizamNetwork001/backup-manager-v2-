@@ -58,6 +58,15 @@ class CredentialController extends Controller
 
         $validated = $request->validate($this->rules(false));
 
+        if ($credential->deviceBackupPolicies()->exists() && (
+            (int) $validated['device_id'] !== $credential->device_id ||
+            $validated['type'] !== $credential->type
+        )) {
+            return back()->withErrors([
+                'type' => 'Remova as associações de políticas antes de alterar o equipamento ou tipo desta credencial.',
+            ])->withInput($request->except('secret'));
+        }
+
         $secret = $validated['secret'] ?? null;
         unset($validated['secret']);
 
@@ -75,6 +84,11 @@ class CredentialController extends Controller
 
     public function destroy(Credential $credential): RedirectResponse
     {
+        if ($credential->deviceBackupPolicies()->exists()) {
+            return redirect()->route('credentials.index')
+                ->with('warning', 'Remova as associações de políticas antes de remover esta credencial.');
+        }
+
         $credential->delete();
 
         return redirect()->route('credentials.index')
