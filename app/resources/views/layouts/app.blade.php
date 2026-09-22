@@ -35,10 +35,13 @@
                 Sites / POPs
             </a>
 
-            <span class="nav-link disabled">
+            <a
+                href="{{ route('devices.index') }}"
+                class="nav-link {{ request()->routeIs('devices.*') ? 'active' : '' }}"
+            >
                 <span class="nav-icon">▣</span>
                 Equipamentos
-            </span>
+            </a>
 
             <span class="nav-link disabled">
                 <span class="nav-icon">◆</span>

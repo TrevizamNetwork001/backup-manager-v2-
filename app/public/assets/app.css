@@ -1036,3 +1036,37 @@ input {
 .empty-state p {
     max-width: 420px;
 }
+
+.field select {
+    width: 100%;
+    height: 43px;
+
+    padding: 0 12px;
+
+    outline: none;
+
+    border: 1px solid #2a394c;
+    border-radius: 8px;
+
+    background: #0c131e;
+    color: white;
+}
+
+.field select:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(79, 140, 255, .12);
+}
+
+.alert-warning {
+    margin-bottom: 18px;
+
+    padding: 12px 14px;
+
+    border: 1px solid rgba(234, 184, 91, .28);
+    border-radius: 9px;
+
+    background: rgba(234, 184, 91, .08);
+    color: #e9c778;
+
+    font-size: 11px;
+}

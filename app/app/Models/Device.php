@@ -4,17 +4,21 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-class Site extends Model
+class Device extends Model
 {
     use HasFactory;
 
     protected $fillable = [
+        'site_id',
         'name',
-        'code',
-        'location',
-        'description',
+        'hostname',
+        'management_ip',
+        'vendor',
+        'model',
+        'os_version',
+        'notes',
         'is_active',
     ];
 
@@ -25,8 +29,8 @@ class Site extends Model
         ];
     }
 
-    public function devices(): HasMany
+    public function site(): BelongsTo
     {
-        return $this->hasMany(Device::class);
+        return $this->belongsTo(Site::class);
     }
 }
