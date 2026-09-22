@@ -426,8 +426,9 @@ credencial SSH de leitura e política `ssh_pull`/`config`; criar execução manu
 política e clicar **Enfileirar**. Conferir execução, artefato e logs estruturados
 do container. Testes automatizados usam mocks e não conectam a roteadores.
 
-Esta fase não inclui FTP Push, backup binário, outros vendors, retenção física,
-storage externo, Telegram, download ou retry.
+Esta fase do engine não incluía FTP Push, backup binário, outros vendors,
+storage externo, Telegram, download ou retry. A retenção local foi adicionada
+posteriormente, conforme descrito abaixo.
 
 ## Timezone da instância e scheduler
 
@@ -471,6 +472,65 @@ sem ele novas execuções automáticas e a recuperação stale deixam de ocorrer
 Refinamento de UI/UX futuro já decidido: atualização automática da execução sem F5,
 indicador “Backup em andamento”, feedback automático de sucesso ou falha e
 apresentação automática do artefato após sucesso. Não faz parte desta fase.
+
+## Retenção local e lifecycle dos artefatos
+
+`retention_days` e `retention_count` são limites independentes da política. Um
+artefato expira se foi criado há mais de N dias UTC **ou** se ficou fora das N
+versões mais recentes. Com ambos configurados vale a união dos candidatos. A
+idade usa `created_at` persistido em UTC, sem depender do timezone de exibição.
+O ranking é por `created_at DESC, id DESC`, separado por
+`device_backup_policy_id`: equipamentos, políticas e associações não competem.
+Só entram artefatos registrados, `available`, com `validated_at` e execução
+terminal `succeeded`. A execução histórica permanece `succeeded` após limpeza.
+
+Antes de selecionar exclusões, a retenção confere o arquivo de cada artefato do
+grupo. O último arquivo disponível e íntegro de cada associação é sempre
+protegido, ainda que tenha vencido ambos os limites. Um arquivo ausente não
+conta como versão íntegra. `backup_artifacts` preserva a row histórica com
+`status=available|deleted|missing`, `deleted_at`, `deletion_reason` e
+`missing_at`. Os motivos controlados são `retention_days`, `retention_count` e
+`retention_days_and_count`. `missing` significa que o registro dizia disponível,
+mas o arquivo não foi encontrado; a aplicação registra a ocorrência e não a
+trata como exclusão por retenção. Divergência de tamanho, SHA256 ou identidade
+do arquivo é anomalia: bloqueia a exclusão e mantém `available` para investigação.
+
+`php artisan backups:retention` e `--dry-run` apenas calculam e exibem contagens
+sanitizadas (`scanned`, `candidates`, `protected_latest`, `missing`, `deleted`,
+`anomalies`, `errors`). `--apply` é obrigatório para mudar lifecycle ou remover
+arquivos. Opções `--apply` e `--dry-run` juntas são rejeitadas. Os logs operacionais
+contêm somente IDs, tamanho, motivo, modo e resultado, sem paths, credenciais ou
+conteúdo exportado. Para um ensaio manual futuro, use artefatos **isolados de
+teste**, com datas próprias na base de teste; nunca altere timestamps da base
+operacional para forçar vencimento.
+
+O apply usa transação e row lock da associação e dos artefatos. Workers de
+retenção serializam por associação; uma segunda rodada ignora rows `deleted`.
+Antes de `unlink`, confere path derivado da execução, formato permitido,
+confinamento à raiz real de `BACKUP_STORAGE_ROOT`, ausência de symlinks, arquivo
+regular com um único link, tamanho e SHA256. Revalida imediatamente antes da
+remoção. O path vem exclusivamente do registro e é comparado com o path esperado
+do job; não há argumento de path nem comando shell. Após `unlink` bem-sucedido,
+grava `deleted` e motivo. Se `unlink` falhar, a row continua `available` e o
+processamento segue. Banco e filesystem não têm transação conjunta: uma falha
+de banco ou queda após `unlink` pode deixar row `available` com arquivo ausente;
+a rodada seguinte a marca `missing`, preservando o histórico. Por isso, não há
+garantia de atomicidade plena. O volume local deve ser controlado: um processo
+externo que altere paths entre a última checagem e o `unlink` ainda pode criar
+uma corrida de filesystem. O app e scheduler montam o volume com escrita para
+viabilizar apply, ampliando a permissão desses serviços sobre o storage local.
+
+O agendamento automático é diário no timezone IANA da instância, no horário
+`BACKUP_RETENTION_TIME` (`04:30` por padrão), com `withoutOverlapping()`.
+`BACKUP_RETENTION_ENABLED=false` é o padrão seguro; configure `true` somente
+depois de revisar um dry-run no ambiente. O scheduler executa `--apply` quando
+habilitado. A leitura do timezone ocorre ao registrar os eventos do scheduler;
+após mudar o timezone da instância, reinicie o serviço scheduler para atualizar
+esse evento. O timezone do Laravel e os timestamps persistidos seguem UTC.
+
+Refinamentos futuros da UI: feedback automático de backup sem F5, mensagem de
+sucesso ou falha, destaque do artefato gerado, labels mais claros para retenção,
+ajuda contextual e seleção amigável de timezone por grupos de estados brasileiros.
 
 ## APP_KEY e recuperação de credenciais
 

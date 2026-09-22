@@ -25,7 +25,7 @@ services:
       BACKUP_ENGINE_STALE_SECONDS: ${BACKUP_ENGINE_STALE_SECONDS:-300}
     volumes:
       - ./app:/var/www/html
-      - backups:/data/backups:ro
+      - backups:/data/backups
     networks:
       - backup-manager-v2
     depends_on:
@@ -77,12 +77,16 @@ services:
     working_dir: /var/www/html
     command: ["php", "artisan", "schedule:work"]
     environment:
+      BACKUP_STORAGE_ROOT: /data/backups
       BACKUP_ENGINE_STALE_SECONDS: ${BACKUP_ENGINE_STALE_SECONDS:-300}
       BACKUP_SCHEDULER_GRACE_MINUTES: ${BACKUP_SCHEDULER_GRACE_MINUTES:-5}
+      BACKUP_RETENTION_ENABLED: ${BACKUP_RETENTION_ENABLED:-false}
+      BACKUP_RETENTION_TIME: ${BACKUP_RETENTION_TIME:-04:30}
     volumes:
       - ./app:/var/www/html:ro
       - ./app/storage:/var/www/html/storage
       - ./app/bootstrap/cache:/var/www/html/bootstrap/cache
+      - backups:/data/backups
     networks:
       - backup-manager-v2
     depends_on:

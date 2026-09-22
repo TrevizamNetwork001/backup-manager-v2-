@@ -20,7 +20,8 @@
     @if($backupExecution->error_code)<p><strong>Código do erro:</strong> {{ $backupExecution->error_code }}</p>@endif
     @if($backupExecution->error_message)<p><strong>Erro:</strong> {{ $backupExecution->error_message }}</p>@endif
     @if($backupExecution->artifact)
-        <p><strong>Artefato:</strong> <a href="{{ route('backup-artifacts.show', $backupExecution->artifact) }}">{{ $backupExecution->artifact->type }}</a> · {{ number_format($backupExecution->artifact->size_bytes / 1024, 1, ',', '.') }} KB · SHA256: {{ substr($backupExecution->artifact->sha256, 0, 12) }}…</p>
+        <p><strong>Artefato:</strong> <a href="{{ route('backup-artifacts.show', $backupExecution->artifact) }}">{{ $backupExecution->artifact->type }}</a> · {{ $backupExecution->artifact->statusLabel() }} · {{ number_format($backupExecution->artifact->size_bytes / 1024, 1, ',', '.') }} KB · SHA256: {{ substr($backupExecution->artifact->sha256, 0, 12) }}…</p>
+        @if($backupExecution->artifact->deleted_at)<p>Artefato expirado/removido por {{ $backupExecution->artifact->deletionReasonLabel() }} em {{ app(\App\Services\InstanceTimezone::class)->format($backupExecution->artifact->deleted_at) }}. A execução permanece concluída com sucesso.</p>@endif
     @endif
     <div class="form-actions"><a href="{{ route('backup-executions.index') }}" class="secondary-button">Voltar</a></div>
 </article>

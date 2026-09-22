@@ -29,7 +29,7 @@
     </select>@error('schedule_weekday') <span class="field-error">{{ $message }}</span> @enderror</div>
     <div class="field"><label for="retention_days">Retenção em dias</label><input id="retention_days" name="retention_days" type="number" min="1" value="{{ old('retention_days', $backupPolicy->retention_days ?? '') }}">@error('retention_days') <span class="field-error">{{ $message }}</span> @enderror</div>
     <div class="field"><label for="retention_count">Retenção em quantidade</label><input id="retention_count" name="retention_count" type="number" min="1" value="{{ old('retention_count', $backupPolicy->retention_count ?? '') }}">@error('retention_count') <span class="field-error">{{ $message }}</span> @enderror</div>
-    <div class="field form-span-2"><small>Informe ao menos um critério de retenção. A limpeza de arquivos ainda não é executada.</small></div>
+    <div class="field form-span-2"><small>Informe ao menos um critério. Artefatos fora do prazo ou da quantidade podem ser removidos; o último backup válido de cada associação é protegido. A limpeza automática depende da configuração da instância.</small></div>
     <div class="field form-span-2"><label for="notes">Observações</label><textarea id="notes" name="notes" rows="4" maxlength="2000">{{ old('notes', $backupPolicy->notes ?? '') }}</textarea>@error('notes') <span class="field-error">{{ $message }}</span> @enderror</div>
     <div class="field form-span-2"><input type="hidden" name="is_active" value="0"><label class="switch-row"><input type="checkbox" name="is_active" value="1" @checked(old('is_active', $backupPolicy->is_active ?? true))><span><strong>Política ativa</strong><small>Políticas inativas permanecem cadastradas.</small></span></label></div>
 </div>

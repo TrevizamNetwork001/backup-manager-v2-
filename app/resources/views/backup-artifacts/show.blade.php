@@ -8,6 +8,9 @@
     <p><strong>Equipamento:</strong> {{ $backupArtifact->device->name }}</p>
     <p><strong>Política:</strong> {{ $backupArtifact->backupPolicy->name }}</p>
     <p><strong>Execução:</strong> <a href="{{ route('backup-executions.show', $backupArtifact->backup_execution_id) }}">#{{ $backupArtifact->backup_execution_id }}</a></p>
+    <p><strong>Estado:</strong> {{ $backupArtifact->statusLabel() }}</p>
+    @if($backupArtifact->deleted_at)<p><strong>Removido em:</strong> {{ app(\App\Services\InstanceTimezone::class)->format($backupArtifact->deleted_at) }} · <strong>Motivo:</strong> {{ $backupArtifact->deletionReasonLabel() }}</p>@endif
+    @if($backupArtifact->missing_at)<p><strong>Ausência detectada em:</strong> {{ app(\App\Services\InstanceTimezone::class)->format($backupArtifact->missing_at) }}</p>@endif
     <p><strong>Tipo:</strong> {{ $backupArtifact->type }} · <strong>Storage:</strong> {{ $backupArtifact->storage }}</p>
     <p><strong>Tamanho:</strong> {{ number_format($backupArtifact->size_bytes) }} bytes</p>
     <p><strong>SHA256:</strong> <code>{{ $backupArtifact->sha256 }}</code></p>

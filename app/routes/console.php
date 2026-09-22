@@ -4,6 +4,8 @@ use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use App\Services\EngineJobService;
 use App\Services\BackupScheduler;
+use App\Services\BackupRetention;
+use App\Services\InstanceTimezone;
 use Illuminate\Support\Facades\Schedule;
 
 Artisan::command('inspire', function () {
@@ -52,5 +54,25 @@ Artisan::command('backups:schedule', function (BackupScheduler $scheduler) {
     $this->line((string) $scheduler->run());
 });
 
+Artisan::command('backups:retention {--dry-run} {--apply}', function (BackupRetention $retention) {
+    if ($this->option('dry-run') && $this->option('apply')) {
+        $this->error('Use apenas --dry-run ou --apply.');
+        return 1;
+    }
+    $apply = (bool) $this->option('apply');
+    $summary = $retention->run($apply);
+    $this->line(($apply ? 'apply' : 'dry-run').' '.collect($summary)
+        ->map(fn ($value, $key) => $key.'='.$value)->implode(' '));
+    return $summary['errors'] > 0 ? 1 : 0;
+});
+
 Schedule::command('backups:schedule')->everyMinute()->withoutOverlapping();
 Schedule::command('engine:recover-stale')->everyMinute()->withoutOverlapping();
+if (config('backup.retention_enabled')) {
+    $time = config('backup.retention_time');
+    if (! is_string($time) || ! preg_match('/\A(?:[01][0-9]|2[0-3]):[0-5][0-9]\z/D', $time)) {
+        throw new InvalidArgumentException('Horário de retenção inválido.');
+    }
+    Schedule::command('backups:retention --apply')->dailyAt($time)
+        ->timezone(app(InstanceTimezone::class)->get())->withoutOverlapping();
+}
