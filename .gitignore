@@ -41,3 +41,7 @@ app/storage/framework/views/*
 Thumbs.db
 *.swp
 *.tmp
+
+# Python engine
+__pycache__/
+*.pyc

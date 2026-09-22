@@ -341,6 +341,73 @@ testado e operacional.
 A arquitetura deve permitir evolução futura sem transformar o núcleo de backup em um
 monólito de infraestrutura.
 
+## Primeiro backup real: MikroTik SSH Pull config (fase de laboratório)
+
+Uma execução manual nasce `pending`. A ação autenticada **Enfileirar** muda para
+`queued` e retorna sem esperar SSH. O container `backup-manager-v2-engine` consulta
+localmente `php artisan engine:claim` a cada cinco segundos. Esse comando usa uma
+transação PostgreSQL com `FOR UPDATE SKIP LOCKED`, escolhe uma execução por vez e
+grava `running` antes de devolver os metadados. Duas instâncias não recebem o mesmo
+job. Estados terminais não são reivindicados novamente. Não há scheduler ou retry.
+
+O engine chama comandos Artisan locais para acessar o control plane. Ele não acessa
+PostgreSQL diretamente nem expõe HTTP. O comando `engine:secret {id}` verifica que
+o job está `running` e que a credencial SSH ainda é válida. O Laravel descriptografa
+com sua `APP_KEY` e escreve o segredo **somente em um pipe anônimo herdado** pelo
+processo Python; stdout, argumentos, arquivos e logs não contêm a senha. O engine
+recebe o segredo na memória e executa `/export terse` via Paramiko. Esse comando
+não altera a configuração e não solicita `show-sensitive`.
+
+O container engine monta o código Laravel e `app/.env` para poder executar Artisan.
+**Risco atual:** quem controlar esse container pode ler a `APP_KEY` e as credenciais
+de banco por meio desse volume. O acesso ao container deve ser restrito ao mesmo
+nível de confiança do app. Em evolução futura, um broker local por Unix socket
+deverá separar essa fronteira. Não há usuário de banco separado para o engine,
+pois todas as consultas são feitas pelo Laravel.
+
+O storage é um volume Docker local compartilhado em `/data/backups`: escrita pelo
+engine e montagem somente leitura no app. Um serviço de inicialização ajusta a
+permissão do volume para o usuário não-root do engine antes de ele iniciar.
+`BACKUP_STORAGE_ROOT` configura a raiz. O path usa IDs e
+data da criação da execução: `<device-id>/<yyyy>/<mm>/<dd>/execution-<id>-config.rsc`.
+O engine confere confinamento à raiz, cria diretórios restritos, escreve um arquivo
+temporário com modo `0600`, sincroniza e faz rename atômico. Falhas antes do rename
+removem o parcial. Um arquivo órfão após falha no registro deve ser removido em
+manutenção controlada; ele nunca é considerado artefato válido.
+
+Antes de `succeeded`, Python e Laravel rejeitam arquivo vazio, acima de 8 MiB, não
+UTF-8, binário ou sem linhas de configuração RouterOS. O Laravel reabre o arquivo
+somente dentro da raiz, calcula SHA256, registra tamanho e artefato na mesma
+transação que marca sucesso. Erros recebem código e mensagem fixa, sem traceback
+ou dados da configuração: `SSH_CONNECT_FAILED`, `SSH_CONNECTION_REFUSED`,
+`SSH_NEGOTIATION_FAILED`, `SSH_AUTH_FAILED`, `SSH_TIMEOUT`,
+`UNSUPPORTED_VENDOR`, `UNSUPPORTED_POLICY`, `CREDENTIAL_INVALID`, `EXPORT_FAILED`,
+`ARTIFACT_INVALID`, `STORAGE_FAILED`, `ENGINE_FAILED`.
+
+**Host key:** o driver MikroTik usa transporte Paramiko próprio para incluir
+`ssh-rsa` entre os algoritmos de host key, sem alterar KEX, cifras, MACs ou
+autenticação. O driver carrega chaves conhecidas do sistema e aceita chaves novas
+com `AutoAddPolicy` para laboratório. Isso **não verifica a identidade de hosts
+desconhecidos**. TODO: persistir fingerprint / known_hosts por equipamento
+antes de produção. O Paramiko 4.0.0 já inclui `ssh-rsa` por padrão; a causa exata
+do `SSH_CONNECT_FAILED` anterior ainda depende de um teste real controlado.
+Timeouts: conexão/autenticação/banner 10 segundos,
+comando 30 segundos; saída limitada a 8 MiB. Um processo interrompido depois do
+claim pode deixar a execução em `running`; recuperação manual fica para outra fase.
+
+Para executar depois da migration controlada, construir as imagens (`docker compose
+build app engine`) e iniciar o engine com `docker compose up -d engine`. O engine não
+tem porta pública. Para teste real controlado, cadastrar equipamento MikroTik, uma
+credencial SSH de leitura e política `ssh_pull`/`config`; criar execução manual na
+política e clicar **Enfileirar**. Conferir execução, artefato e logs estruturados
+do container. Testes automatizados usam mocks e não conectam a roteadores.
+
+Esta fase não inclui FTP Push, backup binário, outros vendors, retenção física,
+storage externo, Telegram, download, scheduler ou retry. Timestamps operacionais
+devem ser armazenados de forma consistente em UTC. Futuramente a instância terá
+timezone IANA configurável; neste ambiente a apresentação deverá usar
+`America/Sao_Paulo`, sem conversões hardcoded espalhadas pelo código.
+
 ## APP_KEY e recuperação de credenciais
 
 A `APP_KEY` do Laravel é um ativo crítico do Backup Manager V2.

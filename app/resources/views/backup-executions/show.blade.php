@@ -1,7 +1,7 @@
 @extends('layouts.app')
 @section('title', 'Execução #'.$backupExecution->id.' — Backup Manager')
 @section('page-title', 'Execução #'.$backupExecution->id)
-@section('page-description', 'Registro de tentativa de backup; nenhuma operação real é executada nesta etapa.')
+@section('page-description', 'Estado e resultado da tentativa de backup.')
 @section('content')
 <div class="page-width">
 @if(session('success')) <div class="alert-success">{{ session('success') }}</div> @endif
@@ -18,13 +18,16 @@
     <p><strong>Finalizado em:</strong> {{ $backupExecution->finished_at?->format('d/m/Y H:i:s') ?? '—' }}</p>
     @if($backupExecution->error_code)<p><strong>Código do erro:</strong> {{ $backupExecution->error_code }}</p>@endif
     @if($backupExecution->error_message)<p><strong>Erro:</strong> {{ $backupExecution->error_message }}</p>@endif
+    @if($backupExecution->artifact)
+        <p><strong>Artefato:</strong> <a href="{{ route('backup-artifacts.show', $backupExecution->artifact) }}">{{ $backupExecution->artifact->type }}</a> · {{ number_format($backupExecution->artifact->size_bytes / 1024, 1, ',', '.') }} KB · SHA256: {{ substr($backupExecution->artifact->sha256, 0, 12) }}…</p>
+    @endif
     <div class="form-actions"><a href="{{ route('backup-executions.index') }}" class="secondary-button">Voltar</a></div>
 </article>
-@if(in_array($backupExecution->status, ['pending', 'queued', 'running'], true))
+@if(in_array($backupExecution->status, ['pending', 'queued'], true))
 <article class="panel form-panel">
-    <div class="panel-header"><div><h2>Ações de desenvolvimento</h2><p>Simulam a mudança de estado. Não iniciam backup real.</p></div></div>
+    <div class="panel-header"><div><h2>Execução manual</h2><p>Enfileirar libera o processamento assíncrono pelo engine.</p></div></div>
     <div class="form-actions">
-        @foreach(match ($backupExecution->status) { 'pending' => ['queue' => 'Enfileirar', 'cancel' => 'Cancelar'], 'queued' => ['start' => 'Iniciar', 'cancel' => 'Cancelar'], 'running' => ['succeed' => 'Concluir com sucesso', 'fail' => 'Simular falha'] } as $action => $label)
+        @foreach($backupExecution->status === 'pending' ? ['queue' => 'Enfileirar', 'cancel' => 'Cancelar'] : ['cancel' => 'Cancelar'] as $action => $label)
             <form method="POST" action="{{ route('backup-executions.'.$action, $backupExecution) }}">@csrf<button type="submit" class="secondary-button">{{ $label }}</button></form>
         @endforeach
     </div>

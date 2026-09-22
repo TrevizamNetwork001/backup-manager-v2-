@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -47,6 +48,11 @@ class BackupExecution extends Model
         return $this->belongsTo(Credential::class);
     }
 
+    public function artifact(): HasOne
+    {
+        return $this->hasOne(BackupArtifact::class);
+    }
+
     public static function createManual(DeviceBackupPolicy $association): self
     {
         return DB::transaction(function () use ($association) {
@@ -76,16 +82,15 @@ class BackupExecution extends Model
             if (! in_array($next, self::TRANSITIONS[$current->status] ?? [], true)) {
                 throw ValidationException::withMessages(['status' => 'Transição de estado inválida.']);
             }
+            if (in_array($next, ['running', 'succeeded', 'failed'], true)) {
+                throw ValidationException::withMessages(['status' => 'Transição reservada ao engine.']);
+            }
             $current->status = $next;
             if ($next === 'running') {
                 $current->started_at ??= now();
             }
             if (in_array($next, ['succeeded', 'failed', 'cancelled'], true)) {
                 $current->finished_at = now();
-            }
-            if ($next === 'failed') {
-                $current->error_code = 'DEVELOPMENT_TEST_FAILURE';
-                $current->error_message = 'Falha simulada pela ação administrativa de desenvolvimento.';
             }
             $current->save();
             $this->setRawAttributes($current->getAttributes(), true);

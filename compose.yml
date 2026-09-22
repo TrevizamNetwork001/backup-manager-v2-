@@ -20,8 +20,11 @@ services:
     container_name: backup-manager-v2-app
     restart: unless-stopped
     working_dir: /var/www/html
+    environment:
+      BACKUP_STORAGE_ROOT: /data/backups
     volumes:
       - ./app:/var/www/html
+      - backups:/data/backups:ro
     networks:
       - backup-manager-v2
     depends_on:
@@ -29,6 +32,38 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+
+  backup-storage-init:
+    image: busybox:1.37.0
+    network_mode: none
+    command: ["sh", "-c", "chown 65534:65534 /data/backups && chmod 700 /data/backups"]
+    volumes:
+      - backups:/data/backups
+    restart: "no"
+
+  engine:
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+    container_name: backup-manager-v2-engine
+    restart: unless-stopped
+    user: nobody
+    working_dir: /var/www/html
+    command: ["/opt/engine-venv/bin/python", "/engine/backup_engine.py"]
+    environment:
+      BACKUP_STORAGE_ROOT: /data/backups
+    volumes:
+      - ./app:/var/www/html:ro
+      - ./engine:/engine:ro
+      - backups:/data/backups
+      - ./app/storage:/var/www/html/storage
+    networks:
+      - backup-manager-v2
+    depends_on:
+      postgres:
+        condition: service_healthy
+      backup-storage-init:
+        condition: service_completed_successfully
 
   postgres:
     image: postgres:17
@@ -71,3 +106,6 @@ services:
 networks:
   backup-manager-v2:
     name: backup-manager-v2
+
+volumes:
+  backups:

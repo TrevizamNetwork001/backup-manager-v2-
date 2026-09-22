@@ -78,9 +78,11 @@ class BackupExecutionTest extends TestCase
     {
         $execution = BackupExecution::createManual($this->association());
         $execution->transitionTo('queued');
-        $execution->transitionTo('running');
+        app(\App\Services\EngineJobService::class)->claim();
+        $execution->refresh();
         $this->assertNotNull($execution->started_at);
-        $execution->transitionTo('succeeded');
+        app(\App\Services\EngineJobService::class)->fail($execution->id, 'ENGINE_FAILED');
+        $execution->refresh();
         $this->assertNotNull($execution->finished_at);
         $this->expectException(ValidationException::class);
         $execution->transitionTo('running');
@@ -104,15 +106,15 @@ class BackupExecutionTest extends TestCase
         $this->assertSame('cancelled', $queued->status);
     }
 
-    public function test_failure_uses_fixed_sanitized_error_and_pages_do_not_expose_secret(): void
+    public function test_engine_failure_uses_fixed_sanitized_error_and_pages_do_not_expose_secret(): void
     {
         $this->actingAs(User::factory()->create());
         $execution = BackupExecution::createManual($this->association());
         $execution->transitionTo('queued');
-        $execution->transitionTo('running');
-        $this->post(route('backup-executions.fail', $execution), ['error_message' => 'segredo-confidencial-123'])->assertRedirect();
+        app(\App\Services\EngineJobService::class)->claim();
+        app(\App\Services\EngineJobService::class)->fail($execution->id, 'SSH_AUTH_FAILED');
         $execution->refresh();
-        $this->assertSame('DEVELOPMENT_TEST_FAILURE', $execution->error_code);
+        $this->assertSame('SSH_AUTH_FAILED', $execution->error_code);
         $this->assertNotNull($execution->finished_at);
         $this->assertStringNotContainsString('segredo-confidencial-123', $execution->error_message);
         $encrypted = DB::table('credentials')->where('id', $execution->credential_id)->value('secret');
@@ -121,20 +123,19 @@ class BackupExecutionTest extends TestCase
         }
     }
 
-    public function test_explicit_action_routes_enforce_state_machine(): void
+    public function test_web_actions_cannot_simulate_engine_result(): void
     {
         $this->actingAs(User::factory()->create());
         $execution = BackupExecution::createManual($this->association());
-        $this->get(route('backup-executions.show', $execution))->assertOk()->assertSee('Ações de desenvolvimento');
-        $this->post(route('backup-executions.start', $execution), ['status' => 'running'])->assertSessionHasErrors('status');
+        $this->get(route('backup-executions.show', $execution))->assertOk()->assertSee('Execução manual');
+        $this->post('/backup-executions/'.$execution->id.'/start')->assertNotFound();
         $this->assertSame('pending', $execution->fresh()->status);
         $this->post(route('backup-executions.queue', $execution), ['status' => 'succeeded'])->assertRedirect();
         $this->assertSame('queued', $execution->fresh()->status);
-        $this->post(route('backup-executions.start', $execution))->assertRedirect();
+        app(\App\Services\EngineJobService::class)->claim();
         $this->assertSame('running', $execution->fresh()->status);
-        $this->post(route('backup-executions.succeed', $execution))->assertRedirect();
-        $this->assertSame('succeeded', $execution->fresh()->status);
-        $this->post(route('backup-executions.start', $execution))->assertSessionHasErrors('status');
+        $this->post('/backup-executions/'.$execution->id.'/succeed')->assertNotFound();
+        $this->assertSame('running', $execution->fresh()->status);
     }
 
     public function test_filters_and_history_restrictions(): void

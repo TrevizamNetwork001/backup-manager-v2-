@@ -60,10 +60,10 @@
                 Execuções
             </a>
 
-            <span class="nav-link disabled">
+            <a href="{{ route('backup-artifacts.index') }}" class="nav-link {{ request()->routeIs('backup-artifacts.*') ? 'active' : '' }}">
                 <span class="nav-icon">▤</span>
                 Artefatos
-            </span>
+            </a>
         </nav>
 
         <div class="sidebar-footer">

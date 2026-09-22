@@ -35,7 +35,7 @@ class BackupExecutionController extends Controller
     {
         $backupExecution->load([
             'device:id,name', 'backupPolicy:id,name',
-            'credential:id,name,type,username',
+            'credential:id,name,type,username', 'artifact',
         ]);
 
         return view('backup-executions.show', compact('backupExecution'));
@@ -53,21 +53,6 @@ class BackupExecutionController extends Controller
     public function queue(BackupExecution $backupExecution): RedirectResponse
     {
         return $this->transition($backupExecution, 'queued');
-    }
-
-    public function start(BackupExecution $backupExecution): RedirectResponse
-    {
-        return $this->transition($backupExecution, 'running');
-    }
-
-    public function succeed(BackupExecution $backupExecution): RedirectResponse
-    {
-        return $this->transition($backupExecution, 'succeeded');
-    }
-
-    public function fail(BackupExecution $backupExecution): RedirectResponse
-    {
-        return $this->transition($backupExecution, 'failed');
     }
 
     public function cancel(BackupExecution $backupExecution): RedirectResponse

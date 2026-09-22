@@ -1,7 +1,7 @@
 @extends('layouts.app')
 @section('title', 'Execuções — Backup Manager')
 @section('page-title', 'Execuções de Backup')
-@section('page-description', 'Tentativas cadastradas, sem execução de backup real nesta etapa.')
+@section('page-description', 'Histórico de tentativas e resultados de backup.')
 @section('content')
 <div class="page-width">
 <article class="panel form-panel">

@@ -22,3 +22,11 @@ RUN apt-get update && apt-get install -y \
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
 WORKDIR /var/www/html
+
+COPY engine/requirements.txt /tmp/engine-requirements.txt
+RUN apt-get update && apt-get install -y python3-venv \
+    && rm -rf /var/lib/apt/lists/* \
+    && python3 -m venv /opt/engine-venv \
+    && /opt/engine-venv/bin/pip install --no-cache-dir -r /tmp/engine-requirements.txt \
+    && mkdir -p /data/backups \
+    && chown nobody:nogroup /data/backups
