@@ -22,6 +22,7 @@ services:
     working_dir: /var/www/html
     environment:
       BACKUP_STORAGE_ROOT: /data/backups
+      BACKUP_ENGINE_STALE_SECONDS: ${BACKUP_ENGINE_STALE_SECONDS:-300}
     volumes:
       - ./app:/var/www/html
       - backups:/data/backups:ro
@@ -52,6 +53,7 @@ services:
     command: ["/opt/engine-venv/bin/python", "/engine/backup_engine.py"]
     environment:
       BACKUP_STORAGE_ROOT: /data/backups
+      BACKUP_ENGINE_HEARTBEAT_SECONDS: ${BACKUP_ENGINE_HEARTBEAT_SECONDS:-30}
     volumes:
       - ./app:/var/www/html:ro
       - ./engine:/engine:ro

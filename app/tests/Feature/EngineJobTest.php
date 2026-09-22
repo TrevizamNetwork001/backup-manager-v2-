@@ -57,11 +57,101 @@ class EngineJobTest extends TestCase
         $this->assertStringNotContainsString('senha-super-secreta', $job->fresh()->error_message);
     }
 
+    public function test_host_key_errors_are_fixed_and_sanitized(): void
+    {
+        $first = $this->queued();
+        $association = $first->association;
+        foreach (['SSH_HOST_KEY_UNKNOWN', 'SSH_HOST_KEY_MISMATCH'] as $code) {
+            $job = $code === 'SSH_HOST_KEY_UNKNOWN' ? $first : BackupExecution::createManual($association);
+            if ($job->status === 'pending') $job->transitionTo('queued');
+            $engine = app(EngineJobService::class);
+            $engine->claim();
+            $engine->fail($job->id, $code);
+            $this->assertSame($code, $job->fresh()->error_code);
+            $this->assertStringNotContainsString('senha-super-secreta', $job->fresh()->error_message);
+        }
+    }
+
+    public function test_observation_requires_running_worker_and_never_trusts_automatically(): void
+    {
+        $job = $this->queued();
+        $engine = app(EngineJobService::class);
+        $engine->claim(str_repeat('b', 32));
+        $fingerprint = 'SHA256:'.str_repeat('A', 43);
+        $engine->observeHostKey($job->id, str_repeat('b', 32), '192.0.2.1', 'ssh-rsa', $fingerprint);
+        $device = $job->device->fresh();
+        $this->assertSame($fingerprint, $device->ssh_observed_fingerprint);
+        $this->assertSame('ssh-rsa', $device->ssh_observed_algorithm);
+        $this->assertNull($device->ssh_host_key_fingerprint);
+        $this->expectException(\RuntimeException::class);
+        $engine->observeHostKey($job->id, str_repeat('c', 32), '192.0.2.1', 'ssh-rsa', $fingerprint);
+    }
+
+    public function test_trust_action_is_authenticated_and_copies_only_observation(): void
+    {
+        $job = $this->queued();
+        $engine = app(EngineJobService::class);
+        $engine->claim();
+        $fingerprint = 'SHA256:'.str_repeat('B', 43);
+        $engine->observeHostKey($job->id, $job->fresh()->worker_id, '192.0.2.1', 'ssh-rsa', $fingerprint);
+        $route = route('devices.ssh-host-key.trust', $job->device_id);
+        $this->post($route, ['ssh_host_key_fingerprint' => 'SHA256:'.str_repeat('Z', 43)])
+            ->assertRedirect('/login');
+        $user = User::factory()->create();
+        $this->actingAs($user)->post($route, ['ssh_host_key_fingerprint' => 'SHA256:'.str_repeat('Z', 43)])
+            ->assertRedirect(route('devices.edit', $job->device_id));
+        $device = $job->device->fresh();
+        $this->assertSame($fingerprint, $device->ssh_host_key_fingerprint);
+        $this->assertSame('ssh-rsa', $device->ssh_host_key_algorithm);
+        $this->assertNotNull($device->ssh_host_key_trusted_at);
+        $this->assertSame($user->id, $device->ssh_host_key_trusted_by);
+        $this->get(route('devices.edit', $device))->assertOk()->assertSee($fingerprint)
+            ->assertDontSee('senha-super-secreta')->assertDontSee('SHA256:'.str_repeat('Z', 43));
+    }
+
+    public function test_mismatch_observation_does_not_replace_trust(): void
+    {
+        $job = $this->queued();
+        $engine = app(EngineJobService::class);
+        $engine->claim();
+        $worker = $job->fresh()->worker_id;
+        $engine->observeHostKey($job->id, $worker, '192.0.2.1', 'ssh-rsa', 'SHA256:'.str_repeat('C', 43));
+        $this->actingAs(User::factory()->create())->post(route('devices.ssh-host-key.trust', $job->device_id));
+        $trustedAt = $job->device->fresh()->ssh_host_key_trusted_at;
+        $engine->observeHostKey($job->id, $worker, '192.0.2.1', 'ssh-ed25519', 'SHA256:'.str_repeat('D', 43));
+        $device = $job->device->fresh();
+        $this->assertSame('SHA256:'.str_repeat('C', 43), $device->ssh_host_key_fingerprint);
+        $this->assertSame($trustedAt->toDateTimeString(), $device->ssh_host_key_trusted_at->toDateTimeString());
+        $this->get(route('devices.edit', $device))->assertSee('Chave alterada')->assertDontSee('senha-super-secreta');
+    }
+
+    public function test_heartbeat_and_recovery_respect_threshold_and_terminal_state(): void
+    {
+        config()->set('backup.engine_stale_seconds', 300);
+        $job = $this->queued();
+        $engine = app(EngineJobService::class);
+        $engine->claim(str_repeat('d', 32));
+        $this->assertTrue($engine->heartbeat($job->id, str_repeat('d', 32)));
+        $this->assertFalse($engine->heartbeat($job->id, str_repeat('e', 32)));
+        $this->assertSame(0, $engine->recoverStale());
+        DB::table('backup_executions')->where('id', $job->id)->update(['heartbeat_at' => now()->subSeconds(301)]);
+        $this->assertSame(1, $engine->recoverStale());
+        $this->assertSame('failed', $job->fresh()->status);
+        $this->assertSame('ENGINE_STALE', $job->fresh()->error_code);
+        $this->assertSame('Execução interrompida: heartbeat expirado.', $job->fresh()->error_message);
+        $this->assertNull($job->fresh()->worker_id);
+        $this->assertFalse($engine->heartbeat($job->id, str_repeat('d', 32)));
+        $this->assertSame(0, $engine->recoverStale());
+    }
+
     public function test_artisan_bridge_claims_job_without_secret_in_stdout(): void
     {
         $job = $this->queued();
-        $this->artisan('engine:claim')->expectsOutputToContain('"id":'.$job->id)->assertExitCode(0);
+        $this->artisan('engine:claim', ['worker' => str_repeat('a', 32)])->expectsOutputToContain('"id":'.$job->id)->assertExitCode(0);
         $this->assertSame('running', $job->fresh()->status);
+        $this->assertNotNull($job->fresh()->claimed_at);
+        $this->assertNotNull($job->fresh()->heartbeat_at);
+        $this->assertSame(str_repeat('a', 32), $job->fresh()->worker_id);
     }
 
     public function test_eligibility_and_secret_are_restricted(): void

@@ -185,4 +185,23 @@ class DeviceTest extends TestCase
             'id' => $device->id,
         ]);
     }
+
+    public function test_ip_change_discards_observation_and_empty_trust_is_rejected(): void
+    {
+        $site = Site::create(['name' => 'POP', 'is_active' => true]);
+        $device = Device::create(['site_id' => $site->id, 'name' => 'MK', 'management_ip' => '192.0.2.10',
+            'vendor' => 'MikroTik', 'is_active' => true]);
+        $device->ssh_observed_algorithm = 'ssh-rsa';
+        $device->ssh_observed_fingerprint = 'SHA256:'.str_repeat('A', 43);
+        $device->ssh_observed_at = now();
+        $device->save();
+        $this->actingAs(User::factory()->create())->put(route('devices.update', $device), [
+            'site_id' => $site->id, 'name' => 'MK', 'management_ip' => '192.0.2.11',
+            'vendor' => 'MikroTik', 'is_active' => '1',
+        ])->assertRedirect(route('devices.index'));
+        $this->assertNull($device->fresh()->ssh_observed_fingerprint);
+        $this->post(route('devices.ssh-host-key.trust', $device), ['ssh_host_key_fingerprint' => 'SHA256:'.str_repeat('B', 43)])
+            ->assertSessionHasErrors('ssh_host_key');
+        $this->assertNull($device->fresh()->ssh_host_key_fingerprint);
+    }
 }

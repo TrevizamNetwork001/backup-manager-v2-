@@ -1,4 +1,6 @@
 import errno
+import base64
+import hashlib
 import io
 import logging
 import socket
@@ -14,7 +16,7 @@ import paramiko
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import backup_engine
-from drivers.mikrotik_ssh import BackupError, _mikrotik_transport, export_config
+from drivers.mikrotik_ssh import BackupError, VerifiedHostKeyPolicy, _mikrotik_transport, export_config
 from storage import store, validate
 
 
@@ -49,7 +51,7 @@ class EngineTests(unittest.TestCase):
                  patch.object(backup_engine, 'command') as command:
                 backup_engine.execute({**self.job, **change})
                 secret.assert_not_called()
-                command.assert_called_once_with('engine:fail', 1, code)
+                command.assert_called_once_with('engine:fail', 1, code, backup_engine.WORKER_ID)
 
     def test_ssh_error_codes_are_sanitized(self):
         for error in ['SSH_CONNECT_FAILED', 'SSH_CONNECTION_REFUSED',
@@ -58,7 +60,7 @@ class EngineTests(unittest.TestCase):
                  patch.object(backup_engine, 'export_config', side_effect=BackupError(error)), \
                  patch.object(backup_engine, 'command') as command:
                 backup_engine.execute(self.job)
-                command.assert_called_once_with('engine:fail', 1, error)
+                command.assert_called_once_with('engine:fail', 1, error, backup_engine.WORKER_ID)
 
     def test_invalid_host_does_not_connect(self):
         with patch('drivers.mikrotik_ssh.paramiko.SSHClient') as client:
@@ -91,13 +93,15 @@ class EngineTests(unittest.TestCase):
             channel.exit_status_ready.return_value = True
             channel.recv_exit_status.return_value = 1
             with self.assertRaises(BackupError) as error:
-                export_config('192.0.2.1', 22, 'backup', 'private-secret')
+                export_config('192.0.2.1', 22, 'backup', 'private-secret', observe=lambda *_: None)
             self.assertEqual('EXPORT_FAILED', error.exception.code)
             kwargs = factory.return_value.connect.call_args.kwargs
             self.assertIs(kwargs['transport_factory'], _mikrotik_transport)
             self.assertEqual('private-secret', kwargs['password'])
             self.assertFalse(kwargs['look_for_keys'])
             self.assertFalse(kwargs['allow_agent'])
+            factory.return_value.load_system_host_keys.assert_not_called()
+            self.assertIsInstance(factory.return_value.set_missing_host_key_policy.call_args.args[0], VerifiedHostKeyPolicy)
             factory.return_value.close.assert_called_once()
 
     def test_connection_failures_have_specific_codes(self):
@@ -113,8 +117,39 @@ class EngineTests(unittest.TestCase):
             with self.subTest(code=code), patch('drivers.mikrotik_ssh.paramiko.SSHClient') as factory:
                 factory.return_value.connect.side_effect = failure
                 with self.assertRaises(BackupError) as error:
-                    export_config('192.0.2.1', 22, 'backup', 'secret')
+                    export_config('192.0.2.1', 22, 'backup', 'secret', observe=lambda *_: None)
                 self.assertEqual(code, error.exception.code)
+
+    def test_host_key_unknown_mismatch_and_trusted(self):
+        key = unittest.mock.Mock()
+        key.get_name.return_value = 'ssh-rsa'
+        key.asbytes.return_value = b'public-key-only'
+        fingerprint = 'SHA256:' + base64.b64encode(hashlib.sha256(b'public-key-only').digest()).decode().rstrip('=')
+        observed = []
+        for algorithm, trusted, expected in [(None, None, 'SSH_HOST_KEY_UNKNOWN'),
+                                              ('ssh-rsa', 'SHA256:' + 'A' * 43, 'SSH_HOST_KEY_MISMATCH'),
+                                              ('ssh-ed25519', fingerprint, 'SSH_HOST_KEY_MISMATCH')]:
+            policy = VerifiedHostKeyPolicy(algorithm, trusted, lambda *identity: observed.append(identity))
+            with self.assertRaises(BackupError) as error:
+                policy.missing_host_key(None, '192.0.2.1', key)
+            self.assertEqual(expected, error.exception.code)
+            self.assertEqual(('ssh-rsa', fingerprint), observed[-1])
+        policy = VerifiedHostKeyPolicy('ssh-rsa', fingerprint, lambda *identity: observed.append(identity))
+        policy.missing_host_key(None, '192.0.2.1', key)
+        self.assertEqual(('ssh-rsa', fingerprint), observed[-1])
+
+    def test_paramiko_info_is_filtered_and_worker_id_is_safe(self):
+        self.assertRegex(backup_engine.WORKER_ID, r'^[a-f0-9]{32}$')
+        self.assertGreaterEqual(logging.getLogger('paramiko').level, logging.WARNING)
+        output = io.StringIO()
+        handler = logging.StreamHandler(output)
+        logger = logging.getLogger('paramiko.transport')
+        logger.addHandler(handler)
+        try:
+            logger.info('Authentication (password) successful! private-secret')
+            self.assertEqual('', output.getvalue())
+        finally:
+            logger.removeHandler(handler)
 
     def test_secret_and_exception_details_are_absent_from_logs(self):
         output = io.StringIO()
@@ -128,7 +163,7 @@ class EngineTests(unittest.TestCase):
                 factory.return_value.connect.side_effect = paramiko.SSHException(
                     'Incompatible ssh peer (no acceptable host key): private-secret')
                 backup_engine.execute(self.job)
-            command.assert_called_once_with('engine:fail', 1, 'SSH_NEGOTIATION_FAILED')
+            command.assert_called_once_with('engine:fail', 1, 'SSH_NEGOTIATION_FAILED', backup_engine.WORKER_ID)
             self.assertNotIn('private-secret', output.getvalue())
             self.assertNotIn('Incompatible ssh peer', output.getvalue())
         finally:

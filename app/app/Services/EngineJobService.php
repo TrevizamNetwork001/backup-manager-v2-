@@ -4,19 +4,25 @@ namespace App\Services;
 
 use App\Models\BackupArtifact;
 use App\Models\BackupExecution;
+use App\Models\Device;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class EngineJobService
 {
-    public function claim(): ?BackupExecution
+    public function claim(?string $workerId = null): ?BackupExecution
     {
-        return DB::transaction(function () {
+        $workerId ??= bin2hex(random_bytes(16));
+        if (! preg_match('/\A[a-f0-9]{32}\z/D', $workerId)) throw new \InvalidArgumentException('Worker inválido.');
+        return DB::transaction(function () use ($workerId) {
             $job = BackupExecution::query()->where('status', 'queued')->orderBy('id')
                 ->lock('FOR UPDATE SKIP LOCKED')->first();
             if (! $job) return null;
             $job->status = 'running';
             $job->started_at = now();
+            $job->claimed_at = now();
+            $job->heartbeat_at = now();
+            $job->worker_id = $workerId;
             $job->save();
             return $job;
         });
@@ -29,6 +35,8 @@ class EngineJobService
         return [
             'id' => $job->id, 'device_id' => $job->device_id, 'policy_id' => $job->backup_policy_id,
             'host' => $job->device->management_ip, 'vendor' => $job->device->vendor,
+            'ssh_host_key_algorithm' => $job->device->ssh_host_key_algorithm,
+            'ssh_host_key_fingerprint' => $job->device->ssh_host_key_fingerprint,
             'method' => $job->backupPolicy->method, 'artifact_mode' => $job->backupPolicy->artifact_mode,
             'port' => $job->credential->port ?: 22, 'username' => $job->credential->username,
             'relative_path' => $this->relativePath($job),
@@ -42,9 +50,10 @@ class EngineJobService
         ];
     }
 
-    public function secret(int $id): string
+    public function secret(int $id, ?string $workerId = null): string
     {
         $job = BackupExecution::with('credential')->findOrFail($id);
+        if ($workerId !== null && $job->worker_id !== $workerId) throw new \RuntimeException('Worker inválido.');
         if (! $this->job($id)['eligible']) {
             throw new \RuntimeException('Credencial indisponível.');
         }
@@ -55,6 +64,57 @@ class EngineJobService
     {
         return $job->device_id.'/'.($job->created_at?->format('Y/m/d') ?? now()->format('Y/m/d')).
             '/execution-'.$job->id.'-config.rsc';
+    }
+
+    public function heartbeat(int $id, string $workerId): bool
+    {
+        return BackupExecution::query()->whereKey($id)->where('status', 'running')
+            ->where('worker_id', $workerId)->update(['heartbeat_at' => now()]) === 1;
+    }
+
+    public function observeHostKey(int $id, string $workerId, string $host, string $algorithm, string $fingerprint): void
+    {
+        if (! preg_match('/\A[a-zA-Z0-9@._+-]{1,100}\z/D', $algorithm) ||
+            ! preg_match('/\ASHA256:[A-Za-z0-9+\/]{43}\z/D', $fingerprint)) {
+            throw new \InvalidArgumentException('Identidade SSH inválida.');
+        }
+        DB::transaction(function () use ($id, $workerId, $host, $algorithm, $fingerprint) {
+            $job = BackupExecution::query()->lockForUpdate()->findOrFail($id);
+            if ($job->status !== 'running' || $job->worker_id !== $workerId) {
+                throw new \RuntimeException('Execução indisponível.');
+            }
+            $device = Device::query()->lockForUpdate()->findOrFail($job->device_id);
+            if ($device->management_ip !== $host) throw new \RuntimeException('Endereço do equipamento alterado.');
+            $device->ssh_observed_algorithm = $algorithm;
+            $device->ssh_observed_fingerprint = $fingerprint;
+            $device->ssh_observed_at = now();
+            $device->save();
+        });
+    }
+
+    public function recoverStale(): int
+    {
+        $seconds = (int) config('backup.engine_stale_seconds');
+        if ($seconds < 1) throw new \InvalidArgumentException('Threshold de stale inválido.');
+        $cutoff = now()->subSeconds($seconds);
+        return DB::transaction(function () use ($cutoff) {
+            $jobs = BackupExecution::query()->where('status', 'running')
+                ->where(function ($query) use ($cutoff) {
+                    $query->where('heartbeat_at', '<', $cutoff)
+                        ->orWhere(function ($query) use ($cutoff) {
+                            $query->whereNull('heartbeat_at')->where('started_at', '<', $cutoff);
+                        });
+                })->orderBy('id')->limit(100)->lock('FOR UPDATE SKIP LOCKED')->get();
+            foreach ($jobs as $job) {
+                $job->status = 'failed';
+                $job->finished_at = now();
+                $job->error_code = 'ENGINE_STALE';
+                $job->error_message = 'Execução interrompida: heartbeat expirado.';
+                $job->worker_id = null;
+                $job->save();
+            }
+            return $jobs->count();
+        });
     }
 
     public function resolvePath(string $relative): string
@@ -71,11 +131,12 @@ class EngineJobService
         return $file;
     }
 
-    public function complete(int $id, string $relative): BackupArtifact
+    public function complete(int $id, string $relative, ?string $workerId = null): BackupArtifact
     {
-        return DB::transaction(function () use ($id, $relative) {
+        return DB::transaction(function () use ($id, $relative, $workerId) {
             $job = BackupExecution::query()->lockForUpdate()->findOrFail($id);
-            if ($job->status !== 'running' || $relative !== $this->relativePath($job) || $job->artifact()->exists()) {
+            if ($job->status !== 'running' || ($workerId !== null && $job->worker_id !== $workerId) ||
+                $relative !== $this->relativePath($job) || $job->artifact()->exists()) {
                 throw ValidationException::withMessages(['status' => 'Execução indisponível para conclusão.']);
             }
             $payload = $this->job($id);
@@ -101,12 +162,13 @@ class EngineJobService
             ]);
             $job->status = 'succeeded';
             $job->finished_at = now();
+            $job->worker_id = null;
             $job->save();
             return $artifact;
         });
     }
 
-    public function fail(int $id, string $code): void
+    public function fail(int $id, string $code, ?string $workerId = null): void
     {
         $messages = [
             'SSH_CONNECT_FAILED' => 'Conexão SSH falhou.', 'SSH_AUTH_FAILED' => 'Autenticação SSH falhou.',
@@ -115,15 +177,18 @@ class EngineJobService
             'UNSUPPORTED_POLICY' => 'Política não suportada.', 'CREDENTIAL_INVALID' => 'Credencial incompatível ou inativa.',
             'EXPORT_FAILED' => 'Export de configuração falhou.', 'ARTIFACT_INVALID' => 'Artefato inválido.',
             'STORAGE_FAILED' => 'Falha no armazenamento local.', 'ENGINE_FAILED' => 'Falha interna do engine.',
+            'SSH_HOST_KEY_UNKNOWN' => 'Chave SSH desconhecida; aprove a chave observada no equipamento.',
+            'SSH_HOST_KEY_MISMATCH' => 'Chave SSH diferente da confiada; verifique e aprove explicitamente.',
         ];
         if (! isset($messages[$code])) $code = 'ENGINE_FAILED';
-        DB::transaction(function () use ($id, $code, $messages) {
+        DB::transaction(function () use ($id, $code, $messages, $workerId) {
             $job = BackupExecution::query()->lockForUpdate()->findOrFail($id);
-            if ($job->status !== 'running') return;
+            if ($job->status !== 'running' || ($workerId !== null && $job->worker_id !== $workerId)) return;
             $job->status = 'failed';
             $job->finished_at = now();
             $job->error_code = $code;
             $job->error_message = $messages[$code];
+            $job->worker_id = null;
             $job->save();
         });
     }

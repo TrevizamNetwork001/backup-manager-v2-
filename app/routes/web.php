@@ -24,6 +24,8 @@ Route::middleware('auth')->group(function () {
 
     Route::resource('devices', DeviceController::class)
         ->except(['show']);
+    Route::post('devices/{device}/ssh-host-key/trust', [DeviceController::class, 'trustHostKey'])
+        ->name('devices.ssh-host-key.trust');
 
     Route::resource('credentials', CredentialController::class)
         ->except(['show']);

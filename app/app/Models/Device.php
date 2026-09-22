@@ -27,6 +27,8 @@ class Device extends Model
     {
         return [
             'is_active' => 'boolean',
+            'ssh_host_key_trusted_at' => 'datetime',
+            'ssh_observed_at' => 'datetime',
         ];
     }
 

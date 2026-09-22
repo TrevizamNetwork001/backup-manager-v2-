@@ -381,19 +381,43 @@ somente dentro da raiz, calcula SHA256, registra tamanho e artefato na mesma
 transação que marca sucesso. Erros recebem código e mensagem fixa, sem traceback
 ou dados da configuração: `SSH_CONNECT_FAILED`, `SSH_CONNECTION_REFUSED`,
 `SSH_NEGOTIATION_FAILED`, `SSH_AUTH_FAILED`, `SSH_TIMEOUT`,
+`SSH_HOST_KEY_UNKNOWN`, `SSH_HOST_KEY_MISMATCH`, `ENGINE_STALE`,
 `UNSUPPORTED_VENDOR`, `UNSUPPORTED_POLICY`, `CREDENTIAL_INVALID`, `EXPORT_FAILED`,
 `ARTIFACT_INVALID`, `STORAGE_FAILED`, `ENGINE_FAILED`.
 
 **Host key:** o driver MikroTik usa transporte Paramiko próprio para incluir
 `ssh-rsa` entre os algoritmos de host key, sem alterar KEX, cifras, MACs ou
-autenticação. O driver carrega chaves conhecidas do sistema e aceita chaves novas
-com `AutoAddPolicy` para laboratório. Isso **não verifica a identidade de hosts
-desconhecidos**. TODO: persistir fingerprint / known_hosts por equipamento
-antes de produção. O Paramiko 4.0.0 já inclui `ssh-rsa` por padrão; a causa exata
-do `SSH_CONNECT_FAILED` anterior ainda depende de um teste real controlado.
+autenticação. Não carrega known_hosts do sistema nem usa `AutoAddPolicy`. A política
+calcula `SHA256:` em Base64 sem padding sobre a chave pública apresentada, grava
+algoritmo e fingerprint observados no equipamento via Artisan e compara com os
+campos confiados. A observação ocorre antes da autenticação e não confia na chave.
+Sem confiança, a execução falha com `SSH_HOST_KEY_UNKNOWN`. Uma chave diferente
+falha com `SSH_HOST_KEY_MISMATCH`; nunca substitui a confiança automaticamente.
+Na tela de edição do equipamento, um usuário autenticado compara a chave observada
+por um canal independente e usa **Confiar nesta chave observada**. O servidor copia
+somente a observação persistida, sob lock, e registra data e usuário. Alterar o IP
+de gerenciamento descarta a observação anterior. Uma mudança legítima de host key
+exige nova execução para observar e nova aprovação explícita. Este é TOFU manual
+controlado: o primeiro contato não prova a identidade; confirme o fingerprint por
+console ou documentação confiável antes de aprovar.
 Timeouts: conexão/autenticação/banner 10 segundos,
-comando 30 segundos; saída limitada a 8 MiB. Um processo interrompido depois do
-claim pode deixar a execução em `running`; recuperação manual fica para outra fase.
+comando 30 segundos; saída limitada a 8 MiB. O claim atômico grava `claimed_at`,
+`heartbeat_at` e um ID aleatório de worker, sem dados de host ou credencial.
+Enquanto executa, o engine renova o heartbeat a cada
+`BACKUP_ENGINE_HEARTBEAT_SECONDS` (padrão 30). `php artisan engine:recover-stale`
+marca até 100 jobs `running` por invocação como `failed`/`ENGINE_STALE` quando o
+heartbeat ultrapassa `BACKUP_ENGINE_STALE_SECONDS` (padrão 300); a seleção usa
+transação e `FOR UPDATE SKIP LOCKED`, competindo com o update do heartbeat sob o
+mesmo row lock. Jobs antigos sem heartbeat usam `started_at`. Não há reexecução
+automática. Acione o comando periodicamente por operação externa até existir
+scheduler; revise jobs e artefatos órfãos após uma queda. O worker só conclui ou
+falha seu próprio job e uma recuperação impede conclusão posterior.
+
+Logs operacionais do Python são JSON estruturado, com IDs, status, código de erro
+e duração. Paramiko fica em WARNING ou superior; mensagens informativas de conexão
+e autenticação não entram no log normal. Senhas, configuração exportada e detalhes
+de exceções não entram nesses eventos. Erros críticos da biblioteca continuam
+disponíveis; logs do PHP/Artisan devem ser protegidos como os demais logs do app.
 
 Para executar depois da migration controlada, construir as imagens (`docker compose
 build app engine`) e iniciar o engine com `docker compose up -d engine`. O engine não

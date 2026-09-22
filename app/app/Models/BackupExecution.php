@@ -25,7 +25,8 @@ class BackupExecution extends Model
 
     protected function casts(): array
     {
-        return ['attempt' => 'integer', 'started_at' => 'datetime', 'finished_at' => 'datetime'];
+        return ['attempt' => 'integer', 'started_at' => 'datetime', 'finished_at' => 'datetime',
+            'claimed_at' => 'datetime', 'heartbeat_at' => 'datetime'];
     }
 
     public function association(): BelongsTo

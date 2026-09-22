@@ -1,4 +1,6 @@
 import errno
+import base64
+import hashlib
 import ipaddress
 import socket
 import time
@@ -13,6 +15,22 @@ class BackupError(Exception):
     def __init__(self, code):
         super().__init__(code)
         self.code = code
+
+
+class VerifiedHostKeyPolicy(paramiko.MissingHostKeyPolicy):
+    def __init__(self, algorithm, fingerprint, observe):
+        self.algorithm = algorithm
+        self.fingerprint = fingerprint
+        self.observe = observe
+
+    def missing_host_key(self, client, hostname, key):
+        observed_algorithm = key.get_name()
+        observed_fingerprint = 'SHA256:' + base64.b64encode(hashlib.sha256(key.asbytes()).digest()).decode('ascii').rstrip('=')
+        self.observe(observed_algorithm, observed_fingerprint)
+        if not self.algorithm or not self.fingerprint:
+            raise BackupError('SSH_HOST_KEY_UNKNOWN')
+        if self.algorithm != observed_algorithm or self.fingerprint != observed_fingerprint:
+            raise BackupError('SSH_HOST_KEY_MISMATCH')
 
 
 def _mikrotik_transport(sock, **kwargs):
@@ -32,7 +50,7 @@ def _negotiation_failed(error):
     return 'incompatible ssh peer' in message or 'no acceptable ' in message
 
 
-def export_config(host, port, username, password):
+def export_config(host, port, username, password, algorithm=None, fingerprint=None, observe=None):
     try:
         ipaddress.ip_address(host)
         port = int(port)
@@ -41,11 +59,11 @@ def export_config(host, port, username, password):
     except (ValueError, TypeError):
         raise BackupError('SSH_CONNECT_FAILED') from None
 
+    if observe is None:
+        raise BackupError('ENGINE_FAILED')
     client = paramiko.SSHClient()
-    client.load_system_host_keys()
-    # Provisório para laboratório: TODO persistir fingerprint/known_hosts por equipamento.
-    # Host keys desconhecidas são aceitas apenas neste driver, até haver verificação persistente.
-    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    # Do not load system host keys: every device must pass the persistent check.
+    client.set_missing_host_key_policy(VerifiedHostKeyPolicy(algorithm, fingerprint, observe))
     try:
         client.connect(host, port=port, username=username, password=password,
                        timeout=10, auth_timeout=10, banner_timeout=10,

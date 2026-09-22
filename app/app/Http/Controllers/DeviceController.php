@@ -7,6 +7,8 @@ use App\Models\Site;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
 class DeviceController extends Controller
@@ -94,11 +96,35 @@ class DeviceController extends Controller
             'is_active' => ['required', 'boolean'],
         ]);
 
-        $device->update($validated);
+        DB::transaction(function () use ($device, $validated) {
+            $locked = Device::query()->lockForUpdate()->findOrFail($device->id);
+            if ($locked->management_ip !== $validated['management_ip']) {
+                $locked->ssh_observed_algorithm = null;
+                $locked->ssh_observed_fingerprint = null;
+                $locked->ssh_observed_at = null;
+            }
+            $locked->fill($validated)->save();
+        });
 
         return redirect()
             ->route('devices.index')
             ->with('success', 'Equipamento atualizado com sucesso.');
+    }
+
+    public function trustHostKey(Request $request, Device $device): RedirectResponse
+    {
+        DB::transaction(function () use ($request, $device) {
+            $locked = Device::query()->lockForUpdate()->findOrFail($device->id);
+            if (! $locked->ssh_observed_algorithm || ! $locked->ssh_observed_fingerprint) {
+                throw ValidationException::withMessages(['ssh_host_key' => 'Nenhuma chave SSH observada para confiar.']);
+            }
+            $locked->ssh_host_key_algorithm = $locked->ssh_observed_algorithm;
+            $locked->ssh_host_key_fingerprint = $locked->ssh_observed_fingerprint;
+            $locked->ssh_host_key_trusted_at = now();
+            $locked->ssh_host_key_trusted_by = $request->user()->id;
+            $locked->save();
+        });
+        return redirect()->route('devices.edit', $device)->with('success', 'Chave SSH confiada.');
     }
 
     public function destroy(Device $device): RedirectResponse
