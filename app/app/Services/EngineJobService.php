@@ -62,8 +62,10 @@ class EngineJobService
 
     public function relativePath(BackupExecution $job): string
     {
+        $vendor = mb_strtolower(trim($job->device->vendor));
+        $extension = $vendor === 'huawei' ? 'cfg' : 'rsc';
         return $job->device_id.'/'.($job->created_at?->format('Y/m/d') ?? now()->format('Y/m/d')).
-            '/execution-'.$job->id.'-config.rsc';
+            '/execution-'.$job->id.'-config.'.$extension;
     }
 
     public function heartbeat(int $id, string $workerId): bool
@@ -119,7 +121,7 @@ class EngineJobService
 
     public function resolvePath(string $relative): string
     {
-        if (! preg_match('~\A[1-9][0-9]*/[0-9]{4}/[0-9]{2}/[0-9]{2}/execution-[1-9][0-9]*-config\.rsc\z~D', $relative)) {
+        if (! preg_match('~\A[1-9][0-9]*/[0-9]{4}/[0-9]{2}/[0-9]{2}/execution-[1-9][0-9]*-config\.(?:rsc|cfg)\z~D', $relative)) {
             throw new \RuntimeException('Caminho inválido.');
         }
         $root = realpath(config('backup.storage_root'));
@@ -141,7 +143,8 @@ class EngineJobService
             }
             $payload = $this->job($id);
             if (! $payload['eligible'] || $payload['method'] !== 'ssh_pull' ||
-                $payload['artifact_mode'] !== 'config' || mb_strtolower(trim($payload['vendor'])) !== 'mikrotik') {
+                $payload['artifact_mode'] !== 'config' ||
+                ! in_array(mb_strtolower(trim($payload['vendor'])), ['mikrotik', 'huawei'], true)) {
                 throw ValidationException::withMessages(['status' => 'Job não é elegível para conclusão.']);
             }
             $path = $this->resolvePath($relative);
@@ -150,8 +153,16 @@ class EngineJobService
                 throw ValidationException::withMessages(['artifact' => 'Tamanho inválido.']);
             }
             $contents = file_get_contents($path);
+            $vendor = mb_strtolower(trim($payload['vendor']));
+            $preview = substr($contents ?: '', 0, 4096);
+            $validContent = $vendor === 'mikrotik'
+                ? (bool) preg_match('/^\/[a-z]/mi', $preview)
+                : strlen($contents ?: '') >= 32 && preg_match('/^#\s*$/m', $preview) &&
+                    preg_match('/^(?:sysname|interface|vlan(?: batch)?|ip route-static|aaa|user-interface|stelnet server|snmp-agent)\b/mi', $preview) &&
+                    ! preg_match('/^\s*(?:Error:|%\s*(?:Error|Unrecognized|Unknown)|Unrecognized command|Unknown command|Incomplete command)/mi', $contents) &&
+                    ! preg_match('/(?:-{3,}\s*more\s*-{3,}|\bmore\s*:\s*|press\s+(?:any key|space))/i', $contents);
             if ($contents === false || ! mb_check_encoding($contents, 'UTF-8') ||
-                str_contains($contents, "\0") || ! preg_match('/^\/[a-z]/mi', substr($contents, 0, 4096))) {
+                str_contains($contents, "\0") || ! $validContent) {
                 throw ValidationException::withMessages(['artifact' => 'Export de configuração inválido.']);
             }
             $artifact = BackupArtifact::create([
@@ -179,6 +190,9 @@ class EngineJobService
             'STORAGE_FAILED' => 'Falha no armazenamento local.', 'ENGINE_FAILED' => 'Falha interna do engine.',
             'SSH_HOST_KEY_UNKNOWN' => 'Chave SSH desconhecida; aprove a chave observada no equipamento.',
             'SSH_HOST_KEY_MISMATCH' => 'Chave SSH diferente da confiada; verifique e aprove explicitamente.',
+            'HUAWEI_PROMPT_FAILED' => 'Prompt Huawei não reconhecido.',
+            'HUAWEI_PAGING_FAILED' => 'Paginação Huawei não pôde ser desativada.',
+            'HUAWEI_EXPORT_FAILED' => 'Export de configuração Huawei falhou.',
         ];
         if (! isset($messages[$code])) $code = 'ENGINE_FAILED';
         DB::transaction(function () use ($id, $code, $messages, $workerId) {

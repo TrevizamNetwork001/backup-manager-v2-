@@ -110,6 +110,32 @@ class BackupRetentionTest extends TestCase
         $this->assertSame(0, $this->retention(true)['deleted']);
     }
 
+    public function test_huawei_cfg_participates_in_retention(): void
+    {
+        $source = $this->source(count: 1);
+        $source->device->update(['vendor' => 'Huawei']);
+        $old = $this->artifact($source, 3);
+        $new = $this->artifact($source, 1);
+        $this->assertStringEndsWith('.cfg', $old->relative_path);
+        $this->assertSame(1, $this->retention(true)['deleted']);
+        $this->assertSame('deleted', $old->fresh()->status);
+        $this->assertSame('available', $new->fresh()->status);
+        $this->assertFileExists($this->path($new));
+    }
+
+    public function test_existing_rsc_remains_retirable_after_vendor_correction(): void
+    {
+        $source = $this->source(count: 1);
+        $old = $this->artifact($source, 3);
+        $this->assertStringEndsWith('.rsc', $old->relative_path);
+        $source->device->update(['vendor' => 'Huawei']);
+        $new = $this->artifact($source, 1);
+        $this->assertStringEndsWith('.cfg', $new->relative_path);
+        $this->assertSame(1, $this->retention(true)['deleted']);
+        $this->assertSame('deleted', $old->fresh()->status);
+        $this->assertSame('available', $new->fresh()->status);
+    }
+
     public function test_both_rules_are_union_and_reason_is_exact(): void
     {
         $source = $this->source(30, 2);

@@ -6,27 +6,30 @@ from pathlib import Path
 from drivers.mikrotik_ssh import BackupError, MAX_BYTES
 
 
-def relative_path(job):
-    # The path is derived only from immutable numeric IDs and the engine's UTC date.
-    from datetime import datetime, timezone
-    date = datetime.now(timezone.utc).strftime('%Y/%m/%d')
-    return f"{int(job['device_id'])}/{date}/execution-{int(job['id'])}-config.rsc"
-
-
-def validate(data):
+def validate(data, vendor='mikrotik'):
     if not data or len(data) > MAX_BYTES:
         raise BackupError('ARTIFACT_INVALID')
     try:
-        preview = data[:4096].decode('utf-8')
-        data.decode('utf-8')
+        content = data.decode('utf-8')
+        preview = content[:4096]
     except UnicodeDecodeError:
         raise BackupError('ARTIFACT_INVALID') from None
-    if b'\x00' in data or not re.search(r'(?mi)^/[a-z]', preview):
+    if b'\x00' in data:
+        raise BackupError('ARTIFACT_INVALID')
+    if vendor == 'mikrotik' and not re.search(r'(?mi)^/[a-z]', preview):
+        raise BackupError('ARTIFACT_INVALID')
+    if vendor == 'huawei' and (len(data) < 32 or
+            re.search(r'(?im)^\s*(?:Error:|%\s*(?:Error|Unrecognized|Unknown)|Unrecognized command|Unknown command|Incomplete command)', content) or
+            re.search(r'(?i)(?:-{3,}\s*more\s*-{3,}|\bmore\s*:\s*|press\s+(?:any key|space))', content) or
+            not re.search(r'(?m)^#\s*$', preview) or
+            not re.search(r'(?mi)^(?:sysname|interface|vlan(?: batch)?|ip route-static|aaa|user-interface|stelnet server|snmp-agent)\b', preview)):
+        raise BackupError('ARTIFACT_INVALID')
+    if vendor not in ('mikrotik', 'huawei'):
         raise BackupError('ARTIFACT_INVALID')
 
 
-def store(root_name, relative, data):
-    validate(data)
+def store(root_name, relative, data, vendor='mikrotik'):
+    validate(data, vendor)
     root = Path(root_name).resolve(strict=True)
     if root == Path('/'):
         raise BackupError('STORAGE_FAILED')

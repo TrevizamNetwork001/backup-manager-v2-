@@ -90,11 +90,14 @@ class BackupRetention
     {
         $job = $artifact->backupExecution;
         $relative = $artifact->relative_path;
+        $expected = $job ? app(EngineJobService::class)->relativePath($job) : null;
+        // Historical artifacts retain their original extension if the device vendor changes.
+        $expectedStem = $expected ? preg_replace('/\.(?:rsc|cfg)\z/', '', $expected) : null;
         if (! $job || $artifact->device_id !== $job->device_id ||
             $artifact->backup_policy_id !== $job->backup_policy_id ||
             $artifact->storage !== 'local' || $artifact->type !== 'config' ||
-            $relative !== app(EngineJobService::class)->relativePath($job) ||
-            ! preg_match('~\A[1-9][0-9]*/[0-9]{4}/[0-9]{2}/[0-9]{2}/execution-[1-9][0-9]*-config\.rsc\z~D', $relative)) {
+            ! in_array($relative, [$expectedStem.'.rsc', $expectedStem.'.cfg'], true) ||
+            ! preg_match('~\A[1-9][0-9]*/[0-9]{4}/[0-9]{2}/[0-9]{2}/execution-[1-9][0-9]*-config\.(?:rsc|cfg)\z~D', $relative)) {
             return ['result' => 'invalid_path'];
         }
         $root = realpath(config('backup.storage_root'));

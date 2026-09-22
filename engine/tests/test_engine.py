@@ -17,6 +17,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import backup_engine
 from drivers.mikrotik_ssh import BackupError, VerifiedHostKeyPolicy, _mikrotik_transport, export_config
+from drivers.huawei_vrp_ssh import export_config as export_huawei_config
+from drivers.huawei_vrp_ssh import _read_prompt
 from storage import store, validate
 
 
@@ -45,7 +47,7 @@ class EngineTests(unittest.TestCase):
     def test_policy_vendor_and_credential_gate_before_secret(self):
         for change, code in [({'method': 'ftp_push'}, 'UNSUPPORTED_POLICY'),
                              ({'artifact_mode': 'binary'}, 'UNSUPPORTED_POLICY'),
-                             ({'vendor': 'Huawei'}, 'UNSUPPORTED_VENDOR'),
+                             ({'vendor': 'Unknown'}, 'UNSUPPORTED_VENDOR'),
                              ({'eligible': False}, 'CREDENTIAL_INVALID')]:
             with self.subTest(change=change), patch.object(backup_engine, 'secret_for') as secret, \
                  patch.object(backup_engine, 'command') as command:
@@ -61,6 +63,104 @@ class EngineTests(unittest.TestCase):
                  patch.object(backup_engine, 'command') as command:
                 backup_engine.execute(self.job)
                 command.assert_called_once_with('engine:fail', 1, error, backup_engine.WORKER_ID)
+
+    def test_huawei_dispatch_policy_and_storage(self):
+        data = b'#\nsysname Lab\n#\ninterface GigabitEthernet0/0/0\n description test\n#\n'
+        with tempfile.TemporaryDirectory() as root, \
+             patch.dict(os.environ, {'BACKUP_STORAGE_ROOT': root}), \
+             patch.object(backup_engine, 'secret_for', return_value='private-secret') as secret, \
+             patch.object(backup_engine, 'export_huawei_config', return_value=data) as huawei, \
+             patch.object(backup_engine, 'export_config') as mikrotik, \
+             patch.object(backup_engine, 'command') as command:
+            job = {**self.job, 'vendor': ' hUaWeI ', 'relative_path': '2/2026/09/22/execution-1-config.cfg'}
+            backup_engine.execute(job)
+            secret.assert_called_once()
+            huawei.assert_called_once()
+            mikrotik.assert_not_called()
+            self.assertEqual(data, Path(root, job['relative_path']).read_bytes())
+            self.assertEqual(hashlib.sha256(data).hexdigest(), hashlib.sha256(Path(root, job['relative_path']).read_bytes()).hexdigest())
+            command.assert_called_with('engine:complete', 1, job['relative_path'], backup_engine.WORKER_ID)
+        for change in [{'method': 'ftp_push'}, {'artifact_mode': 'binary'},
+                       {'artifact_mode': 'both'}, {'eligible': False}]:
+            with self.subTest(change=change), patch.object(backup_engine, 'secret_for') as secret, \
+                 patch.object(backup_engine, 'command') as command:
+                backup_engine.execute({**self.job, 'vendor': 'Huawei', **change})
+                secret.assert_not_called()
+                code = 'CREDENTIAL_INVALID' if change == {'eligible': False} else 'UNSUPPORTED_POLICY'
+                command.assert_called_once_with('engine:fail', 1, code, backup_engine.WORKER_ID)
+
+    def test_huawei_content_validation(self):
+        valid = b'#\nsysname Lab\n#\ninterface GigabitEthernet0/0/0\n description test\n#\n'
+        validate(valid, 'huawei')
+        for invalid in [b'', b'Error: command not found\n' + valid,
+                        valid + b'---- More ----', b'#\nsysname Lab\n',
+                        b'#\nsysname Lab\n#\n\xff']:
+            with self.subTest(invalid=invalid[:20]), self.assertRaises(BackupError):
+                validate(invalid, 'huawei')
+
+    def test_huawei_shell_commands_prompt_and_fallback(self):
+        class Channel:
+            closed = False
+            def __init__(self, paging_error=False):
+                self.pending = [b'Welcome\r\n<EDGE-1>']
+                self.commands = []
+                self.paging_error = paging_error
+            def settimeout(self, value): pass
+            def recv_ready(self): return bool(self.pending)
+            def recv(self, count): return self.pending.pop(0)
+            def exit_status_ready(self): return False
+            def close(self): pass
+            def sendall(self, data):
+                command = data.strip()
+                self.commands.append(command)
+                if command == 'screen-length 0 temporary':
+                    result = 'Error: unsupported' if self.paging_error else ''
+                else:
+                    result = '#\nsysname Lab\n#\ninterface GigabitEthernet0/0/0\n description test\n#'
+                self.pending.append(f'\r\n{command}\r\n{result}\r\n[EDGE-1]'.encode())
+        for fallback in [False, True]:
+            with self.subTest(fallback=fallback), patch('drivers.huawei_vrp_ssh.paramiko.SSHClient') as factory:
+                channel = Channel(fallback)
+                factory.return_value.invoke_shell.return_value = channel
+                output = export_huawei_config('192.0.2.1', 22, 'backup', 'private', observe=lambda *_: None)
+                validate(output, 'huawei')
+                self.assertEqual(['screen-length 0 temporary',
+                                  'display current-configuration | no-more' if fallback else 'display current-configuration'], channel.commands)
+                self.assertNotIn(b'EDGE-1', output)
+                self.assertNotIn(b'screen-length', output)
+                self.assertNotIn(b'display current', output)
+                factory.return_value.load_system_host_keys.assert_not_called()
+                self.assertNotIn('transport_factory', factory.return_value.connect.call_args.kwargs)
+
+    def test_huawei_host_key_errors_auth_timeout_and_paging_are_sanitized(self):
+        key = unittest.mock.Mock()
+        key.get_name.return_value = 'ssh-ed25519'
+        key.asbytes.return_value = b'public-key-only'
+        fingerprint = 'SHA256:' + base64.b64encode(hashlib.sha256(b'public-key-only').digest()).decode().rstrip('=')
+        for trusted, expected in [(None, 'SSH_HOST_KEY_UNKNOWN'), ('SHA256:' + 'A'*43, 'SSH_HOST_KEY_MISMATCH'),
+                                  (fingerprint, None)]:
+            policy = VerifiedHostKeyPolicy('ssh-ed25519', trusted, lambda *_: None)
+            if expected:
+                with self.assertRaises(BackupError) as error:
+                    policy.missing_host_key(None, '192.0.2.1', key)
+                self.assertEqual(expected, error.exception.code)
+            else:
+                policy.missing_host_key(None, '192.0.2.1', key)
+        class PagedChannel:
+            closed = False
+            def recv_ready(self): return True
+            def recv(self, count): return b'#\nsysname Lab\n---- More ----'
+            def exit_status_ready(self): return False
+        with self.assertRaises(BackupError) as error:
+            _read_prompt(PagedChannel(), 1, 'HUAWEI_EXPORT_FAILED')
+        self.assertEqual('HUAWEI_PAGING_FAILED', error.exception.code)
+        for failure, expected in [(paramiko.AuthenticationException('private-secret'), 'SSH_AUTH_FAILED'),
+                                  (socket.timeout('private-secret'), 'SSH_TIMEOUT')]:
+            with patch('drivers.huawei_vrp_ssh.paramiko.SSHClient') as factory:
+                factory.return_value.connect.side_effect = failure
+                with self.assertRaises(BackupError) as error:
+                    export_huawei_config('192.0.2.1', 22, 'backup', 'private-secret', observe=lambda *_: None)
+                self.assertEqual(expected, error.exception.code)
 
     def test_invalid_host_does_not_connect(self):
         with patch('drivers.mikrotik_ssh.paramiko.SSHClient') as client:

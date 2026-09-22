@@ -555,3 +555,47 @@ A recuperação completa do Backup Manager V2 exige, no mínimo:
 - `APP_KEY`;
 - arquivos/artefatos de backup;
 - configuração operacional necessária para reconstruir os serviços.
+
+## Huawei VRP SSH Pull: roteadores e switches
+
+O dispatcher do `engine/backup_engine.py` seleciona explicitamente os drivers
+`mikrotik` e `huawei` após normalizar o vendor com trim e casefold. Outros vendors
+falham com `UNSUPPORTED_VENDOR`. Ambos usam o mesmo claim, lease, heartbeat,
+credencial SSH, observação e confiança explícita da host key, storage local,
+conclusão transacional e retenção. O scheduler e a execução manual produzem o
+mesmo tipo de job. O driver Huawei não altera KEX, cifra, MAC ou algoritmos de
+host key do Paramiko; a inclusão de `ssh-rsa` segue restrita ao driver MikroTik.
+
+O V1 homologou dois perfis: `huawei_vrp` (switch) envia
+`screen-length 0 temporary` e depois `display current-configuration` por shell
+interativo; `huawei_router` usa `display current-configuration | no-more`.
+Na V2, um driver VRP usa o primeiro fluxo e, se o comando de paginação é
+recusado pelo CLI, tenta o segundo. Um único driver atende os dois tipos sem
+campo obrigatório de subtipo. Se o fallback também for recusado, a execução
+falha com `HUAWEI_PAGING_FAILED`. O shell espera os prompts `<HOSTNAME>` e
+`[HOSTNAME]` com prazo por etapa, sem presumir o hostname. Marcadores de
+paginação `More` durante a leitura também causam falha; saída incompleta não
+é armazenada. A homologação com modelos e versões reais ainda é necessária.
+
+Somente `ssh_pull` com `artifact_mode=config` e credencial `ssh` é aceito.
+O conteúdo precisa ser UTF-8, ter tamanho válido, separadores `#` e ao menos
+um comando VRP reconhecível; mensagens de erro de CLI e paginação são rejeitadas
+no Python e no Laravel. O artefato é `type=config`, `storage=local`, SHA256
+verificado no registro, escrito via arquivo temporário e rename atômico. O path
+mantém IDs/data padronizados e usa `.cfg` para Huawei; `.rsc` permanece para
+MikroTik e seus artefatos antigos. A retenção valida ambos os formatos contra
+IDs e data do job antes de tocar no arquivo, inclusive se o vendor cadastrado
+mudar posteriormente. Novos códigos sanitizados:
+`HUAWEI_PROMPT_FAILED`, `HUAWEI_PAGING_FAILED` e `HUAWEI_EXPORT_FAILED`.
+
+Homologação manual futura para **um roteador e um switch**, separadamente:
+cadastrar equipamento Huawei e credencial SSH, observar host key por uma
+execução, conferir fingerprint por canal independente, confiar na chave,
+associar política `ssh_pull`/`config`, enfileirar execução manual, conferir
+artefato e SHA256, e depois confirmar execução via scheduler. Não executar
+esses passos nos testes automatizados.
+
+Huawei OLT está fora desta fase. O próximo bloco deve estudar o fluxo FTP/FTPS
+homologado no V1, incluindo disparo eventual por SSH/Telnet, recebimento,
+estabilização e correlação do arquivo. Pure-FTPd será o serviço de recepção;
+o Python não implementará um servidor FTP.

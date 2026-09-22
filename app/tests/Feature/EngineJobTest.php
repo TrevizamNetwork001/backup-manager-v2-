@@ -234,4 +234,55 @@ class EngineJobTest extends TestCase
             rmdir($root);
         }
     }
+
+    public function test_huawei_config_uses_cfg_and_existing_lifecycle(): void
+    {
+        $job = $this->queued();
+        $job->device->update(['vendor' => ' hUaWeI ']);
+        $engine = app(EngineJobService::class);
+        $engine->claim();
+        $relative = $engine->relativePath($job);
+        $this->assertStringEndsWith('-config.cfg', $relative);
+        $root = sys_get_temp_dir().'/huawei-test-'.bin2hex(random_bytes(8));
+        mkdir($root, 0700);
+        config()->set('backup.storage_root', $root);
+        $path = $root.'/'.$relative;
+        mkdir(dirname($path), 0700, true);
+        try {
+            foreach (['', 'Error: denied', "#\nsysname Lab\n#\n---- More ----\n"] as $invalid) {
+                file_put_contents($path, $invalid);
+                try { $engine->complete($job->id, $relative); $this->fail('Huawei inválido aceito.'); }
+                catch (ValidationException) { $this->assertSame('running', $job->fresh()->status); }
+            }
+            $contents = "#\nsysname Lab\n#\ninterface GigabitEthernet0/0/0\n description test\n#\n";
+            file_put_contents($path, $contents);
+            $artifact = $engine->complete($job->id, $relative);
+            $this->assertSame('config', $artifact->type);
+            $this->assertSame('local', $artifact->storage);
+            $this->assertSame(hash('sha256', $contents), $artifact->sha256);
+            $this->assertSame('succeeded', $job->fresh()->status);
+            $this->actingAs(User::factory()->create());
+            $this->get(route('backup-artifacts.index'))->assertOk()->assertSee('MK')
+                ->assertDontSee('senha-super-secreta')->assertDontSee('GigabitEthernet');
+            $this->get(route('devices.index'))->assertOk()->assertSee('hUaWeI');
+        } finally {
+            unlink($path);
+            rmdir(dirname($path));
+            rmdir(dirname(dirname($path)));
+            rmdir(dirname(dirname(dirname($path))));
+            rmdir(dirname(dirname(dirname(dirname($path)))));
+            rmdir($root);
+        }
+    }
+
+    public function test_huawei_errors_have_fixed_messages(): void
+    {
+        $job = $this->queued();
+        $engine = app(EngineJobService::class);
+        $engine->claim();
+        $engine->fail($job->id, 'HUAWEI_PAGING_FAILED');
+        $this->assertSame('HUAWEI_PAGING_FAILED', $job->fresh()->error_code);
+        $this->assertSame('Paginação Huawei não pôde ser desativada.', $job->fresh()->error_message);
+        $this->assertStringNotContainsString('senha-super-secreta', $job->fresh()->error_message);
+    }
 }

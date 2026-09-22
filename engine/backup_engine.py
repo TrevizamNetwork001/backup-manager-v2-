@@ -7,6 +7,7 @@ import threading
 import time
 
 from drivers.mikrotik_ssh import BackupError, export_config
+from drivers.huawei_vrp_ssh import export_config as export_huawei_config
 from storage import store
 
 
@@ -56,20 +57,23 @@ def execute(job):
     monitor = threading.Thread(target=heartbeat, daemon=True)
     monitor.start()
     try:
+        drivers = {'mikrotik': export_config, 'huawei': export_huawei_config}
+        vendor = job['vendor'].strip().casefold()
+        driver = drivers.get(vendor)
+        if driver is None:
+            raise BackupError('UNSUPPORTED_VENDOR')
         if job['method'] != 'ssh_pull' or job['artifact_mode'] != 'config':
             raise BackupError('UNSUPPORTED_POLICY')
-        if job['vendor'].strip().casefold() != 'mikrotik':
-            raise BackupError('UNSUPPORTED_VENDOR')
         if not job['eligible']:
             raise BackupError('CREDENTIAL_INVALID')
         password = secret_for(job_id)
-        data = export_config(job['host'], job['port'], job['username'], password,
+        data = driver(job['host'], job['port'], job['username'], password,
                              job.get('ssh_host_key_algorithm'), job.get('ssh_host_key_fingerprint'),
                              lambda algorithm, fingerprint: command('engine:observe-host-key', job_id,
                                                                     WORKER_ID, job['host'], algorithm, fingerprint))
         del password
         relative = job['relative_path']
-        store(os.environ['BACKUP_STORAGE_ROOT'], relative, data)
+        store(os.environ['BACKUP_STORAGE_ROOT'], relative, data, vendor)
         command('engine:complete', job_id, relative, WORKER_ID)
         status = 'succeeded'
     except BackupError as error:
