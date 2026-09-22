@@ -1,0 +1,43 @@
+# Segredos da infraestrutura
+.env
+.env.*
+!.env.example
+
+# Dados persistentes
+storage/postgres/
+storage/redis/
+storage/backups/
+storage/incoming/
+storage/quarantine/
+storage/tmp/
+
+# Backups de configuração locais
+compose.yml.bak
+compose.yml.bak2
+compose.yml.bak*
+
+# Laravel local
+app/.env
+
+# Dependências/runtime
+app/vendor/
+app/node_modules/
+
+# Laravel runtime
+app/storage/logs/*
+!app/storage/logs/.gitignore
+
+app/storage/framework/cache/*
+!app/storage/framework/cache/.gitignore
+
+app/storage/framework/sessions/*
+!app/storage/framework/sessions/.gitignore
+
+app/storage/framework/views/*
+!app/storage/framework/views/.gitignore
+
+# SO/editor
+.DS_Store
+Thumbs.db
+*.swp
+*.tmp
