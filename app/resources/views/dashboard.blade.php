@@ -12,26 +12,20 @@
 
     <article class="metric-card">
         <span class="metric-label">Equipamentos</span>
-        <strong class="metric-value">0</strong>
+        <strong class="metric-value">{{ $deviceCount }}</strong>
         <span class="metric-detail">cadastrados</span>
     </article>
 
-    <article class="metric-card healthy">
-        <span class="metric-label">Protegidos</span>
-        <strong class="metric-value">0</strong>
-        <span class="metric-detail">backup atualizado</span>
+    <article class="metric-card">
+        <span class="metric-label">Políticas</span>
+        <strong class="metric-value">{{ $policyCount }}</strong>
+        <span class="metric-detail">cadastradas</span>
     </article>
 
-    <article class="metric-card warning">
-        <span class="metric-label">Atrasados</span>
-        <strong class="metric-value">0</strong>
-        <span class="metric-detail">requerem atenção</span>
-    </article>
-
-    <article class="metric-card danger">
-        <span class="metric-label">Falhando</span>
-        <strong class="metric-value">0</strong>
-        <span class="metric-detail">com erro</span>
+    <article class="metric-card">
+        <span class="metric-label">Execuções</span>
+        <strong class="metric-value">{{ $executionCount }}</strong>
+        <span class="metric-detail">registradas</span>
     </article>
 
 </div>
@@ -41,8 +35,8 @@
     <article class="panel">
         <div class="panel-header">
             <div>
-                <h2>Estado dos backups</h2>
-                <p>Resumo operacional dos equipamentos.</p>
+                <h2>Execução de backups</h2>
+                <p>O motor de backup ainda não está disponível.</p>
             </div>
 
             <span class="badge neutral">Sem dados</span>
@@ -51,11 +45,10 @@
         <div class="empty-state">
             <div class="empty-icon">↻</div>
 
-            <h3>Nenhum equipamento cadastrado</h3>
+            <h3>Sem dados operacionais</h3>
 
             <p>
-                Quando os primeiros equipamentos forem adicionados,
-                a saúde dos backups aparecerá aqui.
+                As execuções cadastradas nesta etapa são registros de teste e preparação.
             </p>
         </div>
     </article>

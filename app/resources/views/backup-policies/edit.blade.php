@@ -5,6 +5,8 @@
 @section('content')
 <div class="page-width">
 @if(session('success')) <div class="alert-success">{{ session('success') }}</div> @endif
+@if(session('warning')) <div class="alert-success">{{ session('warning') }}</div> @endif
+@error('association') <div class="alert-success">{{ $message }}</div> @enderror
 <article class="panel form-panel">
     <div class="panel-header"><div><h2>{{ $backupPolicy->name }}</h2></div></div>
     <form method="POST" action="{{ route('backup-policies.update', $backupPolicy) }}">@include('backup-policies._form')</form>
@@ -23,6 +25,9 @@
                     <td>{{ $association->credential->name }} · {{ strtoupper($association->credential->type) }} · {{ $association->credential->username }}</td>
                     <td><span class="badge {{ $association->is_active ? 'success' : 'neutral' }}">{{ $association->is_active ? 'Ativa' : 'Inativa' }}</span></td>
                     <td class="table-actions">
+                        @if($association->is_active && $backupPolicy->is_active && $association->device->is_active && $association->credential->is_active)
+                            <form method="POST" action="{{ route('backup-policies.associations.executions.store', [$backupPolicy, $association]) }}">@csrf<button class="table-action" type="submit">Criar execução</button></form>
+                        @endif
                         <form method="POST" action="{{ route('backup-policies.associations.update', [$backupPolicy, $association]) }}">@csrf @method('PATCH')<input type="hidden" name="is_active" value="{{ $association->is_active ? 0 : 1 }}"><button class="table-action" type="submit">{{ $association->is_active ? 'Desativar' : 'Ativar' }}</button></form>
                         <form method="POST" action="{{ route('backup-policies.associations.destroy', [$backupPolicy, $association]) }}" onsubmit="return confirm('Remover esta associação?');">@csrf @method('DELETE')<button class="table-action danger-text" type="submit">Remover</button></form>
                     </td>

@@ -1,0 +1,94 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
+
+class BackupExecution extends Model
+{
+    public const STATUSES = ['pending', 'queued', 'running', 'succeeded', 'failed', 'cancelled'];
+    public const ORIGINS = ['manual', 'scheduler'];
+    private const TRANSITIONS = [
+        'pending' => ['queued', 'cancelled'],
+        'queued' => ['running', 'cancelled'],
+        'running' => ['succeeded', 'failed'],
+    ];
+
+    protected $fillable = [
+        'device_backup_policy_id', 'backup_policy_id', 'device_id', 'credential_id',
+        'origin', 'status', 'attempt', 'started_at', 'finished_at',
+    ];
+
+    protected function casts(): array
+    {
+        return ['attempt' => 'integer', 'started_at' => 'datetime', 'finished_at' => 'datetime'];
+    }
+
+    public function association(): BelongsTo
+    {
+        return $this->belongsTo(DeviceBackupPolicy::class, 'device_backup_policy_id');
+    }
+
+    public function backupPolicy(): BelongsTo
+    {
+        return $this->belongsTo(BackupPolicy::class);
+    }
+
+    public function device(): BelongsTo
+    {
+        return $this->belongsTo(Device::class);
+    }
+
+    public function credential(): BelongsTo
+    {
+        return $this->belongsTo(Credential::class);
+    }
+
+    public static function createManual(DeviceBackupPolicy $association): self
+    {
+        return DB::transaction(function () use ($association) {
+            $association = DeviceBackupPolicy::query()->with([
+                'backupPolicy:id,is_active', 'device:id,is_active', 'credential:id,is_active',
+            ])
+                ->lockForUpdate()->findOrFail($association->id);
+            if (! $association->is_active || ! $association->backupPolicy->is_active ||
+                ! $association->device->is_active || ! $association->credential->is_active) {
+                throw ValidationException::withMessages(['association' => 'A associação, política, equipamento e credencial devem estar ativos.']);
+            }
+
+            return self::create([
+                'device_backup_policy_id' => $association->id,
+                'backup_policy_id' => $association->backup_policy_id,
+                'device_id' => $association->device_id,
+                'credential_id' => $association->credential_id,
+                'origin' => 'manual', 'status' => 'pending', 'attempt' => 1,
+            ]);
+        });
+    }
+
+    public function transitionTo(string $next): void
+    {
+        DB::transaction(function () use ($next) {
+            $current = self::query()->lockForUpdate()->findOrFail($this->id);
+            if (! in_array($next, self::TRANSITIONS[$current->status] ?? [], true)) {
+                throw ValidationException::withMessages(['status' => 'Transição de estado inválida.']);
+            }
+            $current->status = $next;
+            if ($next === 'running') {
+                $current->started_at ??= now();
+            }
+            if (in_array($next, ['succeeded', 'failed', 'cancelled'], true)) {
+                $current->finished_at = now();
+            }
+            if ($next === 'failed') {
+                $current->error_code = 'DEVELOPMENT_TEST_FAILURE';
+                $current->error_message = 'Falha simulada pela ação administrativa de desenvolvimento.';
+            }
+            $current->save();
+            $this->setRawAttributes($current->getAttributes(), true);
+        });
+    }
+}

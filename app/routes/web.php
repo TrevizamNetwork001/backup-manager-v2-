@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\BackupExecutionController;
 use App\Http\Controllers\BackupPolicyController;
 use App\Http\Controllers\DeviceBackupPolicyController;
 use App\Http\Controllers\DashboardController;
@@ -31,6 +32,15 @@ Route::middleware('auth')->group(function () {
     Route::post('backup-policies/{backup_policy}/associations', [DeviceBackupPolicyController::class, 'store'])->name('backup-policies.associations.store');
     Route::patch('backup-policies/{backup_policy}/associations/{association}', [DeviceBackupPolicyController::class, 'update'])->name('backup-policies.associations.update');
     Route::delete('backup-policies/{backup_policy}/associations/{association}', [DeviceBackupPolicyController::class, 'destroy'])->name('backup-policies.associations.destroy');
+    Route::post('backup-policies/{backup_policy}/associations/{association}/executions', [BackupExecutionController::class, 'storeManual'])->name('backup-policies.associations.executions.store');
+
+    Route::get('backup-executions', [BackupExecutionController::class, 'index'])->name('backup-executions.index');
+    Route::get('backup-executions/{backup_execution}', [BackupExecutionController::class, 'show'])->name('backup-executions.show');
+    Route::post('backup-executions/{backup_execution}/queue', [BackupExecutionController::class, 'queue'])->name('backup-executions.queue');
+    Route::post('backup-executions/{backup_execution}/start', [BackupExecutionController::class, 'start'])->name('backup-executions.start');
+    Route::post('backup-executions/{backup_execution}/succeed', [BackupExecutionController::class, 'succeed'])->name('backup-executions.succeed');
+    Route::post('backup-executions/{backup_execution}/fail', [BackupExecutionController::class, 'fail'])->name('backup-executions.fail');
+    Route::post('backup-executions/{backup_execution}/cancel', [BackupExecutionController::class, 'cancel'])->name('backup-executions.cancel');
 
     Route::post('/logout', [AuthController::class, 'destroy'])->name('logout');
 });

@@ -39,7 +39,7 @@ class BackupPolicyController extends Controller
     public function edit(BackupPolicy $backupPolicy): View
     {
         $backupPolicy->load(['deviceBackupPolicies' => fn ($query) => $query
-            ->with(['device:id,name', 'credential:id,name,type,username'])
+            ->with(['device:id,name,is_active', 'credential:id,name,type,username,is_active'])
             ->orderBy('id')]);
 
         $devices = Device::query()->where('is_active', true)->orderBy('name')->get(['id', 'name']);

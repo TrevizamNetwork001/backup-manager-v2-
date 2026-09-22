@@ -42,6 +42,10 @@ class DeviceBackupPolicyController extends Controller
     public function destroy(BackupPolicy $backupPolicy, DeviceBackupPolicy $association): RedirectResponse
     {
         abort_unless($association->backup_policy_id === $backupPolicy->id, 404);
+        if ($association->backupExecutions()->exists()) {
+            return redirect()->route('backup-policies.edit', $backupPolicy)
+                ->with('warning', 'Esta associação possui execuções históricas e não pode ser removida.');
+        }
         $association->delete();
 
         return redirect()->route('backup-policies.edit', $backupPolicy)

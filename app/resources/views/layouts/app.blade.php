@@ -55,10 +55,10 @@
                 Políticas
             </a>
 
-            <span class="nav-link disabled">
+            <a href="{{ route('backup-executions.index') }}" class="nav-link {{ request()->routeIs('backup-executions.*') ? 'active' : '' }}">
                 <span class="nav-icon">↻</span>
                 Execuções
-            </span>
+            </a>
 
             <span class="nav-link disabled">
                 <span class="nav-icon">▤</span>

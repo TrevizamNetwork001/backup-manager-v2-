@@ -947,6 +947,11 @@ input {
     background: rgba(61, 207, 142, .1);
 }
 
+.badge.danger {
+    color: #f39b9b;
+    background: rgba(220, 82, 82, .12);
+}
+
 .table-actions-column {
     width: 150px;
 }
