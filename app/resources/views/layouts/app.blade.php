@@ -20,17 +20,20 @@
         </div>
 
         <nav class="sidebar-nav">
-            <a href="{{ route('dashboard') }}" class="nav-link active">
+            <a href="{{ route('dashboard') }}" class="nav-link {{ request()->routeIs('dashboard') ? 'active' : '' }}">
                 <span class="nav-icon">⌂</span>
                 Dashboard
             </a>
 
             <div class="nav-section">Infraestrutura</div>
 
-            <span class="nav-link disabled">
+            <a
+                href="{{ route('sites.index') }}"
+                class="nav-link {{ request()->routeIs('sites.*') ? 'active' : '' }}"
+            >
                 <span class="nav-icon">◎</span>
                 Sites / POPs
-            </span>
+            </a>
 
             <span class="nav-link disabled">
                 <span class="nav-icon">▣</span>
