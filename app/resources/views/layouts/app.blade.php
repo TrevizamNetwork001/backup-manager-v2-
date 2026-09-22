@@ -64,6 +64,13 @@
                 <span class="nav-icon">▤</span>
                 Artefatos
             </a>
+            @if(auth()->user()->is_admin)
+                <div class="nav-section">Administração</div>
+                <a href="{{ route('settings.edit') }}" class="nav-link {{ request()->routeIs('settings.*') ? 'active' : '' }}">
+                    <span class="nav-icon">⚙</span>
+                    Configurações
+                </a>
+            @endif
         </nav>
 
         <div class="sidebar-footer">

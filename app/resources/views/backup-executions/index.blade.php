@@ -22,7 +22,7 @@
             <td><a class="table-action" href="{{ route('backup-executions.show', $execution) }}">#{{ $execution->id }}</a></td>
             <td>{{ $execution->device->name }}</td><td>{{ $execution->backupPolicy->name }}</td>
             <td>{{ ucfirst($execution->origin) }}</td><td><span class="badge {{ $execution->status === 'succeeded' ? 'success' : ($execution->status === 'failed' ? 'danger' : 'neutral') }}">{{ strtoupper($execution->status) }}</span></td>
-            <td>{{ $execution->attempt }}</td><td>{{ $execution->created_at?->format('d/m/Y H:i') }}</td><td>{{ $execution->started_at?->format('d/m/Y H:i') ?? '—' }}</td><td>{{ $execution->finished_at?->format('d/m/Y H:i') ?? '—' }}</td>
+            <td>{{ $execution->attempt }}</td><td>{{ app(\App\Services\InstanceTimezone::class)->format($execution->created_at, 'd/m/Y H:i') }}</td><td>{{ app(\App\Services\InstanceTimezone::class)->format($execution->started_at, 'd/m/Y H:i') ?? '—' }}</td><td>{{ app(\App\Services\InstanceTimezone::class)->format($execution->finished_at, 'd/m/Y H:i') ?? '—' }}</td>
         </tr>@endforeach</tbody>
     </table></div>
     {{ $executions->links() }}

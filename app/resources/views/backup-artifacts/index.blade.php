@@ -12,7 +12,7 @@
         <td>{{ $artifact->device->name }}</td><td>{{ $artifact->backupPolicy->name }}</td>
         <td><a class="table-action" href="{{ route('backup-executions.show', $artifact->backup_execution_id) }}">#{{ $artifact->backup_execution_id }}</a></td>
         <td>{{ $artifact->type }}</td><td>{{ number_format($artifact->size_bytes / 1024, 1, ',', '.') }} KB</td>
-        <td><code>{{ substr($artifact->sha256, 0, 12) }}…</code></td><td>{{ $artifact->created_at?->format('d/m/Y H:i') }}</td>
+        <td><code>{{ substr($artifact->sha256, 0, 12) }}…</code></td><td>{{ app(\App\Services\InstanceTimezone::class)->format($artifact->created_at, 'd/m/Y H:i') }}</td>
     </tr>@endforeach
     </tbody></table></div>{{ $artifacts->links() }}@endif
 </article></div>

@@ -348,7 +348,7 @@ Uma execução manual nasce `pending`. A ação autenticada **Enfileirar** muda 
 localmente `php artisan engine:claim` a cada cinco segundos. Esse comando usa uma
 transação PostgreSQL com `FOR UPDATE SKIP LOCKED`, escolhe uma execução por vez e
 grava `running` antes de devolver os metadados. Duas instâncias não recebem o mesmo
-job. Estados terminais não são reivindicados novamente. Não há scheduler ou retry.
+job. Estados terminais não são reivindicados novamente. Não há retry automático.
 
 O engine chama comandos Artisan locais para acessar o control plane. Ele não acessa
 PostgreSQL diretamente nem expõe HTTP. O comando `engine:secret {id}` verifica que
@@ -409,8 +409,8 @@ marca até 100 jobs `running` por invocação como `failed`/`ENGINE_STALE` quand
 heartbeat ultrapassa `BACKUP_ENGINE_STALE_SECONDS` (padrão 300); a seleção usa
 transação e `FOR UPDATE SKIP LOCKED`, competindo com o update do heartbeat sob o
 mesmo row lock. Jobs antigos sem heartbeat usam `started_at`. Não há reexecução
-automática. Acione o comando periodicamente por operação externa até existir
-scheduler; revise jobs e artefatos órfãos após uma queda. O worker só conclui ou
+automática. O Laravel scheduler aciona a recuperação a cada minuto;
+revise jobs e artefatos órfãos após uma queda. O worker só conclui ou
 falha seu próprio job e uma recuperação impede conclusão posterior.
 
 Logs operacionais do Python são JSON estruturado, com IDs, status, código de erro
@@ -427,10 +427,50 @@ política e clicar **Enfileirar**. Conferir execução, artefato e logs estrutur
 do container. Testes automatizados usam mocks e não conectam a roteadores.
 
 Esta fase não inclui FTP Push, backup binário, outros vendors, retenção física,
-storage externo, Telegram, download, scheduler ou retry. Timestamps operacionais
-devem ser armazenados de forma consistente em UTC. Futuramente a instância terá
-timezone IANA configurável; neste ambiente a apresentação deverá usar
-`America/Sao_Paulo`, sem conversões hardcoded espalhadas pelo código.
+storage externo, Telegram, download ou retry.
+
+## Timezone da instância e scheduler
+
+`application_settings` contém uma única linha (`id=1`) com o timezone IANA da
+instância. A instalação começa em `America/Sao_Paulo`. Um administrador pode escolher
+qualquer identificador suportado pelo PHP em **Configurações**; o serviço
+`InstanceTimezone` valida, lê e formata os horários. A UI exibe a hora atual no
+timezone escolhido. O timezone do Laravel permanece UTC para persistência. Trocar
+o timezone altera apenas a apresentação e a interpretação das próximas ocorrências;
+não reescreve timestamps históricos. Execuções, artefatos e horários de observação e
+confiança da host key são apresentados no timezone da instância.
+
+O comando `php artisan backups:schedule` avalia associações, políticas, equipamentos
+e credenciais ativos. Políticas manuais são ignoradas. `daily` usa `schedule_time`;
+`weekly` usa também `schedule_weekday` com a convenção existente ISO, segunda-feira
+= 1 e domingo = 7. O comando recebe um instante controlável no serviço para testes.
+Uma ocorrência válida gera diretamente uma execução `queued`, `origin=scheduler`,
+`attempt=1`. O engine a reivindica pelo mesmo fluxo de jobs manuais e mantém a
+exigência de host key confiada. O scheduler não executa SSH nem lê segredos.
+
+`scheduled_for` identifica a ocorrência lógica em UTC, separada do horário de
+criação e do início real pelo engine. A constraint única em
+`(device_backup_policy_id, scheduled_for)` impede duplicatas mesmo sob comandos
+concorrentes; execuções manuais têm `scheduled_for=NULL`. A inserção com conflito
+de unicidade não altera a execução anterior. `withoutOverlapping()`
+é uma proteção adicional do agendador Laravel.
+
+A janela é `[horário agendado, horário agendado + N minutos)`, com
+`BACKUP_SCHEDULER_GRACE_MINUTES=5` por padrão (aceita 1 a 60). A cada rodada, são consideradas as
+ocorrências do dia local atual e do anterior para cobrir a virada da meia-noite.
+Não há recuperação retroativa de ocorrências fora
+da janela nem catch-up de meses. Horários locais inexistentes por avanço de DST
+são ignorados. Horários ambíguos por retorno de DST seguem a interpretação do PHP;
+refinar a política para essa rara situação fica para uma fase futura.
+
+O Laravel agenda `backups:schedule` e `engine:recover-stale` a cada minuto. O serviço
+Docker `backup-manager-v2-scheduler` executa `php artisan schedule:work` como
+`nobody`, sem portas e sem código de engine. Ele precisa estar ativo em produção;
+sem ele novas execuções automáticas e a recuperação stale deixam de ocorrer.
+
+Refinamento de UI/UX futuro já decidido: atualização automática da execução sem F5,
+indicador “Backup em andamento”, feedback automático de sucesso ou falha e
+apresentação automática do artefato após sucesso. Não faz parte desta fase.
 
 ## APP_KEY e recuperação de credenciais
 

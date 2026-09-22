@@ -9,6 +9,7 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\CredentialController;
 use App\Http\Controllers\DeviceController;
 use App\Http\Controllers\SiteController;
+use App\Http\Controllers\InstanceSettingsController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware('guest')->group(function () {
@@ -18,6 +19,8 @@ Route::middleware('guest')->group(function () {
 
 Route::middleware('auth')->group(function () {
     Route::get('/', DashboardController::class)->name('dashboard');
+    Route::get('settings', [InstanceSettingsController::class, 'edit'])->name('settings.edit');
+    Route::put('settings', [InstanceSettingsController::class, 'update'])->name('settings.update');
 
     Route::resource('sites', SiteController::class)
         ->except(['show']);

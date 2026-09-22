@@ -67,6 +67,30 @@ services:
       backup-storage-init:
         condition: service_completed_successfully
 
+  scheduler:
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+    container_name: backup-manager-v2-scheduler
+    restart: unless-stopped
+    user: nobody
+    working_dir: /var/www/html
+    command: ["php", "artisan", "schedule:work"]
+    environment:
+      BACKUP_ENGINE_STALE_SECONDS: ${BACKUP_ENGINE_STALE_SECONDS:-300}
+      BACKUP_SCHEDULER_GRACE_MINUTES: ${BACKUP_SCHEDULER_GRACE_MINUTES:-5}
+    volumes:
+      - ./app:/var/www/html:ro
+      - ./app/storage:/var/www/html/storage
+      - ./app/bootstrap/cache:/var/www/html/bootstrap/cache
+    networks:
+      - backup-manager-v2
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
   postgres:
     image: postgres:17
     container_name: backup-manager-v2-postgres

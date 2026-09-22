@@ -3,6 +3,8 @@
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use App\Services\EngineJobService;
+use App\Services\BackupScheduler;
+use Illuminate\Support\Facades\Schedule;
 
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
@@ -45,3 +47,10 @@ Artisan::command('engine:heartbeat {id} {worker}', function (EngineJobService $e
 Artisan::command('engine:recover-stale', function (EngineJobService $engine) {
     $this->line((string) $engine->recoverStale());
 });
+
+Artisan::command('backups:schedule', function (BackupScheduler $scheduler) {
+    $this->line((string) $scheduler->run());
+});
+
+Schedule::command('backups:schedule')->everyMinute()->withoutOverlapping();
+Schedule::command('engine:recover-stale')->everyMinute()->withoutOverlapping();

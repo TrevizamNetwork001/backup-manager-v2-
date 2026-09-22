@@ -20,13 +20,13 @@ class BackupExecution extends Model
 
     protected $fillable = [
         'device_backup_policy_id', 'backup_policy_id', 'device_id', 'credential_id',
-        'origin', 'status', 'attempt', 'started_at', 'finished_at',
+        'origin', 'status', 'attempt', 'started_at', 'finished_at', 'scheduled_for',
     ];
 
     protected function casts(): array
     {
         return ['attempt' => 'integer', 'started_at' => 'datetime', 'finished_at' => 'datetime',
-            'claimed_at' => 'datetime', 'heartbeat_at' => 'datetime'];
+            'claimed_at' => 'datetime', 'heartbeat_at' => 'datetime', 'scheduled_for' => 'datetime'];
     }
 
     public function association(): BelongsTo

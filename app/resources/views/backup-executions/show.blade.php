@@ -13,9 +13,10 @@
     <p><strong>Credencial:</strong> {{ $backupExecution->credential->name }} · {{ $backupExecution->credential->username }} · {{ strtoupper($backupExecution->credential->type) }}</p>
     <p><strong>Associação:</strong> #{{ $backupExecution->device_backup_policy_id }}</p>
     <p><strong>Origem:</strong> {{ ucfirst($backupExecution->origin) }} · <strong>Tentativa:</strong> {{ $backupExecution->attempt }}</p>
-    <p><strong>Criado em:</strong> {{ $backupExecution->created_at?->format('d/m/Y H:i:s') }}</p>
-    <p><strong>Iniciado em:</strong> {{ $backupExecution->started_at?->format('d/m/Y H:i:s') ?? '—' }}</p>
-    <p><strong>Finalizado em:</strong> {{ $backupExecution->finished_at?->format('d/m/Y H:i:s') ?? '—' }}</p>
+    @if($backupExecution->origin === 'scheduler')<p><strong>Agendado para:</strong> {{ app(\App\Services\InstanceTimezone::class)->format($backupExecution->scheduled_for) }}</p>@endif
+    <p><strong>Criado em:</strong> {{ app(\App\Services\InstanceTimezone::class)->format($backupExecution->created_at) }}</p>
+    <p><strong>Iniciado em:</strong> {{ app(\App\Services\InstanceTimezone::class)->format($backupExecution->started_at) ?? '—' }}</p>
+    <p><strong>Finalizado em:</strong> {{ app(\App\Services\InstanceTimezone::class)->format($backupExecution->finished_at) ?? '—' }}</p>
     @if($backupExecution->error_code)<p><strong>Código do erro:</strong> {{ $backupExecution->error_code }}</p>@endif
     @if($backupExecution->error_message)<p><strong>Erro:</strong> {{ $backupExecution->error_message }}</p>@endif
     @if($backupExecution->artifact)
@@ -23,7 +24,7 @@
     @endif
     <div class="form-actions"><a href="{{ route('backup-executions.index') }}" class="secondary-button">Voltar</a></div>
 </article>
-@if(in_array($backupExecution->status, ['pending', 'queued'], true))
+@if($backupExecution->origin === 'manual' && in_array($backupExecution->status, ['pending', 'queued'], true))
 <article class="panel form-panel">
     <div class="panel-header"><div><h2>Execução manual</h2><p>Enfileirar libera o processamento assíncrono pelo engine.</p></div></div>
     <div class="form-actions">

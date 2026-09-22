@@ -12,6 +12,6 @@
     <p><strong>Tamanho:</strong> {{ number_format($backupArtifact->size_bytes) }} bytes</p>
     <p><strong>SHA256:</strong> <code>{{ $backupArtifact->sha256 }}</code></p>
     <p><strong>Path relativo:</strong> <code>{{ $backupArtifact->relative_path }}</code></p>
-    <p><strong>Validado em:</strong> {{ $backupArtifact->validated_at?->format('d/m/Y H:i:s') }}</p>
+    <p><strong>Validado em:</strong> {{ app(\App\Services\InstanceTimezone::class)->format($backupArtifact->validated_at) }}</p>
 </article></div>
 @endsection

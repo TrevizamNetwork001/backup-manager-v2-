@@ -35,8 +35,11 @@
         <p>Fingerprint confiado: {{ $device->ssh_host_key_fingerprint ?? '—' }}</p>
         <p>Algoritmo observado: {{ $device->ssh_observed_algorithm ?? '—' }}</p>
         <p>Fingerprint observado: {{ $device->ssh_observed_fingerprint ?? '—' }}</p>
+        @if ($device->ssh_observed_at)
+            <p>Observada em: {{ app(\App\Services\InstanceTimezone::class)->format($device->ssh_observed_at, 'd/m/Y H:i') }}</p>
+        @endif
         @if ($device->ssh_host_key_trusted_at)
-            <p>Confiada em: {{ $device->ssh_host_key_trusted_at->format('d/m/Y H:i') }}</p>
+            <p>Confiada em: {{ app(\App\Services\InstanceTimezone::class)->format($device->ssh_host_key_trusted_at, 'd/m/Y H:i') }}</p>
         @endif
         @error('ssh_host_key') <p>{{ $message }}</p> @enderror
         @if ($device->ssh_observed_fingerprint && ($mismatch || ! $device->ssh_host_key_fingerprint))
