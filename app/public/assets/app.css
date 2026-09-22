@@ -1028,3 +1028,11 @@ input {
 .empty-state {
     min-height: 220px;
 }
+
+.page-toolbar > div strong {
+    font-variant-numeric: tabular-nums;
+}
+
+.empty-state p {
+    max-width: 420px;
+}
