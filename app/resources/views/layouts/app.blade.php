@@ -43,10 +43,10 @@
                 Equipamentos
             </a>
 
-            <span class="nav-link disabled">
+            <a href="{{ route('credentials.index') }}" class="nav-link {{ request()->routeIs('credentials.*') ? 'active' : '' }}">
                 <span class="nav-icon">◆</span>
                 Credenciais
-            </span>
+            </a>
 
             <div class="nav-section">Backup</div>
 

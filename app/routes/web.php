@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\CredentialController;
 use App\Http\Controllers\DeviceController;
 use App\Http\Controllers\SiteController;
 use Illuminate\Support\Facades\Route;
@@ -18,6 +19,9 @@ Route::middleware('auth')->group(function () {
         ->except(['show']);
 
     Route::resource('devices', DeviceController::class)
+        ->except(['show']);
+
+    Route::resource('credentials', CredentialController::class)
         ->except(['show']);
 
     Route::post('/logout', [AuthController::class, 'destroy'])->name('logout');

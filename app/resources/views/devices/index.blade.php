@@ -12,6 +12,10 @@
     </div>
 @endif
 
+@if(session('warning'))
+    <div class="alert-warning">{{ session('warning') }}</div>
+@endif
+
 <div class="page-toolbar">
 
     <div>
