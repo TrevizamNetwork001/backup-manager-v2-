@@ -340,3 +340,27 @@ testado e operacional.
 
 A arquitetura deve permitir evolução futura sem transformar o núcleo de backup em um
 monólito de infraestrutura.
+
+## APP_KEY e recuperação de credenciais
+
+A `APP_KEY` do Laravel é um ativo crítico do Backup Manager V2.
+
+As credenciais de equipamentos são armazenadas criptografadas usando os mecanismos
+nativos do Laravel. A capacidade de descriptografar esses segredos depende da preservação
+da mesma `APP_KEY` usada quando os dados foram gravados.
+
+Regras:
+
+- a `APP_KEY` nunca deve ser versionada no Git;
+- a `APP_KEY` deve fazer parte do procedimento seguro de backup e disaster recovery;
+- restaurar o banco sem restaurar a `APP_KEY` correspondente torna as credenciais
+  existentes irrecuperáveis;
+- a rotação futura da `APP_KEY` deve exigir procedimento controlado de recriptografia;
+- backups da `APP_KEY` devem ser protegidos separadamente dos backups comuns da aplicação.
+
+A recuperação completa do Backup Manager V2 exige, no mínimo:
+
+- banco PostgreSQL;
+- `APP_KEY`;
+- arquivos/artefatos de backup;
+- configuração operacional necessária para reconstruir os serviços.
