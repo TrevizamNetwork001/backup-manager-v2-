@@ -145,6 +145,7 @@ class HuaweiOltFtpTest extends TestCase
         mkdir($root, 0700);
         config()->set('backup.storage_root', $root);
         $relative = $engine->relativePath($job);
+        $this->assertMatchesRegularExpression('~\ABackup Manager/LAB/OLT/[0-9]{2}-[0-9]{2}-[0-9]{4}/OLT_[0-9]{14}\.cfg\z~', $relative);
         $path = $root.'/'.$relative;
         mkdir(dirname($path), 0700, true);
         try {

@@ -76,7 +76,7 @@ def execute(job):
             raise BackupError('CREDENTIAL_INVALID')
         if olt:
             collect_huawei_olt_config(job,
-                                      lambda: command('engine:complete', job_id, job['relative_path'], WORKER_ID))
+                                      lambda relative: command('engine:complete', job_id, relative, WORKER_ID))
         else:
             password = secret_for(job_id)
             observe = lambda algorithm, fingerprint: command('engine:observe-host-key', job_id,
@@ -85,7 +85,7 @@ def execute(job):
                           job.get('ssh_host_key_algorithm'), job.get('ssh_host_key_fingerprint'), observe)
             del password
             relative = job['relative_path']
-            store(os.environ['BACKUP_STORAGE_ROOT'], relative, data, vendor)
+            relative = store(os.environ['BACKUP_STORAGE_ROOT'], relative, data, vendor, job_id)
             command('engine:complete', job_id, relative, WORKER_ID)
         status = 'succeeded'
     except BackupError as error:

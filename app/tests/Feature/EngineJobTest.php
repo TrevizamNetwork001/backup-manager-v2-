@@ -179,6 +179,7 @@ class EngineJobTest extends TestCase
         mkdir($root);
         config()->set('backup.storage_root', $root);
         $relative = $engine->relativePath($job);
+        $this->assertMatchesRegularExpression('~\ABackup Manager/LABORATORIO/MK/[0-9]{2}-[0-9]{2}-[0-9]{4}/MK_[0-9]{14}\.rsc\z~', $relative);
         mkdir(dirname($root.'/'.$relative), 0700, true);
         $contents = "# RouterOS 7\n/interface bridge\nadd name=bridge1\n";
         file_put_contents($root.'/'.$relative, $contents);
@@ -199,12 +200,24 @@ class EngineJobTest extends TestCase
                 ->assertDontSee('senha-super-secreta');
         } finally {
             unlink($root.'/'.$relative);
-            rmdir(dirname($root.'/'.$relative));
-            rmdir(dirname(dirname($root.'/'.$relative)));
-            rmdir(dirname(dirname(dirname($root.'/'.$relative))));
-            rmdir(dirname(dirname(dirname(dirname($root.'/'.$relative)))));
+            $dir = dirname($root.'/'.$relative);
+            while ($dir !== $root) { rmdir($dir); $dir = dirname($dir); }
             rmdir($root);
         }
+    }
+
+    public function test_final_path_sanitizes_linked_site_and_device_and_accepts_only_own_collision_suffix(): void
+    {
+        $job = $this->queued();
+        $job->device->site->update(['name' => 'POP / Centro..']);
+        $job->device->update(['name' => '../ OLT Huawei Base']);
+        $engine = app(EngineJobService::class);
+        $relative = $engine->relativePath($job);
+        $this->assertMatchesRegularExpression('~\ABackup Manager/POP-CENTRO/OLT-HUAWEI-BASE/[0-9]{2}-[0-9]{2}-[0-9]{4}/OLT-HUAWEI-BASE_[0-9]{14}\.rsc\z~', $relative);
+        $this->assertTrue($engine->matchesFinalPath($job, $relative));
+        $collision = substr($relative, 0, -4).'-exec-'.$job->id.'.rsc';
+        $this->assertTrue($engine->matchesFinalPath($job, $collision));
+        $this->assertFalse($engine->matchesFinalPath($job, substr($relative, 0, -4).'-exec-999.rsc'));
     }
 
     public function test_invalid_files_and_traversal_are_rejected(): void
@@ -227,10 +240,8 @@ class EngineJobTest extends TestCase
             $engine->resolvePath('../outside.rsc');
         } finally {
             unlink($root.'/'.$relative);
-            rmdir(dirname($root.'/'.$relative));
-            rmdir(dirname(dirname($root.'/'.$relative)));
-            rmdir(dirname(dirname(dirname($root.'/'.$relative))));
-            rmdir(dirname(dirname(dirname(dirname($root.'/'.$relative)))));
+            $dir = dirname($root.'/'.$relative);
+            while ($dir !== $root) { rmdir($dir); $dir = dirname($dir); }
             rmdir($root);
         }
     }
@@ -242,7 +253,7 @@ class EngineJobTest extends TestCase
         $engine = app(EngineJobService::class);
         $engine->claim();
         $relative = $engine->relativePath($job);
-        $this->assertStringEndsWith('-config.cfg', $relative);
+        $this->assertMatchesRegularExpression('~\ABackup Manager/LABORATORIO/MK/[0-9]{2}-[0-9]{2}-[0-9]{4}/MK_[0-9]{14}\.cfg\z~', $relative);
         $root = sys_get_temp_dir().'/huawei-test-'.bin2hex(random_bytes(8));
         mkdir($root, 0700);
         config()->set('backup.storage_root', $root);
@@ -267,10 +278,8 @@ class EngineJobTest extends TestCase
             $this->get(route('devices.index'))->assertOk()->assertSee('hUaWeI');
         } finally {
             unlink($path);
-            rmdir(dirname($path));
-            rmdir(dirname(dirname($path)));
-            rmdir(dirname(dirname(dirname($path))));
-            rmdir(dirname(dirname(dirname(dirname($path)))));
+            $dir = dirname($path);
+            while ($dir !== $root) { rmdir($dir); $dir = dirname($dir); }
             rmdir($root);
         }
     }

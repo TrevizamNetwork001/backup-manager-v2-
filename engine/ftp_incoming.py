@@ -113,8 +113,9 @@ def receive(root_name, device_id, expected, storage_root, relative, timeout, sta
                 if path.lstat().st_mtime_ns != info.st_mtime_ns or path.lstat().st_size != info.st_size:
                     observed.pop(path.name, None)
                     continue
-                store(storage_root, relative, data, 'huawei_olt')
-                complete()
+                final_relative = store(storage_root, relative, data, 'huawei_olt',
+                                       int(expected[len('bm-exec-'):-len('.cfg')]))
+                complete(final_relative)
                 try:
                     path.unlink()
                 except OSError:

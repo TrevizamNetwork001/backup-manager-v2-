@@ -30,7 +30,7 @@ class EngineTests(unittest.TestCase):
         self.job = dict(id=1, device_id=2, policy_id=3, host='192.0.2.1', port=22,
                         username='backup', method='ssh_pull', artifact_mode='config',
                         vendor='MiKroTik', platform='network', eligible=True,
-                        relative_path='2/2026/09/22/execution-1-config.rsc')
+                        relative_path='Backup Manager/POP-CENTRO/MK/22-09-2026/MK_20260922121530.rsc')
 
     def test_storage_uses_atomic_replace_and_rejects_traversal_and_invalid_data(self):
         with tempfile.TemporaryDirectory() as root:
@@ -46,6 +46,19 @@ class EngineTests(unittest.TestCase):
             for invalid in [b'', b'error: denied', b'\x00', b'x' * (8 * 1024 * 1024 + 1)]:
                 with self.assertRaises(BackupError):
                     validate(invalid)
+
+    def test_storage_collision_keeps_existing_file_and_uses_execution_id(self):
+        with tempfile.TemporaryDirectory() as root:
+            relative = self.job['relative_path']
+            data = b'/interface bridge\nadd name=br1\n'
+            first = store(root, relative, data, execution_id=1)
+            second = store(root, relative, data + b'# second\n', execution_id=2)
+            self.assertEqual(relative, first)
+            self.assertEqual(relative[:-4] + '-exec-2.rsc', second)
+            self.assertEqual(data, Path(root, first).read_bytes())
+            self.assertEqual(data + b'# second\n', Path(root, second).read_bytes())
+            with self.assertRaises(BackupError):
+                store(root, relative, data, execution_id=2)
 
     def test_policy_vendor_and_credential_gate_before_secret(self):
         for change, code in [({'method': 'ftp_push'}, 'UNSUPPORTED_POLICY'),
@@ -75,7 +88,7 @@ class EngineTests(unittest.TestCase):
              patch.object(backup_engine, 'export_huawei_config', return_value=data) as huawei, \
              patch.object(backup_engine, 'export_config') as mikrotik, \
              patch.object(backup_engine, 'command') as command:
-            job = {**self.job, 'vendor': ' hUaWeI ', 'relative_path': '2/2026/09/22/execution-1-config.cfg'}
+            job = {**self.job, 'vendor': ' hUaWeI ', 'relative_path': 'Backup Manager/POP-CENTRO/MK/22-09-2026/MK_20260922121530.cfg'}
             backup_engine.execute(job)
             secret.assert_called_once()
             huawei.assert_called_once()
@@ -115,12 +128,13 @@ class EngineTests(unittest.TestCase):
                     file.write(content[20:])
             writer = threading.Thread(target=upload)
             writer.start()
-            receive(root, 2, path.name, storage_root, '2/2026/09/22/execution-1-config.cfg',
-                    4, 1, lambda: completed.append(True), poll=0.1)
+            relative = 'Backup Manager/POP-CENTRO/OLT/22-09-2026/OLT_20260922121530.cfg'
+            receive(root, 2, path.name, storage_root, relative,
+                    4, 1, lambda final: completed.append(final), poll=0.1)
             writer.join()
-            self.assertEqual([True], completed)
+            self.assertEqual([relative], completed)
             self.assertFalse(path.exists())
-            self.assertEqual(content, Path(storage_root, '2/2026/09/22/execution-1-config.cfg').read_bytes())
+            self.assertEqual(content, Path(storage_root, relative).read_bytes())
 
     def test_olt_ftp_quarantines_invalid_and_uncorrelated_and_times_out(self):
         with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as storage_root:
@@ -129,8 +143,8 @@ class EngineTests(unittest.TestCase):
             (home / 'bm-exec-999.cfg').write_bytes(b'late')
             (home / 'bad.txt').write_bytes(b'bad')
             with self.assertRaises(BackupError) as error:
-                receive(root, 2, 'bm-exec-1.cfg', storage_root, '2/2026/09/22/execution-1-config.cfg',
-                        2, 1, lambda: self.fail('invalid complete'), poll=0.1)
+                receive(root, 2, 'bm-exec-1.cfg', storage_root, self.job['relative_path'],
+                        2, 1, lambda final: self.fail('invalid complete'), poll=0.1)
             self.assertEqual('FTP_RECEIVE_TIMEOUT', error.exception.code)
             self.assertEqual(2, len(list(Path(root, 'quarantine').glob('*.quarantine'))))
             self.assertEqual(2, len(list(Path(root, 'quarantine').glob('*.json'))))
@@ -158,7 +172,7 @@ class EngineTests(unittest.TestCase):
     def test_olt_dispatch_never_uses_ssh_and_matches_own_device_only(self):
         olt = {**self.job, 'vendor': 'Huawei', 'platform': 'olt', 'method': 'ftp_push',
                'ftp_account_available': True, 'ftp_host': '192.0.2.20', 'ftp_filename': 'bm-exec-1.cfg',
-               'relative_path': '2/2026/09/22/execution-1-config.cfg',
+               'relative_path': 'Backup Manager/POP-CENTRO/OLT/22-09-2026/OLT_20260922121530.cfg',
                'schedule_type': 'manual', 'origin': 'manual'}
         with tempfile.TemporaryDirectory() as root, \
              patch.dict(os.environ, {'BACKUP_FTP_ROOT': root, 'BACKUP_STORAGE_ROOT': root}), \
@@ -166,7 +180,7 @@ class EngineTests(unittest.TestCase):
              patch.object(backup_engine, 'export_huawei_config') as vrp, \
              patch.object(backup_engine, 'collect_huawei_olt_config') as receive_file, \
              patch.object(backup_engine, 'command') as command:
-            receive_file.side_effect = lambda *args: args[-1]()
+            receive_file.side_effect = lambda *args: args[-1](olt['relative_path'])
             backup_engine.execute(olt)
             secret.assert_not_called()
             vrp.assert_not_called()
@@ -192,8 +206,8 @@ class EngineTests(unittest.TestCase):
             path = home / 'bm-exec-1.cfg'
             path.write_bytes(b'<html>error</html>')
             with self.assertRaises(BackupError) as failure:
-                receive(root, 2, path.name, storage_root, '2/2026/09/22/execution-1-config.cfg',
-                        3, 1, lambda: self.fail('invalid complete'), poll=0.1)
+                receive(root, 2, path.name, storage_root, self.job['relative_path'],
+                        3, 1, lambda final: self.fail('invalid complete'), poll=0.1)
             self.assertEqual('FTP_FILE_INVALID', failure.exception.code)
             self.assertFalse(path.exists())
             self.assertTrue((wrong_device / 'bm-exec-1.cfg').exists())

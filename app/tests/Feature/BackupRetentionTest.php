@@ -63,6 +63,9 @@ class BackupRetentionTest extends TestCase
         DB::table('backup_executions')->where('id', $job->id)->update(['created_at' => $date]);
         $job = $job->fresh();
         $relative = app(EngineJobService::class)->relativePath($job);
+        if (file_exists($this->root.'/'.$relative)) {
+            $relative = substr($relative, 0, strrpos($relative, '.')).'-exec-'.$job->id.'.'.pathinfo($relative, PATHINFO_EXTENSION);
+        }
         $path = $this->root.'/'.$relative;
         if (! is_dir(dirname($path))) mkdir(dirname($path), 0700, true);
         $content = "/interface bridge\nadd name=bridge{$job->id}\n";
@@ -94,6 +97,20 @@ class BackupRetentionTest extends TestCase
         $this->assertFileExists($this->path($new));
         $this->assertSame('retention_days', $old->fresh()->deletion_reason);
         $this->assertSame('succeeded', $old->backupExecution->fresh()->status);
+    }
+
+    public function test_existing_numeric_path_remains_eligible_for_retention(): void
+    {
+        $source = $this->source(30);
+        $artifact = $this->artifact($source, 40);
+        $job = $artifact->backupExecution;
+        $legacy = $job->device_id.'/'.$job->created_at->format('Y/m/d').'/execution-'.$job->id.'-config.rsc';
+        $oldPath = $this->path($artifact);
+        $legacyPath = $this->root.'/'.$legacy;
+        mkdir(dirname($legacyPath), 0700, true);
+        rename($oldPath, $legacyPath);
+        $artifact->update(['relative_path' => $legacy, 'original_filename' => basename($legacy)]);
+        $this->assertSame(1, $this->retention(false)['protected_latest']);
     }
 
     public function test_count_keeps_newest_versions_and_apply_is_idempotent(): void

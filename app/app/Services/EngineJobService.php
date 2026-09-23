@@ -7,6 +7,7 @@ use App\Models\BackupExecution;
 use App\Models\Device;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class EngineJobService
@@ -80,8 +81,27 @@ class EngineJobService
     {
         $vendor = mb_strtolower(trim($job->device->vendor));
         $extension = $vendor === 'huawei' ? 'cfg' : 'rsc';
-        return $job->device_id.'/'.($job->created_at?->format('Y/m/d') ?? now()->format('Y/m/d')).
-            '/execution-'.$job->id.'-config.'.$extension;
+        $device = $job->device;
+        $site = $device->site;
+        $siteName = $this->safePathName($site->name, 'SITE-'.$site->id);
+        $deviceName = $this->safePathName($device->name, 'EQUIPAMENTO-'.$device->id);
+        $timestamp = app(InstanceTimezone::class)->localNow($job->created_at)->format('YmdHis');
+        $date = app(InstanceTimezone::class)->localNow($job->created_at)->format('d-m-Y');
+        return 'Backup Manager/'.$siteName.'/'.$deviceName.'/'.$date.'/'.$deviceName.'_'.$timestamp.'.'.$extension;
+    }
+
+    private function safePathName(string $name, string $fallback): string
+    {
+        $safe = trim(preg_replace('/[^A-Za-z0-9]+/', '-', Str::ascii($name)), '-');
+        return $safe === '' ? $fallback : rtrim(substr(strtoupper($safe), 0, 80), '-');
+    }
+
+    public function matchesFinalPath(BackupExecution $job, string $relative): bool
+    {
+        $base = $this->relativePath($job);
+        $stem = substr($base, 0, strrpos($base, '.'));
+        $extension = substr($base, strrpos($base, '.'));
+        return $relative === $base || $relative === $stem.'-exec-'.$job->id.$extension;
     }
 
     public function heartbeat(int $id, string $workerId): bool
@@ -137,7 +157,7 @@ class EngineJobService
 
     public function resolvePath(string $relative): string
     {
-        if (! preg_match('~\A[1-9][0-9]*/[0-9]{4}/[0-9]{2}/[0-9]{2}/execution-[1-9][0-9]*-config\.(?:rsc|cfg)\z~D', $relative)) {
+        if (! preg_match('~\ABackup Manager/[A-Z0-9-]+/[A-Z0-9-]+/[0-9]{2}-[0-9]{2}-[0-9]{4}/[A-Z0-9-]+_[0-9]{14}(?:-exec-[1-9][0-9]*)?\.(?:rsc|cfg|dat)\z~D', $relative)) {
             throw new \RuntimeException('Caminho inválido.');
         }
         $root = realpath(config('backup.storage_root'));
@@ -154,7 +174,7 @@ class EngineJobService
         return DB::transaction(function () use ($id, $relative, $workerId) {
             $job = BackupExecution::query()->lockForUpdate()->findOrFail($id);
             if ($job->status !== 'running' || ($workerId !== null && $job->worker_id !== $workerId) ||
-                $relative !== $this->relativePath($job) || $job->artifact()->exists()) {
+                ! $this->matchesFinalPath($job, $relative) || $job->artifact()->exists()) {
                 throw ValidationException::withMessages(['status' => 'Execução indisponível para conclusão.']);
             }
             $payload = $this->job($id);

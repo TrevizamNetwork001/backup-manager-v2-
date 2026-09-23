@@ -92,12 +92,24 @@ class BackupRetention
         $relative = $artifact->relative_path;
         $expected = $job ? app(EngineJobService::class)->relativePath($job) : null;
         // Historical artifacts retain their original extension if the device vendor changes.
-        $expectedStem = $expected ? preg_replace('/\.(?:rsc|cfg)\z/', '', $expected) : null;
+        $expectedStem = $expected ? substr($expected, 0, strrpos($expected, '.')) : null;
+        $validPaths = [];
+        if ($job) {
+            foreach (['rsc', 'cfg', 'dat'] as $extension) {
+                $validPaths[] = $expectedStem.'.'.$extension;
+                $validPaths[] = $expectedStem.'-exec-'.$job->id.'.'.$extension;
+                // Existing backups keep the path used before friendly names were introduced.
+                if ($extension !== 'dat') {
+                    $validPaths[] = $job->device_id.'/'.($job->created_at?->format('Y/m/d') ?? now()->format('Y/m/d')).
+                        '/execution-'.$job->id.'-config.'.$extension;
+                }
+            }
+        }
         if (! $job || $artifact->device_id !== $job->device_id ||
             $artifact->backup_policy_id !== $job->backup_policy_id ||
             $artifact->storage !== 'local' || $artifact->type !== 'config' ||
-            ! in_array($relative, [$expectedStem.'.rsc', $expectedStem.'.cfg'], true) ||
-            ! preg_match('~\A[1-9][0-9]*/[0-9]{4}/[0-9]{2}/[0-9]{2}/execution-[1-9][0-9]*-config\.(?:rsc|cfg)\z~D', $relative)) {
+            ! in_array($relative, $validPaths, true) ||
+            ! preg_match('~\A(?:Backup Manager/[A-Z0-9-]+/[A-Z0-9-]+/[0-9]{2}-[0-9]{2}-[0-9]{4}/[A-Z0-9-]+_[0-9]{14}(?:-exec-[1-9][0-9]*)?\.(?:rsc|cfg|dat)|[1-9][0-9]*/[0-9]{4}/[0-9]{2}/[0-9]{2}/execution-[1-9][0-9]*-config\.(?:rsc|cfg))\z~D', $relative)) {
             return ['result' => 'invalid_path'];
         }
         $root = realpath(config('backup.storage_root'));

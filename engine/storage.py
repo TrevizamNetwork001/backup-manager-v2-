@@ -38,7 +38,7 @@ def validate(data, vendor='mikrotik'):
         raise BackupError('ARTIFACT_INVALID')
 
 
-def store(root_name, relative, data, vendor='mikrotik'):
+def store(root_name, relative, data, vendor='mikrotik', execution_id=None):
     validate(data, vendor)
     root = Path(root_name).resolve(strict=True)
     if root == Path('/'):
@@ -46,6 +46,12 @@ def store(root_name, relative, data, vendor='mikrotik'):
     target = root / relative
     if not target.resolve(strict=False).is_relative_to(root) or target.is_symlink():
         raise BackupError('STORAGE_FAILED')
+    if target.exists():
+        if not isinstance(execution_id, int) or execution_id < 1:
+            raise BackupError('STORAGE_FAILED')
+        target = target.with_name(f'{target.stem}-exec-{execution_id}{target.suffix}')
+        if target.exists() or target.is_symlink():
+            raise BackupError('STORAGE_FAILED')
     target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     if not target.parent.resolve(strict=True).is_relative_to(root):
         raise BackupError('STORAGE_FAILED')
@@ -59,7 +65,7 @@ def store(root_name, relative, data, vendor='mikrotik'):
             os.fsync(file.fileno())
         os.replace(temporary, target)
         os.chmod(target, 0o600)
-        return relative
+        return str(target.relative_to(root))
     except OSError:
         raise BackupError('STORAGE_FAILED') from None
     finally:
