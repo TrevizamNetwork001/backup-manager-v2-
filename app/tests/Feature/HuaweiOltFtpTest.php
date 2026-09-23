@@ -51,6 +51,64 @@ class HuaweiOltFtpTest extends TestCase
         $this->artisan('ftp:accounts')->doesntExpectOutputToContain($account->secret)->assertExitCode(0);
     }
 
+    public function test_olt_ftp_instructions_follow_account_and_server_readiness(): void
+    {
+        [$device] = $this->fixture(false);
+        $this->actingAs(User::factory()->create());
+        config()->set('backup.ftp_host', '');
+
+        $this->get(route('devices.edit', $device))->assertOk()
+            ->assertSee('O que fazer agora')
+            ->assertSee('Não configure a OLT ainda.')
+            ->assertSee('Crie a conta FTP deste equipamento')
+            ->assertSee('O endereço do servidor FTP desta instalação ainda não foi configurado.')
+            ->assertSee('Próximo passo no servidor:')
+            ->assertSeeInOrder(['Sincronizar a conta no PureDB.', 'Configurar o endereço do servidor FTP.'])
+            ->assertDontSee('SSH Host Key')
+            ->assertDontSee('Configure BACKUP_FTP_HOST');
+
+        $account = new FtpAccount(['device_id' => $device->id, 'username' => 'bmdev'.$device->id, 'is_active' => true]);
+        $account->secret = 'synthetic-only-secret';
+        $account->save();
+        config()->set('backup.ftp_host', '192.0.2.20');
+        $this->get(route('devices.edit', $device))->assertOk()
+            ->assertSee('Não configure a OLT ainda.')
+            ->assertSee('Sincronizar a conta no PureDB.')
+            ->assertDontSee('<strong>Servidor:</strong> 192.0.2.20', false);
+
+        DB::table('ftp_accounts')->where('id', $account->id)->update(['provisioned_at' => now()->addSecond()]);
+        config()->set('backup.ftp_host', '');
+        $this->get(route('devices.edit', $device))->assertOk()
+            ->assertSee('Não configure a OLT ainda.')
+            ->assertSee('O endereço do servidor FTP desta instalação ainda não foi configurado.')
+            ->assertSee('Configurar o endereço do servidor FTP.')
+            ->assertDontSee('<strong>Usuário:</strong> bmdev'.$device->id, false);
+
+        config()->set('backup.ftp_host', '192.0.2.20');
+        $this->get(route('devices.edit', $device))->assertOk()
+            ->assertSee('Pronto para configurar a OLT.')
+            ->assertSee('<strong>Servidor:</strong> 192.0.2.20', false)
+            ->assertSee('<strong>Porta:</strong> 21', false)
+            ->assertSee('<strong>Usuário:</strong> bmdev'.$device->id, false)
+            ->assertSee('Diretório remoto:')
+            ->assertSee('Configuração inicial da OLT — feita uma única vez')
+            ->assertSee('Execução de backup — feita a cada backup')
+            ->assertSee('A V2 não executa')
+            ->assertDontSee('SSH Host Key')
+            ->assertDontSee('Não configure a OLT ainda.')
+            ->assertDontSee('synthetic-only-secret');
+
+        $account->update(['is_active' => false]);
+        $this->get(route('devices.edit', $device))->assertOk()
+            ->assertSee('Não configure a OLT ainda.')
+            ->assertSee('Ative a conta FTP deste equipamento.');
+
+        $device->update(['platform' => 'network']);
+        $this->get(route('devices.edit', $device))->assertOk()
+            ->assertSee('SSH Host Key')
+            ->assertDontSee('O que fazer agora');
+    }
+
     public function test_ftp_requires_olt_account_and_no_ssh_credential(): void
     {
         [$device, $policy] = $this->fixture(false);
