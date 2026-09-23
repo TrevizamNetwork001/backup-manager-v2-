@@ -5,9 +5,12 @@ import secrets
 import subprocess
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 from drivers.mikrotik_ssh import BackupError, export_config
 from drivers.huawei_vrp_ssh import export_config as export_huawei_config
+from drivers.huawei_olt_ftp import collect_config as collect_huawei_olt_config
+from ftp_incoming import scan_orphans
 from storage import store
 
 
@@ -62,19 +65,28 @@ def execute(job):
         driver = drivers.get(vendor)
         if driver is None:
             raise BackupError('UNSUPPORTED_VENDOR')
-        if job['method'] != 'ssh_pull' or job['artifact_mode'] != 'config':
+        olt = (vendor == 'huawei' and job['platform'] == 'olt' and job['method'] == 'ftp_push'
+               and job.get('schedule_type') == 'manual' and job.get('origin') == 'manual')
+        pull = job['platform'] == 'network' and job['method'] == 'ssh_pull'
+        if not (olt or pull) or job['artifact_mode'] != 'config':
             raise BackupError('UNSUPPORTED_POLICY')
+        if olt and (not job['ftp_account_available'] or not job['ftp_host']):
+            raise BackupError('FTP_ACCOUNT_UNAVAILABLE')
         if not job['eligible']:
             raise BackupError('CREDENTIAL_INVALID')
-        password = secret_for(job_id)
-        data = driver(job['host'], job['port'], job['username'], password,
-                             job.get('ssh_host_key_algorithm'), job.get('ssh_host_key_fingerprint'),
-                             lambda algorithm, fingerprint: command('engine:observe-host-key', job_id,
-                                                                    WORKER_ID, job['host'], algorithm, fingerprint))
-        del password
-        relative = job['relative_path']
-        store(os.environ['BACKUP_STORAGE_ROOT'], relative, data, vendor)
-        command('engine:complete', job_id, relative, WORKER_ID)
+        if olt:
+            collect_huawei_olt_config(job,
+                                      lambda: command('engine:complete', job_id, job['relative_path'], WORKER_ID))
+        else:
+            password = secret_for(job_id)
+            observe = lambda algorithm, fingerprint: command('engine:observe-host-key', job_id,
+                                                             WORKER_ID, job['host'], algorithm, fingerprint)
+            data = driver(job['host'], job['port'], job['username'], password,
+                          job.get('ssh_host_key_algorithm'), job.get('ssh_host_key_fingerprint'), observe)
+            del password
+            relative = job['relative_path']
+            store(os.environ['BACKUP_STORAGE_ROOT'], relative, data, vendor)
+            command('engine:complete', job_id, relative, WORKER_ID)
         status = 'succeeded'
     except BackupError as error:
         code = error.code
@@ -94,16 +106,32 @@ def execute(job):
 
 
 def main():
-    while True:
-        try:
-            job = json.loads(command('engine:claim', WORKER_ID))
-            if job:
-                execute(job)
-            else:
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        active = set()
+        orphan_observed = {}
+        last_orphan_scan = 0
+        while True:
+            if time.monotonic() - last_orphan_scan >= 5 and os.environ.get('BACKUP_FTP_ROOT'):
+                last_orphan_scan = time.monotonic()
+                try:
+                    expected = json.loads(command('ftp:expected'))
+                    scan_orphans(os.environ['BACKUP_FTP_ROOT'], expected,
+                                 int(os.environ.get('BACKUP_FTP_STABLE_SECONDS', '5')), orphan_observed)
+                except Exception:
+                    logging.error(json.dumps({'status': 'ftp_orphan_scan_failed'}))
+            active = {future for future in active if not future.done()}
+            if len(active) >= 4:
+                time.sleep(1)
+                continue
+            try:
+                job = json.loads(command('engine:claim', WORKER_ID))
+                if job:
+                    active.add(pool.submit(execute, job))
+                else:
+                    time.sleep(5)
+            except Exception:
+                logging.error(json.dumps({'status': 'claim_failed'}))
                 time.sleep(5)
-        except Exception:
-            logging.error(json.dumps({'status': 'claim_failed'}))
-            time.sleep(5)
 
 
 if __name__ == '__main__':

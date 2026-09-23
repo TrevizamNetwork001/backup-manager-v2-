@@ -8,6 +8,7 @@ use App\Http\Controllers\DeviceBackupPolicyController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\CredentialController;
 use App\Http\Controllers\DeviceController;
+use App\Http\Controllers\FtpAccountController;
 use App\Http\Controllers\SiteController;
 use App\Http\Controllers\InstanceSettingsController;
 use Illuminate\Support\Facades\Route;
@@ -27,6 +28,9 @@ Route::middleware('auth')->group(function () {
 
     Route::resource('devices', DeviceController::class)
         ->except(['show']);
+    Route::post('devices/{device}/ftp-account', [FtpAccountController::class, 'store'])->name('devices.ftp-account.store');
+    Route::patch('devices/{device}/ftp-account', [FtpAccountController::class, 'update'])->name('devices.ftp-account.update');
+    Route::post('devices/{device}/ftp-account/rotate', [FtpAccountController::class, 'rotate'])->name('devices.ftp-account.rotate');
     Route::post('devices/{device}/ssh-host-key/trust', [DeviceController::class, 'trustHostKey'])
         ->name('devices.ssh-host-key.trust');
 

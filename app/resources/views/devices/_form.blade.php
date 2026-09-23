@@ -100,6 +100,10 @@
             <span class="field-error">{{ $message }}</span>
         @enderror
     </div>
+    <div class="field"><label for="platform">Tipo *</label><select id="platform" name="platform" required>
+        <option value="network" @selected(old('platform', $device->platform ?? 'network') === 'network')>Roteador / switch</option>
+        <option value="olt" @selected(old('platform', $device->platform ?? 'network') === 'olt')>OLT</option>
+    </select>@error('platform') <span class="field-error">{{ $message }}</span> @enderror</div>
 
     <div class="field">
         <label for="model">Modelo</label>

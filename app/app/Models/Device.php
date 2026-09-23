@@ -17,6 +17,7 @@ class Device extends Model
         'hostname',
         'management_ip',
         'vendor',
+        'platform',
         'model',
         'os_version',
         'notes',
@@ -40,6 +41,11 @@ class Device extends Model
     public function credentials(): HasMany
     {
         return $this->hasMany(Credential::class);
+    }
+
+    public function ftpAccount(): \Illuminate\Database\Eloquent\Relations\HasOne
+    {
+        return $this->hasOne(FtpAccount::class);
     }
 
     public function deviceBackupPolicies(): HasMany

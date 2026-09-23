@@ -6,8 +6,13 @@ from pathlib import Path
 from drivers.mikrotik_ssh import BackupError, MAX_BYTES
 
 
+def ftp_max_bytes():
+    return max(1, min(64 * 1024 * 1024, int(os.environ.get('BACKUP_FTP_MAX_BYTES', str(MAX_BYTES)))))
+
+
 def validate(data, vendor='mikrotik'):
-    if not data or len(data) > MAX_BYTES:
+    limit = ftp_max_bytes() if vendor == 'huawei_olt' else MAX_BYTES
+    if not data or len(data) > limit:
         raise BackupError('ARTIFACT_INVALID')
     try:
         content = data.decode('utf-8')
@@ -18,13 +23,18 @@ def validate(data, vendor='mikrotik'):
         raise BackupError('ARTIFACT_INVALID')
     if vendor == 'mikrotik' and not re.search(r'(?mi)^/[a-z]', preview):
         raise BackupError('ARTIFACT_INVALID')
+    if vendor == 'huawei_olt' and (len(data) < 32 or
+            not re.search(r'(?m)^#\s*$', preview) or
+            not re.search(r'(?mi)^(?:sysname|interface (?:gpon|epon)|ont |service-port|vlan )', preview) or
+            re.search(r'(?im)^\s*(?:error:|%\s*error|authentication failed|backing up files is fail|<html)', content)):
+        raise BackupError('FTP_FILE_INVALID')
     if vendor == 'huawei' and (len(data) < 32 or
             re.search(r'(?im)^\s*(?:Error:|%\s*(?:Error|Unrecognized|Unknown)|Unrecognized command|Unknown command|Incomplete command)', content) or
             re.search(r'(?i)(?:-{3,}\s*more\s*-{3,}|\bmore\s*:\s*|press\s+(?:any key|space))', content) or
             not re.search(r'(?m)^#\s*$', preview) or
             not re.search(r'(?mi)^(?:sysname|interface|vlan(?: batch)?|ip route-static|aaa|user-interface|stelnet server|snmp-agent)\b', preview)):
         raise BackupError('ARTIFACT_INVALID')
-    if vendor not in ('mikrotik', 'huawei'):
+    if vendor not in ('mikrotik', 'huawei', 'huawei_olt'):
         raise BackupError('ARTIFACT_INVALID')
 
 

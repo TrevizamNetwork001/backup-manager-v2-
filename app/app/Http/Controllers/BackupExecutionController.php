@@ -34,7 +34,7 @@ class BackupExecutionController extends Controller
     public function show(BackupExecution $backupExecution): View
     {
         $backupExecution->load([
-            'device:id,name', 'backupPolicy:id,name',
+            'device:id,name', 'backupPolicy:id,name,method',
             'credential:id,name,type,username', 'artifact',
         ]);
 

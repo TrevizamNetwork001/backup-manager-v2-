@@ -23,15 +23,16 @@ class BackupScheduler
         $created = 0;
         DeviceBackupPolicy::query()->with(['backupPolicy', 'device', 'credential'])
             ->where('is_active', true)
-            ->whereHas('backupPolicy', fn ($q) => $q->where('is_active', true)->whereIn('schedule_type', ['daily', 'weekly']))
+            ->whereHas('backupPolicy', fn ($q) => $q->where('is_active', true)->where('method', 'ssh_pull')->whereIn('schedule_type', ['daily', 'weekly']))
             ->whereHas('device', fn ($q) => $q->where('is_active', true))
-            ->whereHas('credential', fn ($q) => $q->where('is_active', true))
             ->orderBy('id')->chunkById(100, function ($associations) use ($localNow, $nowUtc, $grace, &$created) {
                 foreach ($associations as $association) {
                     $policy = $association->backupPolicy;
-                    if (! $policy->schedule_time ||
+                    // Defence against legacy rows and policy changes after the query.
+                    if ($policy->method !== 'ssh_pull' || ! $policy->schedule_time ||
+                        ! $association->credential?->is_active ||
                         $association->credential->device_id !== $association->device_id ||
-                        $association->credential->type !== $policy->credentialType()) {
+                        $association->credential->type !== 'ssh') {
                         continue;
                     }
 

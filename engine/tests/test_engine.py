@@ -7,6 +7,8 @@ import socket
 import os
 import sys
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -20,13 +22,14 @@ from drivers.mikrotik_ssh import BackupError, VerifiedHostKeyPolicy, _mikrotik_t
 from drivers.huawei_vrp_ssh import export_config as export_huawei_config
 from drivers.huawei_vrp_ssh import _read_prompt
 from storage import store, validate
+from ftp_incoming import receive, directory, scan_orphans
 
 
 class EngineTests(unittest.TestCase):
     def setUp(self):
         self.job = dict(id=1, device_id=2, policy_id=3, host='192.0.2.1', port=22,
                         username='backup', method='ssh_pull', artifact_mode='config',
-                        vendor='MiKroTik', eligible=True,
+                        vendor='MiKroTik', platform='network', eligible=True,
                         relative_path='2/2026/09/22/execution-1-config.rsc')
 
     def test_storage_uses_atomic_replace_and_rejects_traversal_and_invalid_data(self):
@@ -97,6 +100,104 @@ class EngineTests(unittest.TestCase):
                         b'#\nsysname Lab\n#\n\xff']:
             with self.subTest(invalid=invalid[:20]), self.assertRaises(BackupError):
                 validate(invalid, 'huawei')
+
+    def test_olt_ftp_waits_for_stable_file_and_never_opens_ssh(self):
+        content = b'#\nsysname OLT-Lab\n#\ninterface gpon 0/1\n description lab\n#\n'
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as storage_root:
+            home = directory(root, 2)
+            home.mkdir(parents=True)
+            path = home / 'bm-exec-1.cfg'
+            completed = []
+            def upload():
+                path.write_bytes(content[:20])
+                time.sleep(0.3)
+                with path.open('ab') as file:
+                    file.write(content[20:])
+            writer = threading.Thread(target=upload)
+            writer.start()
+            receive(root, 2, path.name, storage_root, '2/2026/09/22/execution-1-config.cfg',
+                    4, 1, lambda: completed.append(True), poll=0.1)
+            writer.join()
+            self.assertEqual([True], completed)
+            self.assertFalse(path.exists())
+            self.assertEqual(content, Path(storage_root, '2/2026/09/22/execution-1-config.cfg').read_bytes())
+
+    def test_olt_ftp_quarantines_invalid_and_uncorrelated_and_times_out(self):
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as storage_root:
+            home = directory(root, 2)
+            home.mkdir(parents=True)
+            (home / 'bm-exec-999.cfg').write_bytes(b'late')
+            (home / 'bad.txt').write_bytes(b'bad')
+            with self.assertRaises(BackupError) as error:
+                receive(root, 2, 'bm-exec-1.cfg', storage_root, '2/2026/09/22/execution-1-config.cfg',
+                        2, 1, lambda: self.fail('invalid complete'), poll=0.1)
+            self.assertEqual('FTP_RECEIVE_TIMEOUT', error.exception.code)
+            self.assertEqual(2, len(list(Path(root, 'quarantine').glob('*.quarantine'))))
+            self.assertEqual(2, len(list(Path(root, 'quarantine').glob('*.json'))))
+            self.assertEqual([], list(home.iterdir()))
+            with self.assertRaises(BackupError):
+                directory(root, '../2')
+
+    def test_orphan_scan_waits_for_stability_and_respects_active_execution(self):
+        with tempfile.TemporaryDirectory() as root:
+            home = directory(root, 2)
+            home.mkdir(parents=True)
+            late = home / 'bm-exec-7.cfg'
+            active = home / 'bm-exec-8.cfg'
+            late.write_bytes(b'late')
+            active.write_bytes(b'active')
+            seen = {}
+            keep = [{'device_id': 2, 'filename': active.name}]
+            scan_orphans(root, keep, 1, seen)
+            self.assertTrue(late.exists())
+            time.sleep(1.1)
+            scan_orphans(root, keep, 1, seen)
+            self.assertFalse(late.exists())
+            self.assertTrue(active.exists())
+
+    def test_olt_dispatch_never_uses_ssh_and_matches_own_device_only(self):
+        olt = {**self.job, 'vendor': 'Huawei', 'platform': 'olt', 'method': 'ftp_push',
+               'ftp_account_available': True, 'ftp_host': '192.0.2.20', 'ftp_filename': 'bm-exec-1.cfg',
+               'relative_path': '2/2026/09/22/execution-1-config.cfg',
+               'schedule_type': 'manual', 'origin': 'manual'}
+        with tempfile.TemporaryDirectory() as root, \
+             patch.dict(os.environ, {'BACKUP_FTP_ROOT': root, 'BACKUP_STORAGE_ROOT': root}), \
+             patch.object(backup_engine, 'secret_for') as secret, \
+             patch.object(backup_engine, 'export_huawei_config') as vrp, \
+             patch.object(backup_engine, 'collect_huawei_olt_config') as receive_file, \
+             patch.object(backup_engine, 'command') as command:
+            receive_file.side_effect = lambda *args: args[-1]()
+            backup_engine.execute(olt)
+            secret.assert_not_called()
+            vrp.assert_not_called()
+            command.assert_called_once_with('engine:complete', 1, olt['relative_path'], backup_engine.WORKER_ID)
+            self.assertEqual(Path(root, '2/incoming'), directory(root, 2))
+            self.assertNotEqual(directory(root, 2), directory(root, 3))
+
+        for change in [{'schedule_type': 'daily'}, {'schedule_type': 'weekly'},
+                       {'origin': 'scheduler'}]:
+            with self.subTest(change=change), patch.object(backup_engine, 'collect_huawei_olt_config') as receive_file, \
+                 patch.object(backup_engine, 'command') as command:
+                backup_engine.execute({**olt, **change})
+                receive_file.assert_not_called()
+                command.assert_called_once_with('engine:fail', 1, 'UNSUPPORTED_POLICY', backup_engine.WORKER_ID)
+
+    def test_olt_invalid_expected_file_is_quarantined(self):
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as storage_root:
+            home = directory(root, 2)
+            home.mkdir(parents=True)
+            wrong_device = directory(root, 3)
+            wrong_device.mkdir(parents=True)
+            (wrong_device / 'bm-exec-1.cfg').write_bytes(b'other-device')
+            path = home / 'bm-exec-1.cfg'
+            path.write_bytes(b'<html>error</html>')
+            with self.assertRaises(BackupError) as failure:
+                receive(root, 2, path.name, storage_root, '2/2026/09/22/execution-1-config.cfg',
+                        3, 1, lambda: self.fail('invalid complete'), poll=0.1)
+            self.assertEqual('FTP_FILE_INVALID', failure.exception.code)
+            self.assertFalse(path.exists())
+            self.assertTrue((wrong_device / 'bm-exec-1.cfg').exists())
+            self.assertEqual(1, len(list(Path(root, 'quarantine').glob('*.quarantine'))))
 
     def test_huawei_shell_commands_prompt_and_fallback(self):
         class Channel:

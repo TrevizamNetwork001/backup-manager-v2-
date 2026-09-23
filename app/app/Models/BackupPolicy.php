@@ -36,7 +36,7 @@ class BackupPolicy extends Model
     {
         return match ($this->method) {
             'ssh_pull' => 'ssh',
-            'ftp_push' => 'ftp',
+            'ftp_push' => 'none',
             default => throw new \LogicException('Método de backup inválido.'),
         };
     }

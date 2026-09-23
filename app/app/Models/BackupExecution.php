@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
 
 class BackupExecution extends Model
@@ -57,12 +58,15 @@ class BackupExecution extends Model
     public static function createManual(DeviceBackupPolicy $association): self
     {
         return DB::transaction(function () use ($association) {
-            $association = DeviceBackupPolicy::query()->with([
-                'backupPolicy:id,is_active', 'device:id,is_active', 'credential:id,is_active',
-            ])
+            $relations = ['backupPolicy:id,is_active,method,schedule_type', 'device', 'credential:id,is_active'];
+            if (Schema::hasTable('ftp_accounts')) $relations[] = 'device.ftpAccount';
+            $association = DeviceBackupPolicy::query()->with($relations)
                 ->lockForUpdate()->findOrFail($association->id);
             if (! $association->is_active || ! $association->backupPolicy->is_active ||
-                ! $association->device->is_active || ! $association->credential->is_active) {
+                ! $association->device->is_active ||
+                ($association->backupPolicy->method === 'ssh_pull' && ! $association->credential?->is_active) ||
+                ($association->backupPolicy->method === 'ftp_push' &&
+                    ($association->backupPolicy->schedule_type !== 'manual' || ! Schema::hasTable('ftp_accounts') || ! $association->device->ftpAccount?->is_active || $association->device->platform !== 'olt' || mb_strtolower(trim($association->device->vendor)) !== 'huawei'))) {
                 throw ValidationException::withMessages(['association' => 'A associação, política, equipamento e credencial devem estar ativos.']);
             }
 

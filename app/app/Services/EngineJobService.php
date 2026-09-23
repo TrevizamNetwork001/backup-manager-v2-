@@ -6,6 +6,7 @@ use App\Models\BackupArtifact;
 use App\Models\BackupExecution;
 use App\Models\Device;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
 
 class EngineJobService
@@ -15,7 +16,12 @@ class EngineJobService
         $workerId ??= bin2hex(random_bytes(16));
         if (! preg_match('/\A[a-f0-9]{32}\z/D', $workerId)) throw new \InvalidArgumentException('Worker inválido.');
         return DB::transaction(function () use ($workerId) {
-            $job = BackupExecution::query()->where('status', 'queued')->orderBy('id')
+            $job = BackupExecution::query()->where('status', 'queued')
+                ->whereNotExists(function ($query) {
+                    $query->selectRaw('1')->from('backup_executions as running_jobs')
+                        ->whereColumn('running_jobs.device_id', 'backup_executions.device_id')
+                        ->where('running_jobs.status', 'running');
+                })->orderBy('id')
                 ->lock('FOR UPDATE SKIP LOCKED')->first();
             if (! $job) return null;
             $job->status = 'running';
@@ -30,23 +36,33 @@ class EngineJobService
 
     public function job(int $id): array
     {
-        $job = BackupExecution::with(['device', 'backupPolicy', 'credential', 'association'])->findOrFail($id);
+        $hasFtp = Schema::hasTable('ftp_accounts');
+        $relations = ['device', 'backupPolicy', 'credential', 'association'];
+        if ($hasFtp) $relations[] = 'device.ftpAccount';
+        $job = BackupExecution::with($relations)->findOrFail($id);
         if ($job->status !== 'running') throw new \RuntimeException('Job não está em execução.');
         return [
             'id' => $job->id, 'device_id' => $job->device_id, 'policy_id' => $job->backup_policy_id,
             'host' => $job->device->management_ip, 'vendor' => $job->device->vendor,
+            'platform' => $job->device->platform ?? 'network',
             'ssh_host_key_algorithm' => $job->device->ssh_host_key_algorithm,
             'ssh_host_key_fingerprint' => $job->device->ssh_host_key_fingerprint,
             'method' => $job->backupPolicy->method, 'artifact_mode' => $job->backupPolicy->artifact_mode,
-            'port' => $job->credential->port ?: 22, 'username' => $job->credential->username,
+            'schedule_type' => $job->backupPolicy->schedule_type, 'origin' => $job->origin,
+            'port' => $job->credential?->port ?: 22, 'username' => $job->credential?->username,
             'relative_path' => $this->relativePath($job),
+            'ftp_username' => $hasFtp ? $job->device->ftpAccount?->username : null,
+            'ftp_account_available' => $hasFtp && (bool) ($job->device->ftpAccount?->is_active && $job->device->ftpAccount?->provisioned_at && $job->device->ftpAccount->provisioned_at >= $job->device->ftpAccount->updated_at),
+            'ftp_host' => config('backup.ftp_host'),
+            'ftp_filename' => 'bm-exec-'.$job->id.'.cfg',
             'eligible' => $job->association->is_active && $job->device->is_active &&
-                $job->backupPolicy->is_active && $job->credential->is_active &&
-                $job->credential->device_id === $job->device_id &&
+                $job->backupPolicy->is_active &&
                 $job->association->credential_id === $job->credential_id &&
                 $job->association->device_id === $job->device_id &&
                 $job->association->backup_policy_id === $job->backup_policy_id &&
-                $job->credential->type === 'ssh',
+                ($job->backupPolicy->method === 'ftp_push'
+                    ? $hasFtp && $job->origin === 'manual' && $job->backupPolicy->schedule_type === 'manual' && $job->credential_id === null && $job->device->platform === 'olt' && mb_strtolower(trim($job->device->vendor)) === 'huawei' && (bool) $job->device->ftpAccount?->is_active
+                    : $job->credential?->is_active && $job->credential?->device_id === $job->device_id && $job->credential?->type === 'ssh'),
         ];
     }
 
@@ -54,7 +70,7 @@ class EngineJobService
     {
         $job = BackupExecution::with('credential')->findOrFail($id);
         if ($workerId !== null && $job->worker_id !== $workerId) throw new \RuntimeException('Worker inválido.');
-        if (! $this->job($id)['eligible']) {
+        if (! $this->job($id)['eligible'] || $job->credential === null || $this->job($id)['method'] !== 'ssh_pull') {
             throw new \RuntimeException('Credencial indisponível.');
         }
         return $job->credential->secret;
@@ -142,25 +158,29 @@ class EngineJobService
                 throw ValidationException::withMessages(['status' => 'Execução indisponível para conclusão.']);
             }
             $payload = $this->job($id);
-            if (! $payload['eligible'] || $payload['method'] !== 'ssh_pull' ||
-                $payload['artifact_mode'] !== 'config' ||
-                ! in_array(mb_strtolower(trim($payload['vendor'])), ['mikrotik', 'huawei'], true)) {
+            $vendor = mb_strtolower(trim($payload['vendor']));
+            $supported = $payload['method'] === 'ssh_pull' && $payload['platform'] === 'network' && in_array($vendor, ['mikrotik', 'huawei'], true)
+                || $payload['method'] === 'ftp_push' && $payload['platform'] === 'olt' && $vendor === 'huawei' && $payload['ftp_account_available'];
+            if (! $payload['eligible'] || ! $supported || $payload['artifact_mode'] !== 'config') {
                 throw ValidationException::withMessages(['status' => 'Job não é elegível para conclusão.']);
             }
             $path = $this->resolvePath($relative);
             $size = filesize($path);
-            if (! $size || $size > config('backup.max_artifact_bytes')) {
+            $limit = $payload['method'] === 'ftp_push' ? min(64 * 1024 * 1024, max(1, (int) config('backup.ftp_max_bytes'))) : config('backup.max_artifact_bytes');
+            if (! $size || $size > $limit) {
                 throw ValidationException::withMessages(['artifact' => 'Tamanho inválido.']);
             }
             $contents = file_get_contents($path);
-            $vendor = mb_strtolower(trim($payload['vendor']));
             $preview = substr($contents ?: '', 0, 4096);
             $validContent = $vendor === 'mikrotik'
                 ? (bool) preg_match('/^\/[a-z]/mi', $preview)
-                : strlen($contents ?: '') >= 32 && preg_match('/^#\s*$/m', $preview) &&
+                : ($payload['method'] === 'ftp_push'
+                    ? strlen($contents ?: '') >= 32 && preg_match('/^#\s*$/m', $preview) && preg_match('/^(?:sysname|interface (?:gpon|epon)|ont |service-port|vlan )/mi', $preview)
+                    : strlen($contents ?: '') >= 32 && preg_match('/^#\s*$/m', $preview) &&
                     preg_match('/^(?:sysname|interface|vlan(?: batch)?|ip route-static|aaa|user-interface|stelnet server|snmp-agent)\b/mi', $preview) &&
                     ! preg_match('/^\s*(?:Error:|%\s*(?:Error|Unrecognized|Unknown)|Unrecognized command|Unknown command|Incomplete command)/mi', $contents) &&
-                    ! preg_match('/(?:-{3,}\s*more\s*-{3,}|\bmore\s*:\s*|press\s+(?:any key|space))/i', $contents);
+                    ! preg_match('/(?:-{3,}\s*more\s*-{3,}|\bmore\s*:\s*|press\s+(?:any key|space))/i', $contents));
+            if ($payload['method'] === 'ftp_push' && preg_match('/(?im)^\s*(?:error:|%\s*error|authentication failed|backing up files is fail|<html)/', $contents ?: '')) $validContent = false;
             if ($contents === false || ! mb_check_encoding($contents, 'UTF-8') ||
                 str_contains($contents, "\0") || ! $validContent) {
                 throw ValidationException::withMessages(['artifact' => 'Export de configuração inválido.']);
@@ -193,6 +213,13 @@ class EngineJobService
             'HUAWEI_PROMPT_FAILED' => 'Prompt Huawei não reconhecido.',
             'HUAWEI_PAGING_FAILED' => 'Paginação Huawei não pôde ser desativada.',
             'HUAWEI_EXPORT_FAILED' => 'Export de configuração Huawei falhou.',
+            'FTP_ACCOUNT_UNAVAILABLE' => 'Conta FTP indisponível.',
+            'FTP_TRIGGER_FAILED' => 'Disparo do backup FTP falhou.',
+            'FTP_RECEIVE_TIMEOUT' => 'Arquivo FTP não recebido no prazo.',
+            'FTP_FILE_INVALID' => 'Arquivo FTP inválido.',
+            'FTP_FILE_UNCORRELATED' => 'Arquivo FTP sem execução correspondente.',
+            'FTP_STORAGE_FAILED' => 'Falha ao armazenar arquivo FTP.',
+            'FTP_QUARANTINED' => 'Arquivo FTP movido para quarentena.',
         ];
         if (! isset($messages[$code])) $code = 'ENGINE_FAILED';
         DB::transaction(function () use ($id, $code, $messages, $workerId) {

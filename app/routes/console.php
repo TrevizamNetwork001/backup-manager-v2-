@@ -27,6 +27,39 @@ Artisan::command('engine:secret {id} {worker}', function (EngineJobService $engi
     fclose($pipe);
 });
 
+Artisan::command('ftp:accounts', function () {
+    $accounts = \App\Models\FtpAccount::query()->orderBy('id')->get(['id', 'device_id', 'username', 'is_active', 'updated_at']);
+    $this->line($accounts->toJson());
+});
+
+Artisan::command('ftp:expected', function () {
+    $jobs = \App\Models\BackupExecution::query()->with('backupPolicy:id,method')
+        ->whereIn('status', ['queued', 'running'])->get(['id', 'device_id', 'backup_policy_id']);
+    $this->line($jobs->filter(fn ($job) => $job->backupPolicy?->method === 'ftp_push')
+        ->map(fn ($job) => ['device_id' => $job->device_id, 'filename' => 'bm-exec-'.$job->id.'.cfg'])
+        ->values()->toJson());
+});
+
+Artisan::command('ftp:secret {id}', function () {
+    $fd = getenv('ENGINE_SECRET_FD');
+    if (! ctype_digit((string) $fd) || (int) $fd < 3) throw new RuntimeException('Pipe de segredo ausente.');
+    $account = \App\Models\FtpAccount::query()->where('is_active', true)->findOrFail((int) $this->argument('id'));
+    $pipe = fopen('php://fd/'.$fd, 'wb');
+    if (! $pipe) throw new RuntimeException('Pipe de segredo indisponível.');
+    fwrite($pipe, $account->secret);
+    fclose($pipe);
+});
+
+Artisan::command('ftp:provisioned {id} {version}', function () {
+    $id = (int) $this->argument('id');
+    $version = $this->argument('version');
+    $account = \App\Models\FtpAccount::findOrFail($id);
+    if (! $account->is_active || $account->updated_at?->toISOString() !== $version) {
+        throw new RuntimeException('Conta alterada durante provisionamento.');
+    }
+    \Illuminate\Support\Facades\DB::table('ftp_accounts')->where('id', $id)->update(['provisioned_at' => now()]);
+});
+
 Artisan::command('engine:complete {id} {relative} {worker}', function (EngineJobService $engine) {
     $engine->complete((int) $this->argument('id'), $this->argument('relative'), $this->argument('worker'));
 });

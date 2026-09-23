@@ -131,7 +131,7 @@ class BackupPolicyTest extends TestCase
         $ssh = $this->credential($device, 'ssh');
         $ftp = $this->credential($device, 'ftp');
         $sshPolicy = $this->policy();
-        $ftpPolicy = $this->policy(['name' => 'FTP Diário', 'method' => 'ftp_push']);
+        $ftpPolicy = $this->policy(['name' => 'FTP Manual', 'method' => 'ftp_push', 'schedule_type' => 'manual', 'schedule_time' => null]);
 
         $this->post("/backup-policies/{$sshPolicy->id}/associations", $this->attach($sshPolicy, $device, $ftp))
             ->assertSessionHasErrors('credential_id');
@@ -140,8 +140,8 @@ class BackupPolicyTest extends TestCase
         $this->post("/backup-policies/{$sshPolicy->id}/associations", $this->attach($sshPolicy, $device, $ssh))
             ->assertSessionHasNoErrors();
         $this->post("/backup-policies/{$ftpPolicy->id}/associations", $this->attach($ftpPolicy, $device, $ftp))
-            ->assertSessionHasNoErrors();
-        $this->assertDatabaseCount('device_backup_policies', 2);
+            ->assertSessionHasErrors('credential_id');
+        $this->assertDatabaseCount('device_backup_policies', 1);
     }
 
     public function test_inactive_device_cannot_receive_new_association(): void
@@ -207,7 +207,7 @@ class BackupPolicyTest extends TestCase
     public function test_credential_type_matches_supported_methods(): void
     {
         $this->assertSame('ssh', (new BackupPolicy(['method' => 'ssh_pull']))->credentialType());
-        $this->assertSame('ftp', (new BackupPolicy(['method' => 'ftp_push']))->credentialType());
+        $this->assertSame('none', (new BackupPolicy(['method' => 'ftp_push']))->credentialType());
     }
 
     public function test_credential_type_rejects_unexpected_method(): void
@@ -303,7 +303,7 @@ class BackupPolicyTest extends TestCase
         $device = $this->device();
         $policy->deviceBackupPolicies()->create($this->attach($policy, $device, $this->credential($device)));
 
-        $this->put("/backup-policies/{$policy->id}", $this->payload(['method' => 'ftp_push']))
+        $this->put("/backup-policies/{$policy->id}", $this->payload(['method' => 'ftp_push', 'schedule_type' => 'manual']))
             ->assertSessionHasErrors('method');
         $this->assertSame('ssh_pull', $policy->fresh()->method);
     }

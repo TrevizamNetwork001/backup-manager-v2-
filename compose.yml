@@ -22,6 +22,8 @@ services:
     working_dir: /var/www/html
     environment:
       BACKUP_STORAGE_ROOT: /data/backups
+      BACKUP_FTP_HOST: ${BACKUP_FTP_HOST:-}
+      BACKUP_FTP_MAX_BYTES: ${BACKUP_FTP_MAX_BYTES:-8388608}
       BACKUP_ENGINE_STALE_SECONDS: ${BACKUP_ENGINE_STALE_SECONDS:-300}
     volumes:
       - ./app:/var/www/html
@@ -53,11 +55,17 @@ services:
     command: ["/opt/engine-venv/bin/python", "/engine/backup_engine.py"]
     environment:
       BACKUP_STORAGE_ROOT: /data/backups
+      BACKUP_FTP_HOST: ${BACKUP_FTP_HOST:-}
+      BACKUP_FTP_MAX_BYTES: ${BACKUP_FTP_MAX_BYTES:-8388608}
+      BACKUP_FTP_ROOT: /data/ftp
+      BACKUP_FTP_STABLE_SECONDS: ${BACKUP_FTP_STABLE_SECONDS:-5}
+      BACKUP_FTP_RECEIVE_TIMEOUT_SECONDS: ${BACKUP_FTP_RECEIVE_TIMEOUT_SECONDS:-180}
       BACKUP_ENGINE_HEARTBEAT_SECONDS: ${BACKUP_ENGINE_HEARTBEAT_SECONDS:-30}
     volumes:
       - ./app:/var/www/html:ro
       - ./engine:/engine:ro
       - backups:/data/backups
+      - ftp-data:/data/ftp
       - ./app/storage:/var/www/html/storage
     networks:
       - backup-manager-v2
@@ -93,6 +101,49 @@ services:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+
+  ftp:
+    build:
+      context: .
+      dockerfile: docker/ftp/Dockerfile
+    container_name: backup-manager-v2-ftp
+    restart: unless-stopped
+    command: ["python3", "/ftp/server.py"]
+    cap_add:
+      - DAC_READ_SEARCH
+      - SYS_NICE
+    environment:
+      BACKUP_FTP_PASSIVE_ADDRESS: ${BACKUP_FTP_PASSIVE_ADDRESS:-}
+      BACKUP_FTP_PUBLIC_IP: ${BACKUP_FTP_PUBLIC_IP:-} # Deprecated launcher fallback.
+      BACKUP_FTP_MAX_BYTES: ${BACKUP_FTP_MAX_BYTES:-8388608}
+    expose:
+      - "21"
+      - "30000-30009"
+    volumes:
+      - ftp-data:/data/ftp
+      - ftp-db:/etc/backup-ftp:ro
+    networks:
+      - backup-manager-v2
+    depends_on:
+      - ftp-admin
+
+  ftp-admin:
+    build:
+      context: .
+      dockerfile: docker/ftp/Dockerfile
+    container_name: backup-manager-v2-ftp-admin
+    restart: unless-stopped
+    working_dir: /var/www/html
+    command: ["python3", "/ftp/admin.py"]
+    volumes:
+      - ./app:/var/www/html:ro
+      - ftp-data:/data/ftp
+      - ftp-db:/etc/backup-ftp
+    networks:
+      - backup-manager-v2
+    depends_on:
+      postgres:
         condition: service_healthy
 
   postgres:
@@ -139,3 +190,5 @@ networks:
 
 volumes:
   backups:
+  ftp-data:
+  ftp-db:

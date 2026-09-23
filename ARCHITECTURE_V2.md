@@ -595,7 +595,19 @@ associar política `ssh_pull`/`config`, enfileirar execução manual, conferir
 artefato e SHA256, e depois confirmar execução via scheduler. Não executar
 esses passos nos testes automatizados.
 
-Huawei OLT está fora desta fase. O próximo bloco deve estudar o fluxo FTP/FTPS
-homologado no V1, incluindo disparo eventual por SSH/Telnet, recebimento,
-estabilização e correlação do arquivo. Pure-FTPd será o serviço de recepção;
-o Python não implementará um servidor FTP.
+Huawei OLT por FTP Push foi adicionada em fase posterior. A V2 não configura nem
+dispara a OLT automaticamente nesta fase. `ftp_push/config` aceita somente
+`schedule_type=manual`; o scheduler ignora políticas FTP Push, inclusive linhas
+legadas inconsistentes. O operador executa na OLT já preparada o comando com
+`bm-exec-<execution-id>.cfg` mostrado na execução. Um futuro disparo pontual
+sob demanda poderá liberar agendamento automático sem mudar a configuração
+permanente da OLT. O fluxo, limites e roteiro de
+homologação estão em [docs/HUAWEI_OLT_FTP.md](docs/HUAWEI_OLT_FTP.md).
+
+`BACKUP_FTP_HOST` é o endereço ou hostname usado pela OLT para alcançar o FTP e
+mostrado ao operador nos comandos sugeridos. `BACKUP_FTP_PASSIVE_ADDRESS` é o IP
+anunciado pelo Pure-FTPd nas conexões passivas. Em rede roteada privada, ambos
+podem ser o mesmo IPv4 privado; em homologação com NAT/IP público, podem ser o
+endereço externo apropriado à rota da OLT. `BACKUP_FTP_PUBLIC_IP` está deprecated
+e serve somente como fallback quando o novo valor não foi definido. Sem ambos,
+o lançador não força um endereço passivo.

@@ -8,6 +8,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
@@ -48,12 +49,17 @@ class DeviceController extends Controller
             'hostname' => ['nullable', 'string', 'max:255'],
             'management_ip' => ['required', 'ip', 'max:45', 'unique:devices,management_ip'],
             'vendor' => ['required', 'string', 'max:100'],
+            'platform' => ['required', Rule::in(['network', 'olt'])],
             'model' => ['nullable', 'string', 'max:255'],
             'os_version' => ['nullable', 'string', 'max:255'],
             'notes' => ['nullable', 'string', 'max:2000'],
             'is_active' => ['required', 'boolean'],
         ]);
 
+        if (! Schema::hasColumn('devices', 'platform')) {
+            if ($validated['platform'] !== 'network') throw ValidationException::withMessages(['platform' => 'Atualização do banco pendente.']);
+            unset($validated['platform']);
+        }
         Device::create($validated);
 
         return redirect()
@@ -90,12 +96,17 @@ class DeviceController extends Controller
                 Rule::unique('devices', 'management_ip')->ignore($device->id),
             ],
             'vendor' => ['required', 'string', 'max:100'],
+            'platform' => ['required', Rule::in(['network', 'olt'])],
             'model' => ['nullable', 'string', 'max:255'],
             'os_version' => ['nullable', 'string', 'max:255'],
             'notes' => ['nullable', 'string', 'max:2000'],
             'is_active' => ['required', 'boolean'],
         ]);
 
+        if (! Schema::hasColumn('devices', 'platform')) {
+            if ($validated['platform'] !== 'network') throw ValidationException::withMessages(['platform' => 'Atualização do banco pendente.']);
+            unset($validated['platform']);
+        }
         DB::transaction(function () use ($device, $validated) {
             $locked = Device::query()->lockForUpdate()->findOrFail($device->id);
             if ($locked->management_ip !== $validated['management_ip']) {
@@ -134,7 +145,7 @@ class DeviceController extends Controller
                 ->with('warning', 'Remova as políticas associadas antes de remover este equipamento.');
         }
 
-        if ($device->credentials()->exists()) {
+        if ($device->credentials()->exists() || (Schema::hasTable('ftp_accounts') && $device->ftpAccount()->exists())) {
             return redirect()->route('devices.index')
                 ->with('warning', 'Remova as credenciais antes de remover este equipamento.');
         }
@@ -153,6 +164,7 @@ class DeviceController extends Controller
             'hostname' => trim((string) $request->input('hostname')) ?: null,
             'management_ip' => trim((string) $request->input('management_ip')),
             'vendor' => trim((string) $request->input('vendor')),
+            'platform' => $request->input('platform', 'network'),
             'model' => trim((string) $request->input('model')) ?: null,
             'os_version' => trim((string) $request->input('os_version')) ?: null,
             'notes' => trim((string) $request->input('notes')) ?: null,

@@ -56,14 +56,22 @@ class BackupPolicyController extends Controller
     public function update(Request $request, BackupPolicy $backupPolicy): RedirectResponse
     {
         $validated = $this->validated($request);
-        $newType = $validated['method'] === 'ssh_pull' ? 'ssh' : 'ftp';
+        $newType = $validated['method'] === 'ssh_pull' ? 'ssh' : 'none';
 
         if ($backupPolicy->deviceBackupPolicies()
-            ->whereHas('credential', fn ($query) => $query->where('type', '!=', $newType))
+            ->where(function ($query) use ($newType) {
+                if ($newType === 'none') $query->whereNotNull('credential_id');
+                else $query->whereNull('credential_id')->orWhereHas('credential', fn ($q) => $q->where('type', '!=', 'ssh'));
+            })
             ->exists()) {
             throw ValidationException::withMessages([
                 'method' => 'Remova as associações com credenciais incompatíveis antes de alterar o método.',
             ]);
+        }
+        if ($validated['method'] === 'ftp_push' && $backupPolicy->deviceBackupPolicies()->exists()) {
+            $incompatible = $backupPolicy->deviceBackupPolicies()->whereHas('device', fn ($query) => $query
+                ->where('platform', '!=', 'olt')->orWhereRaw('LOWER(TRIM(vendor)) != ?', ['huawei']))->exists();
+            if ($incompatible) throw ValidationException::withMessages(['method' => 'FTP Push requer Huawei OLT.']);
         }
 
         $backupPolicy->update($validated);
@@ -114,6 +122,12 @@ class BackupPolicyController extends Controller
             throw ValidationException::withMessages([
                 'retention_days' => 'Informe dias ou quantidade para retenção.',
             ]);
+        }
+        if ($validated['method'] === 'ftp_push' && $validated['artifact_mode'] !== 'config') {
+            throw ValidationException::withMessages(['artifact_mode' => 'FTP Push suporta apenas configuração nesta fase.']);
+        }
+        if ($validated['method'] === 'ftp_push' && $validated['schedule_type'] !== 'manual') {
+            throw ValidationException::withMessages(['schedule_type' => 'Nesta fase, Huawei OLT via FTP Push suporta somente execução manual.']);
         }
 
         if ($validated['schedule_type'] !== 'weekly') {

@@ -10,7 +10,12 @@
     <div class="panel-header"><div><h2>Dados da execução</h2></div><span class="badge {{ $backupExecution->status === 'succeeded' ? 'success' : ($backupExecution->status === 'failed' ? 'danger' : 'neutral') }}">{{ strtoupper($backupExecution->status) }}</span></div>
     <p><strong>Política:</strong> {{ $backupExecution->backupPolicy->name }} (#{{ $backupExecution->backup_policy_id }})</p>
     <p><strong>Equipamento:</strong> {{ $backupExecution->device->name }} (#{{ $backupExecution->device_id }})</p>
-    <p><strong>Credencial:</strong> {{ $backupExecution->credential->name }} · {{ $backupExecution->credential->username }} · {{ strtoupper($backupExecution->credential->type) }}</p>
+    <p><strong>Credencial:</strong> {{ $backupExecution->credential ? $backupExecution->credential->name.' · '.$backupExecution->credential->username.' · '.strtoupper($backupExecution->credential->type) : 'Conta FTP do equipamento' }}</p>
+    @if($backupExecution->backupPolicy->method === 'ftp_push' && $backupExecution->origin === 'manual')
+        <p><strong>Arquivo esperado:</strong> <code>bm-exec-{{ $backupExecution->id }}.cfg</code></p>
+        <p>Na OLT previamente configurada, execute manualmente: <code>backup configuration ftp {{ config('backup.ftp_host') ?: 'IP_DO_SERVIDOR_FTP' }} bm-exec-{{ $backupExecution->id }}.cfg</code></p>
+        <p>O arquivo deve chegar durante a execução. O envio da OLT não é iniciado pela V2.</p>
+    @endif
     <p><strong>Associação:</strong> #{{ $backupExecution->device_backup_policy_id }}</p>
     <p><strong>Origem:</strong> {{ ucfirst($backupExecution->origin) }} · <strong>Tentativa:</strong> {{ $backupExecution->attempt }}</p>
     @if($backupExecution->origin === 'scheduler')<p><strong>Agendado para:</strong> {{ app(\App\Services\InstanceTimezone::class)->format($backupExecution->scheduled_for) }}</p>@endif

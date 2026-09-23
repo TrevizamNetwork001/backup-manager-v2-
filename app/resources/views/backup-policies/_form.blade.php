@@ -20,6 +20,7 @@
         <option value="daily" @selected(old('schedule_type', $backupPolicy->schedule_type ?? '') === 'daily')>Diário</option>
         <option value="weekly" @selected(old('schedule_type', $backupPolicy->schedule_type ?? '') === 'weekly')>Semanal</option>
     </select>@error('schedule_type') <span class="field-error">{{ $message }}</span> @enderror</div>
+    <div id="ftp-manual-note" class="field form-span-2" @if(old('method', $backupPolicy->method ?? 'ssh_pull') !== 'ftp_push') hidden @endif><small>Nesta fase, Huawei OLT via FTP Push suporta somente execução manual.</small></div>
     <div class="field"><label for="schedule_time">Horário (diário/semanal)</label><input id="schedule_time" name="schedule_time" type="time" value="{{ old('schedule_time', isset($backupPolicy) ? substr($backupPolicy->schedule_time ?? '', 0, 5) : '') }}">@error('schedule_time') <span class="field-error">{{ $message }}</span> @enderror</div>
     <div class="field"><label for="schedule_weekday">Dia da semana (semanal)</label><select id="schedule_weekday" name="schedule_weekday">
         <option value="">Selecione...</option>
@@ -34,3 +35,8 @@
     <div class="field form-span-2"><input type="hidden" name="is_active" value="0"><label class="switch-row"><input type="checkbox" name="is_active" value="1" @checked(old('is_active', $backupPolicy->is_active ?? true))><span><strong>Política ativa</strong><small>Políticas inativas permanecem cadastradas.</small></span></label></div>
 </div>
 <div class="form-actions"><a href="{{ route('backup-policies.index') }}" class="secondary-button">Voltar</a><button type="submit" class="primary-button inline-button">{{ isset($backupPolicy) ? 'Salvar alterações' : 'Cadastrar política' }}</button></div>
+<script>
+document.getElementById('method').addEventListener('change', function () {
+    document.getElementById('ftp-manual-note').hidden = this.value !== 'ftp_push';
+});
+</script>
