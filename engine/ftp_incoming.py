@@ -14,6 +14,7 @@ from storage import store, validate, ftp_max_bytes
 
 
 NAME = re.compile(r'bm-exec-[1-9][0-9]*\.cfg\Z')
+STARTUP_GRACE_SECONDS = 30
 
 
 def directory(root_name, device_id):
@@ -47,7 +48,25 @@ def quarantine(root_name, path, reason):
     return reason
 
 
-def scan_orphans(root_name, expected, stable_seconds, observed):
+def existing_files(root_name):
+    """Give uploads present at startup time to reconnect to an active execution."""
+    root = Path(root_name).resolve(strict=True)
+    preserved = {}
+    started = time.monotonic()
+    for device_root in root.iterdir():
+        if not device_root.name.isdecimal() or device_root.is_symlink() or not device_root.is_dir():
+            continue
+        home = device_root / 'incoming'
+        if home.is_symlink() or not home.is_dir():
+            continue
+        for path in home.iterdir():
+            info = path.lstat()
+            identity = (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns)
+            preserved[(device_root.name, path.name)] = (identity, started)
+    return preserved
+
+
+def scan_orphans(root_name, expected, stable_seconds, observed, preserved=None):
     """Quarantine stable late uploads even when their execution has ended."""
     root = Path(root_name).resolve(strict=True)
     allowed = {(str(item['device_id']), item['filename']) for item in expected}
@@ -65,6 +84,11 @@ def scan_orphans(root_name, expected, stable_seconds, observed):
                 continue
             info = path.lstat()
             identity = (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns)
+            if preserved is not None:
+                original = preserved.get(key)
+                if original is not None and original[0] == identity and now - original[1] < STARTUP_GRACE_SECONDS:
+                    continue
+                preserved.pop(key, None)
             previous = observed.get(key)
             if previous is None or previous[0] != identity:
                 observed[key] = (identity, now)

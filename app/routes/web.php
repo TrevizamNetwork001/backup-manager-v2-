@@ -11,6 +11,7 @@ use App\Http\Controllers\DeviceController;
 use App\Http\Controllers\FtpAccountController;
 use App\Http\Controllers\SiteController;
 use App\Http\Controllers\InstanceSettingsController;
+use App\Http\Controllers\OltFtpWizardController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware('guest')->group(function () {
@@ -31,6 +32,12 @@ Route::middleware('auth')->group(function () {
     Route::post('devices/{device}/ftp-account', [FtpAccountController::class, 'store'])->name('devices.ftp-account.store');
     Route::patch('devices/{device}/ftp-account', [FtpAccountController::class, 'update'])->name('devices.ftp-account.update');
     Route::post('devices/{device}/ftp-account/rotate', [FtpAccountController::class, 'rotate'])->name('devices.ftp-account.rotate');
+    Route::post('devices/{device}/ftp-account/replace', [FtpAccountController::class, 'replace'])->name('devices.ftp-account.replace');
+    Route::post('devices/{device}/ftp-account/retry', [FtpAccountController::class, 'retry'])->name('devices.ftp-account.retry');
+    Route::get('devices/{device}/olt-ftp/status', [OltFtpWizardController::class, 'status'])->name('devices.olt-ftp.status');
+    Route::post('devices/{device}/olt-ftp/server', [OltFtpWizardController::class, 'saveServer'])->name('devices.olt-ftp.server');
+    Route::post('devices/{device}/olt-ftp/confirm', [OltFtpWizardController::class, 'confirm'])->name('devices.olt-ftp.confirm');
+    Route::post('devices/{device}/olt-ftp/test', [OltFtpWizardController::class, 'test'])->name('devices.olt-ftp.test');
     Route::post('devices/{device}/ssh-host-key/trust', [DeviceController::class, 'trustHostKey'])
         ->name('devices.ssh-host-key.trust');
 

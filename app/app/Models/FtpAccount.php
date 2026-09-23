@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class FtpAccount extends Model
 {
-    protected $fillable = ['device_id', 'username', 'is_active'];
+    protected $fillable = ['device_id', 'username', 'is_active', 'sync_error'];
     protected $hidden = ['secret'];
 
     protected function casts(): array

@@ -13,13 +13,13 @@ ARTISAN = ['php', '/var/www/html/artisan']
 PASSWD = '/etc/backup-ftp/pureftpd.passwd'
 PUREDB = '/etc/backup-ftp/pureftpd.pdb'
 ROOT = Path('/data/ftp')
-USER = re.compile(r'bmdev[1-9][0-9]*\Z')
+USER = re.compile(r'[a-z][a-z0-9_-]{2,31}\Z')
 
 
 def account_home(row):
     device_id = int(row['device_id'])
     username = row['username']
-    if device_id < 1 or username != 'bmdev' + str(device_id) or not USER.fullmatch(username):
+    if device_id < 1 or not isinstance(username, str) or not USER.fullmatch(username):
         raise RuntimeError('account_invalid')
     return ROOT / str(device_id) / 'incoming'
 
@@ -83,7 +83,7 @@ def sync_once():
             if not row['is_active']:
                 continue
             password = artisan('ftp:secret', str(int(row['id'])), secret=True)
-            if not re.fullmatch(rb'[a-f0-9]{48}', password):
+            if not 12 <= len(password) <= 128 or not re.fullmatch(rb'[\x21-\x7e]+', password):
                 raise RuntimeError('secret_invalid')
             pure('useradd', username, '-u', '65534', '-g', '65534', '-d', str(home),
                  '-f', temporary_passwd, password=password + b'\n' + password + b'\n')
@@ -111,5 +111,9 @@ if __name__ == '__main__':
         try:
             sync_once()
         except Exception:
+            try:
+                artisan('ftp:sync-failed')
+            except Exception:
+                pass
             print('ftp_account_sync_failed', flush=True)
         time.sleep(15)

@@ -23,6 +23,8 @@ services:
     environment:
       BACKUP_STORAGE_ROOT: /data/backups
       BACKUP_FTP_HOST: ${BACKUP_FTP_HOST:-}
+      BACKUP_FTP_PASSIVE_ADDRESS: ${BACKUP_FTP_PASSIVE_ADDRESS:-}
+      BACKUP_FTP_PUBLIC_IP: ${BACKUP_FTP_PUBLIC_IP:-}
       BACKUP_FTP_MAX_BYTES: ${BACKUP_FTP_MAX_BYTES:-8388608}
       BACKUP_ENGINE_STALE_SECONDS: ${BACKUP_ENGINE_STALE_SECONDS:-300}
     volumes:
@@ -117,9 +119,9 @@ services:
       BACKUP_FTP_PASSIVE_ADDRESS: ${BACKUP_FTP_PASSIVE_ADDRESS:-}
       BACKUP_FTP_PUBLIC_IP: ${BACKUP_FTP_PUBLIC_IP:-} # Deprecated launcher fallback.
       BACKUP_FTP_MAX_BYTES: ${BACKUP_FTP_MAX_BYTES:-8388608}
-    expose:
-      - "21"
-      - "30000-30009"
+    ports:
+      - "21:21/tcp"
+      - "30000-30009:30000-30009/tcp"
     volumes:
       - ftp-data:/data/ftp
       - ftp-db:/etc/backup-ftp:ro
@@ -136,6 +138,8 @@ services:
     restart: unless-stopped
     working_dir: /var/www/html
     command: ["python3", "/ftp/admin.py"]
+    environment:
+      LOG_CHANNEL: stderr
     volumes:
       - ./app:/var/www/html:ro
       - ftp-data:/data/ftp

@@ -2,6 +2,7 @@ import errno
 import base64
 import hashlib
 import io
+import json
 import logging
 import socket
 import os
@@ -22,7 +23,7 @@ from drivers.mikrotik_ssh import BackupError, VerifiedHostKeyPolicy, _mikrotik_t
 from drivers.huawei_vrp_ssh import export_config as export_huawei_config
 from drivers.huawei_vrp_ssh import _read_prompt
 from storage import store, validate
-from ftp_incoming import receive, directory, scan_orphans
+from ftp_incoming import receive, directory, existing_files, scan_orphans
 
 
 class EngineTests(unittest.TestCase):
@@ -114,8 +115,40 @@ class EngineTests(unittest.TestCase):
             with self.subTest(invalid=invalid[:20]), self.assertRaises(BackupError):
                 validate(invalid, 'huawei')
 
+    def test_olt_ftp_ma5800_content_validation(self):
+        valid = (Path(__file__).parent / 'fixtures/ma5800_ftp.cfg').read_bytes()
+        validate(valid, 'huawei_olt')
+        validate(valid.replace(b' sysname OLT-LAB', b'    sysname OLT-LAB'), 'huawei_olt')
+        validate(valid.replace(b'\n', b'\r\n'), 'huawei_olt')
+
+        # The global configuration may follow a long pre-config section.
+        long_pre_config = valid.replace(b'[global-config]',
+                                        b' board add 0/2 H901X\n' * 300 + b'[global-config]')
+        self.assertGreater(long_pre_config.index(b'[global-config]'), 4096)
+        validate(long_pre_config, 'huawei_olt')
+
+        for invalid in [
+            b'',
+            valid[:valid.index(b'#\n') + 2],
+            valid[:valid.index(b'[pre-config]')],
+            valid[:valid.index(b'[global-config]')],
+            valid[:valid.index(b' vlan 100 smart')],
+            valid[:-3],
+            valid[:valid.index(b'[global-config]')] + b'[global-config]\n',
+            b'<html>error</html>\n' + valid,
+            b'Error: backup failed\n' + valid,
+            valid + b'authentication failed\n',
+            valid + b'\xff',
+            valid + b'\x00',
+        ]:
+            with self.subTest(invalid=invalid[:40]), self.assertRaises(BackupError):
+                validate(invalid, 'huawei_olt')
+        with patch.dict(os.environ, {'BACKUP_FTP_MAX_BYTES': str(len(valid) - 1)}):
+            with self.assertRaises(BackupError):
+                validate(valid, 'huawei_olt')
+
     def test_olt_ftp_waits_for_stable_file_and_never_opens_ssh(self):
-        content = b'#\nsysname OLT-Lab\n#\ninterface gpon 0/1\n description lab\n#\n'
+        content = (Path(__file__).parent / 'fixtures/ma5800_ftp.cfg').read_bytes()
         with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as storage_root:
             home = directory(root, 2)
             home.mkdir(parents=True)
@@ -135,6 +168,37 @@ class EngineTests(unittest.TestCase):
             self.assertEqual([relative], completed)
             self.assertFalse(path.exists())
             self.assertEqual(content, Path(storage_root, relative).read_bytes())
+
+    def test_running_ftp_execution_receives_matching_late_upload_before_timeout(self):
+        content = (Path(__file__).parent / 'fixtures/ma5800_ftp.cfg').read_bytes()
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as storage_root:
+            home = directory(root, 4)
+            home.mkdir(parents=True)
+            wrong = home / 'bm-exec-25.cfg'
+            expected = home / 'bm-exec-23.cfg'
+            relative = 'Backup Manager/LAB/OLT/23-09-2026/OLT_20260923200000.cfg'
+            completed = []
+            def upload():
+                time.sleep(0.2)
+                wrong.write_bytes(content)
+                expected.write_bytes(content[:20])
+                time.sleep(0.2)
+                with expected.open('ab') as file:
+                    file.write(content[20:])
+            writer = threading.Thread(target=upload)
+            writer.start()
+            try:
+                receive(root, 4, expected.name, storage_root, relative, 4, 1,
+                        lambda final: completed.append(final), poll=0.1)
+            finally:
+                writer.join()
+            self.assertEqual([relative], completed)
+            self.assertEqual(content, Path(storage_root, relative).read_bytes())
+            self.assertEqual(hashlib.sha256(content).hexdigest(),
+                             hashlib.sha256(Path(storage_root, relative).read_bytes()).hexdigest())
+            self.assertFalse(expected.exists())
+            self.assertFalse(wrong.exists())
+            self.assertEqual(1, len(list(Path(root, 'quarantine').glob('*.quarantine'))))
 
     def test_olt_ftp_quarantines_invalid_and_uncorrelated_and_times_out(self):
         with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as storage_root:
@@ -168,6 +232,82 @@ class EngineTests(unittest.TestCase):
             scan_orphans(root, keep, 1, seen)
             self.assertFalse(late.exists())
             self.assertTrue(active.exists())
+
+    def test_startup_file_for_active_execution_remains_eligible(self):
+        content = (Path(__file__).parent / 'fixtures/ma5800_ftp.cfg').read_bytes()
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as storage_root:
+            home = directory(root, 4)
+            home.mkdir(parents=True)
+            active = home / 'bm-exec-23.cfg'
+            active.write_bytes(content)
+            preserved = existing_files(root)
+            with patch('ftp_incoming.time.monotonic', return_value=1000000):
+                scan_orphans(root, [{'device_id': 4, 'filename': active.name}], 1, {}, preserved)
+            self.assertTrue(active.exists())
+            relative = 'Backup Manager/LAB/OLT/23-09-2026/OLT_20260923200000.cfg'
+            receive(root, 4, active.name, storage_root, relative, 3, 1, lambda _: None, poll=0.1)
+            self.assertFalse(active.exists())
+            self.assertEqual(content, Path(storage_root, relative).read_bytes())
+
+    def test_startup_orphan_moves_to_uncorrelated_quarantine_after_grace(self):
+        with tempfile.TemporaryDirectory() as root:
+            home = directory(root, 4)
+            home.mkdir(parents=True)
+            orphan = home / 'bm-exec-23.cfg'
+            orphan.write_bytes(b'historical')
+            preserved = existing_files(root)
+            started = preserved[('4', orphan.name)][1]
+            observed = {}
+            with patch('ftp_incoming.time.monotonic', return_value=started + 31), \
+                    patch('ftp_incoming.time.time_ns', return_value=orphan.stat().st_mtime_ns + 2_000_000_000):
+                scan_orphans(root, [], 1, observed, preserved)
+            self.assertTrue(orphan.exists())
+            with patch('ftp_incoming.time.monotonic', return_value=started + 32), \
+                    patch('ftp_incoming.time.time_ns', return_value=orphan.stat().st_mtime_ns + 3_000_000_000):
+                scan_orphans(root, [], 1, observed, preserved)
+            self.assertFalse(orphan.exists())
+            self.assertEqual([{'reason': 'uncorrelated'}],
+                             [json.loads(path.read_text()) for path in Path(root, 'quarantine').glob('*.json')])
+            self.assertEqual(1, len(list(Path(root, 'quarantine').glob('*.quarantine'))))
+
+    def test_recent_startup_upload_is_not_quarantined_immediately(self):
+        with tempfile.TemporaryDirectory() as root:
+            home = directory(root, 4)
+            home.mkdir(parents=True)
+            recent = home / 'bm-exec-23.cfg'
+            recent.write_bytes(b'upload in progress')
+            preserved = existing_files(root)
+            started = preserved[('4', recent.name)][1]
+            observed = {}
+            with patch('ftp_incoming.time.monotonic', return_value=started + 29):
+                scan_orphans(root, [], 1, observed, preserved)
+            self.assertTrue(recent.exists())
+            self.assertEqual({}, observed)
+
+    def test_expired_execution_file_is_not_reused_after_startup_grace(self):
+        with tempfile.TemporaryDirectory() as root:
+            home = directory(root, 4)
+            home.mkdir(parents=True)
+            expired = home / 'bm-exec-23.cfg'
+            expired.write_bytes(b'expired upload')
+            preserved = existing_files(root)
+            started = preserved[('4', expired.name)][1]
+            observed = {}
+            # ftp:expected omits failed and expired executions.
+            with patch('ftp_incoming.time.monotonic', return_value=started + 31), \
+                    patch('ftp_incoming.time.time_ns', return_value=expired.stat().st_mtime_ns + 2_000_000_000):
+                scan_orphans(root, [], 1, observed, preserved)
+            with patch('ftp_incoming.time.monotonic', return_value=started + 32), \
+                    patch('ftp_incoming.time.time_ns', return_value=expired.stat().st_mtime_ns + 3_000_000_000):
+                scan_orphans(root, [], 1, observed, preserved)
+            self.assertFalse(expired.exists())
+            self.assertEqual('uncorrelated',
+                             json.loads(next(Path(root, 'quarantine').glob('*.json')).read_text())['reason'])
+            new = home / 'bm-exec-25.cfg'
+            new.write_bytes(b'new')
+            scan_orphans(root, [{'device_id': 4, 'filename': new.name}], 1, observed, preserved)
+            self.assertTrue(new.exists())
+            self.assertNotEqual(expired.name, new.name)
 
     def test_olt_dispatch_never_uses_ssh_and_matches_own_device_only(self):
         olt = {**self.job, 'vendor': 'Huawei', 'platform': 'olt', 'method': 'ftp_push',

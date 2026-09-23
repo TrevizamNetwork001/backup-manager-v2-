@@ -29,7 +29,13 @@ Artisan::command('engine:secret {id} {worker}', function (EngineJobService $engi
 
 Artisan::command('ftp:accounts', function () {
     $accounts = \App\Models\FtpAccount::query()->orderBy('id')->get(['id', 'device_id', 'username', 'is_active', 'updated_at']);
-    $this->line($accounts->toJson());
+    $this->line($accounts->map(fn ($account) => [
+        'id' => $account->id,
+        'device_id' => $account->device_id,
+        'username' => $account->username,
+        'is_active' => $account->is_active,
+        'updated_at' => $account->getRawOriginal('updated_at'),
+    ])->toJson());
 });
 
 Artisan::command('ftp:expected', function () {
@@ -54,10 +60,22 @@ Artisan::command('ftp:provisioned {id} {version}', function () {
     $id = (int) $this->argument('id');
     $version = $this->argument('version');
     $account = \App\Models\FtpAccount::findOrFail($id);
-    if (! $account->is_active || $account->updated_at?->toISOString() !== $version) {
+    if (! $account->is_active || $account->getRawOriginal('updated_at') !== $version) {
         throw new RuntimeException('Conta alterada durante provisionamento.');
     }
-    \Illuminate\Support\Facades\DB::table('ftp_accounts')->where('id', $id)->update(['provisioned_at' => now()]);
+    $updated = \Illuminate\Support\Facades\DB::table('ftp_accounts')->where('id', $id)
+        ->where('is_active', true)->where('updated_at', $version)
+        ->update(['provisioned_at' => now(), 'sync_error' => null]);
+    if ($updated !== 1) {
+        throw new RuntimeException('Conta alterada durante provisionamento.');
+    }
+});
+
+Artisan::command('ftp:sync-failed', function () {
+    \Illuminate\Support\Facades\DB::table('ftp_accounts')->where('is_active', true)
+        ->where(fn ($query) => $query->whereNull('provisioned_at')
+            ->orWhereColumn('provisioned_at', '<', 'updated_at'))
+        ->update(['sync_error' => 'Não foi possível sincronizar a conta no PureDB.']);
 });
 
 Artisan::command('engine:complete {id} {relative} {worker}', function (EngineJobService $engine) {

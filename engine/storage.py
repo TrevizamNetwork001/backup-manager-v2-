@@ -23,11 +23,21 @@ def validate(data, vendor='mikrotik'):
         raise BackupError('ARTIFACT_INVALID')
     if vendor == 'mikrotik' and not re.search(r'(?mi)^/[a-z]', preview):
         raise BackupError('ARTIFACT_INVALID')
-    if vendor == 'huawei_olt' and (len(data) < 32 or
-            not re.search(r'(?m)^#\s*$', preview) or
-            not re.search(r'(?mi)^(?:sysname|interface (?:gpon|epon)|ont |service-port|vlan )', preview) or
-            re.search(r'(?im)^\s*(?:error:|%\s*error|authentication failed|backing up files is fail|<html)', content)):
-        raise BackupError('FTP_FILE_INVALID')
+    if vendor == 'huawei_olt':
+        header = re.search(r'(?m)^\[!Software Version MA5800[^\]\r\n]*\]\r?$', preview)
+        saving_time = re.search(r'(?m)^\[Saving time: [^\]\r\n]+\]\r?$', preview)
+        section = re.search(r'(?m)^\[global-config\][ \t]*\r?$', content)
+        block = re.search(r'(?m)^[ \t]*<global-config>[ \t]*\r?$', content)
+        sysname = re.search(r'(?mi)^[ \t]*sysname[ \t]+\S[^\r\n]*\r?$', content)
+        separator = (re.compile(r'^#[ \t]*\r?$', re.MULTILINE).search(content, sysname.end())
+                     if sysname else None)
+        if (len(data) < 32 or not content.endswith('\n') or
+                not header or not saving_time or
+                not re.search(r'(?m)^#[ \t]*\r?$', content) or
+                not section or not block or not sysname or not separator or
+                not (header.start() < saving_time.start() < section.start() < block.start() < sysname.start()) or
+                re.search(r'(?im)^\s*(?:error:|%\s*error|authentication failed|backing up files is fail|<!doctype html\b|<html\b)', content)):
+            raise BackupError('FTP_FILE_INVALID')
     if vendor == 'huawei' and (len(data) < 32 or
             re.search(r'(?im)^\s*(?:Error:|%\s*(?:Error|Unrecognized|Unknown)|Unrecognized command|Unknown command|Incomplete command)', content) or
             re.search(r'(?i)(?:-{3,}\s*more\s*-{3,}|\bmore\s*:\s*|press\s+(?:any key|space))', content) or

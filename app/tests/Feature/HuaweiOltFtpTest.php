@@ -10,10 +10,12 @@ use App\Models\FtpAccount;
 use App\Models\Site;
 use App\Models\User;
 use App\Services\EngineJobService;
+use App\Services\FtpServerSettings;
 use App\Services\BackupScheduler;
 use App\Services\BackupRetention;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Tests\TestCase;
@@ -39,16 +41,195 @@ class HuaweiOltFtpTest extends TestCase
     public function test_account_is_encrypted_hidden_and_only_shown_once(): void
     {
         [$device] = $this->fixture(false);
-        $this->actingAs(User::factory()->create())->post(route('devices.ftp-account.store', $device))
+        $this->actingAs(User::factory()->create())->post(route('devices.ftp-account.store', $device), ['mode' => 'automatic'])
             ->assertOk()->assertSee('Senha FTP gerada')->assertHeader('Cache-Control', 'no-store, private');
         $account = $device->ftpAccount()->firstOrFail();
         $raw = DB::table('ftp_accounts')->where('id', $account->id)->value('secret');
         $this->assertNotSame($account->secret, $raw);
         $this->assertArrayNotHasKey('secret', $account->toArray());
-        $this->artisan('ftp:provisioned', ['id' => $account->id, 'version' => $account->updated_at->toISOString()])->assertExitCode(0);
+        Artisan::call('ftp:accounts');
+        $version = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)[0]['updated_at'];
+        $this->artisan('ftp:provisioned', ['id' => $account->id, 'version' => $version])->assertExitCode(0);
         $this->assertNotNull($account->fresh()->provisioned_at);
         $this->get(route('devices.edit', $device))->assertOk()->assertDontSee($account->secret)->assertDontSee($raw);
         $this->artisan('ftp:accounts')->doesntExpectOutputToContain($account->secret)->assertExitCode(0);
+    }
+
+    public function test_provisioning_version_survives_sync_error_and_retry_then_rotates(): void
+    {
+        [$device] = $this->fixture(false);
+        $this->actingAs(User::factory()->create())->post(route('devices.ftp-account.store', $device), ['mode' => 'automatic'])->assertOk();
+        $account = $device->ftpAccount()->firstOrFail();
+        Artisan::call('ftp:accounts');
+        $createdVersion = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)[0]['updated_at'];
+        $this->assertSame($account->getRawOriginal('updated_at'), $createdVersion);
+
+        $this->artisan('ftp:sync-failed')->assertExitCode(0);
+        $this->artisan('ftp:sync-failed')->assertExitCode(0);
+        $this->assertNotNull($account->fresh()->sync_error);
+        $this->assertSame($createdVersion, $account->fresh()->getRawOriginal('updated_at'));
+        $this->post(route('devices.ftp-account.retry', $device))->assertRedirect();
+        $this->assertSame($createdVersion, $account->fresh()->getRawOriginal('updated_at'));
+        $this->artisan('ftp:provisioned', ['id' => $account->id, 'version' => $createdVersion])->assertExitCode(0);
+        $this->assertNotNull($account->fresh()->provisioned_at);
+        $this->assertNull($account->fresh()->sync_error);
+
+        $this->travel(2)->seconds();
+        $this->post(route('devices.ftp-account.rotate', $device))->assertOk();
+        $this->assertNull($account->fresh()->provisioned_at);
+        Artisan::call('ftp:accounts');
+        $rotatedVersion = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)[0]['updated_at'];
+        $this->assertNotSame($createdVersion, $rotatedVersion);
+        $this->artisan('ftp:provisioned', ['id' => $account->id, 'version' => $rotatedVersion])->assertExitCode(0);
+        $this->assertNotNull($account->fresh()->provisioned_at);
+        $this->assertNull($account->fresh()->sync_error);
+    }
+
+    public function test_provisioning_rejects_version_from_before_password_rotation(): void
+    {
+        [$device] = $this->fixture(false);
+        $account = new FtpAccount(['device_id' => $device->id, 'username' => 'bmdev'.$device->id, 'is_active' => true]);
+        $account->secret = 'synthetic-only-secret';
+        $account->save();
+        Artisan::call('ftp:accounts');
+        $oldVersion = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)[0]['updated_at'];
+
+        $this->travel(2)->seconds();
+        $account->secret = 'rotated-synthetic-secret';
+        $account->save();
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Conta alterada durante provisionamento.');
+        Artisan::call('ftp:provisioned', ['id' => $account->id, 'version' => $oldVersion]);
+    }
+
+    public function test_manual_account_validates_username_and_password_and_sync_can_retry(): void
+    {
+        [$device] = $this->fixture(false);
+        $this->actingAs(User::factory()->create());
+        $payload = ['mode' => 'manual', 'username' => 'olt_lab', 'password' => 'Strong!Pass12345',
+            'password_confirmation' => 'Strong!Pass12345'];
+        $this->post(route('devices.ftp-account.store', $device), array_replace($payload, ['username' => '../bad']))
+            ->assertSessionHasErrors('username');
+        $this->post(route('devices.ftp-account.store', $device), array_replace($payload, ['password_confirmation' => 'mismatch']))
+            ->assertSessionHasErrors('password');
+        $this->post(route('devices.ftp-account.store', $device), $payload)
+            ->assertOk()->assertSee('Strong!Pass12345')->assertHeader('Cache-Control', 'no-store, private');
+        $account = $device->ftpAccount()->firstOrFail();
+        $this->assertSame('olt_lab', $account->username);
+        $this->assertNotSame($payload['password'], DB::table('ftp_accounts')->where('id', $account->id)->value('secret'));
+        $this->get(route('devices.edit', $device))->assertDontSee($payload['password']);
+
+        $other = Device::create(['site_id' => $device->site_id, 'name' => 'OLT 2',
+            'management_ip' => '192.0.2.11', 'vendor' => 'Huawei', 'platform' => 'olt', 'is_active' => true]);
+        $this->post(route('devices.ftp-account.store', $other), $payload)->assertSessionHasErrors('username');
+        $this->artisan('ftp:sync-failed')->assertExitCode(0);
+        $this->get(route('devices.olt-ftp.status', $device))->assertJsonPath('state', 'sync_error');
+        $this->get(route('devices.edit', $device))->assertSee('Não foi possível sincronizar a conta no PureDB.')
+            ->assertSee('Tentar novamente');
+        $this->post(route('devices.ftp-account.retry', $device))->assertRedirect();
+        $this->get(route('devices.olt-ftp.status', $device))->assertJsonPath('state', 'sync');
+    }
+
+    public function test_existing_account_can_be_kept_or_replaced_manually(): void
+    {
+        [$device] = $this->fixture();
+        $this->actingAs(User::factory()->create());
+        $account = $device->ftpAccount()->firstOrFail();
+        $oldSecret = $account->secret;
+        $this->get(route('devices.edit', $device))->assertOk()
+            ->assertSee('Usuário atual:')->assertSee($account->username)
+            ->assertSee('Manter conta atual')->assertSee('Substituir conta')
+            ->assertSee('Como deseja criar a conta FTP?')
+            ->assertSee('Gerar automaticamente')->assertSee('Definir manualmente')
+            ->assertSee('Trocar usuário ou senha depois de configurar a OLT exigirá atualizar os dados na OLT.')
+            ->assertDontSee($oldSecret);
+
+        $this->post(route('devices.ftp-account.replace', $device), [
+            'mode' => 'manual', 'username' => 'olt_manual', 'password' => 'Strong!Pass12345',
+            'password_confirmation' => 'wrong',
+        ])->assertSessionHasErrors('password');
+        $this->assertSame($oldSecret, $account->fresh()->secret);
+
+        $this->post(route('devices.ftp-account.replace', $device), [
+            'mode' => 'manual', 'username' => 'olt_manual', 'password' => 'Strong!Pass12345',
+            'password_confirmation' => 'Strong!Pass12345',
+        ])->assertOk()->assertSee('Strong!Pass12345')->assertHeader('Cache-Control', 'no-store, private');
+        $account->refresh();
+        $this->assertSame('olt_manual', $account->username);
+        $this->assertSame('Strong!Pass12345', $account->secret);
+        $this->assertNull($account->provisioned_at);
+        $this->assertNotSame($account->secret, DB::table('ftp_accounts')->where('id', $account->id)->value('secret'));
+        $this->get(route('devices.edit', $device))->assertDontSee($oldSecret)->assertDontSee($account->secret);
+    }
+
+    public function test_existing_account_can_be_replaced_automatically(): void
+    {
+        [$device] = $this->fixture();
+        $this->actingAs(User::factory()->create());
+        $account = $device->ftpAccount()->firstOrFail();
+        $oldSecret = $account->secret;
+
+        $this->post(route('devices.ftp-account.replace', $device), ['mode' => 'automatic'])
+            ->assertOk()->assertSee('Senha FTP gerada');
+        $account->refresh();
+        $this->assertSame('bmdev'.$device->id, $account->username);
+        $this->assertNotSame($oldSecret, $account->secret);
+        $this->assertNull($account->provisioned_at);
+        $this->assertSame('sync', app(\App\Services\OltFtpWizard::class)->snapshot($device)['state']);
+    }
+
+    public function test_status_polling_is_read_only_and_confirmation_creates_one_integration(): void
+    {
+        $site = Site::create(['name' => 'Other', 'is_active' => true]);
+        for ($number = 1; $number <= 3; $number++) {
+            Device::create(['site_id' => $site->id, 'name' => 'Other '.$number,
+                'management_ip' => '192.0.2.'.$number, 'vendor' => 'Huawei', 'platform' => 'olt', 'is_active' => true]);
+        }
+        [$device] = $this->fixture(false);
+        $this->assertSame(4, $device->id);
+        $this->actingAs(User::factory()->create());
+        config()->set('backup.ftp_host', '');
+
+        $account = new FtpAccount(['device_id' => $device->id, 'username' => 'bmdev4', 'is_active' => true]);
+        $account->secret = 'synthetic-only-secret';
+        $account->save();
+        DB::table('ftp_accounts')->where('id', $account->id)->update([
+            'provisioned_at' => now()->subMinute(), 'sync_error' => null,
+        ]);
+        $this->assertDatabaseMissing('olt_ftp_integrations', ['device_id' => 4]);
+
+        $this->get(route('devices.olt-ftp.status', $device))->assertOk()->assertJsonPath('state', 'server');
+        $this->get(route('devices.edit', [$device, 'olt_wizard' => 1]))->assertOk()
+            ->assertSee('data-state="server"', false)
+            ->assertSee('Etapa 3 de 6')
+            ->assertSee("showStep(currentStep); dialog.showModal(); poll();", false);
+        for ($poll = 0; $poll < 3; $poll++) {
+            $this->get(route('devices.olt-ftp.status', $device))->assertJsonPath('state', 'server');
+        }
+        $this->assertDatabaseMissing('olt_ftp_integrations', ['device_id' => 4]);
+        $this->post(route('devices.ftp-account.replace', $device), ['mode' => 'automatic'])->assertOk();
+        $this->assertDatabaseMissing('olt_ftp_integrations', ['device_id' => 4]);
+        $this->get(route('devices.olt-ftp.status', $device))->assertJsonPath('state', 'sync');
+        DB::table('ftp_accounts')->where('id', $account->id)->update([
+            'provisioned_at' => now()->subMinute(), 'sync_error' => null,
+        ]);
+        $this->get(route('devices.olt-ftp.status', $device))->assertJsonPath('state', 'server');
+        $this->assertDatabaseMissing('olt_ftp_integrations', ['device_id' => 4]);
+        config()->set('backup.ftp_host', '192.0.2.20');
+        $this->post(route('devices.olt-ftp.confirm', $device), ['olt_configured' => '1'])->assertRedirect();
+        $integrationId = DB::table('olt_ftp_integrations')->where('device_id', 4)->value('id');
+        $this->assertNotNull($integrationId);
+        DB::enableQueryLog();
+        $this->post(route('devices.olt-ftp.confirm', $device), ['olt_configured' => '1'])->assertRedirect();
+        $this->assertSame($integrationId, DB::table('olt_ftp_integrations')->where('device_id', 4)->value('id'));
+        $this->get(route('devices.olt-ftp.status', $device))->assertJsonPath('state', 'test');
+        $repeatedInserts = array_filter(DB::getQueryLog(), fn ($query) =>
+            str_contains(strtolower($query['query']), 'insert into "olt_ftp_integrations"'));
+        DB::disableQueryLog();
+        DB::flushQueryLog();
+        $this->assertSame([], $repeatedInserts);
+        $this->assertSame(1, DB::table('olt_ftp_integrations')->where('device_id', 4)->count());
     }
 
     public function test_olt_ftp_instructions_follow_account_and_server_readiness(): void
@@ -56,57 +237,201 @@ class HuaweiOltFtpTest extends TestCase
         [$device] = $this->fixture(false);
         $this->actingAs(User::factory()->create());
         config()->set('backup.ftp_host', '');
+        $this->get(route('devices.olt-ftp.status', $device))->assertJsonPath('state', 'account');
 
         $this->get(route('devices.edit', $device))->assertOk()
-            ->assertSee('O que fazer agora')
-            ->assertSee('Não configure a OLT ainda.')
-            ->assertSee('Crie a conta FTP deste equipamento')
-            ->assertSee('O endereço do servidor FTP desta instalação ainda não foi configurado.')
-            ->assertSee('Próximo passo no servidor:')
-            ->assertSeeInOrder(['Sincronizar a conta no PureDB.', 'Configurar o endereço do servidor FTP.'])
-            ->assertDontSee('SSH Host Key')
-            ->assertDontSee('Configure BACKUP_FTP_HOST');
+            ->assertSee('Gerar automaticamente')->assertSee('Definir manualmente')
+            ->assertDontSee('O que fazer agora')->assertDontSee('SSH Host Key');
 
         $account = new FtpAccount(['device_id' => $device->id, 'username' => 'bmdev'.$device->id, 'is_active' => true]);
         $account->secret = 'synthetic-only-secret';
         $account->save();
         config()->set('backup.ftp_host', '192.0.2.20');
+        $this->get(route('devices.olt-ftp.status', $device))->assertJsonPath('state', 'sync');
         $this->get(route('devices.edit', $device))->assertOk()
-            ->assertSee('Não configure a OLT ainda.')
-            ->assertSee('Sincronizar a conta no PureDB.')
+            ->assertSee('Sincronizando conta no PureDB')
             ->assertDontSee('<strong>Servidor:</strong> 192.0.2.20', false);
 
         DB::table('ftp_accounts')->where('id', $account->id)->update(['provisioned_at' => now()->addSecond()]);
         config()->set('backup.ftp_host', '');
+        $this->get(route('devices.olt-ftp.status', $device))->assertJsonPath('state', 'server');
         $this->get(route('devices.edit', $device))->assertOk()
-            ->assertSee('Não configure a OLT ainda.')
-            ->assertSee('O endereço do servidor FTP desta instalação ainda não foi configurado.')
-            ->assertSee('Configurar o endereço do servidor FTP.')
+            ->assertSee('IP ou hostname do servidor FTP que receberá os backups da OLT.')
+            ->assertSee('Host do servidor FTP')
+            ->assertSee('Endereço passivo do FTP')
+            ->assertSee('Salvar e validar')
+            ->assertSee('data-wizard-panel="3" aria-label="Servidor FTP"', false)
+            ->assertSee('data-wizard-step="3"', false)
+            ->assertSee('id="back-olt-wizard"', false)
+            ->assertSee('id="next-olt-wizard"', false)
             ->assertDontSee('<strong>Usuário:</strong> bmdev'.$device->id, false);
 
         config()->set('backup.ftp_host', '192.0.2.20');
+        $this->get(route('devices.olt-ftp.status', $device))->assertJsonPath('state', 'olt');
         $this->get(route('devices.edit', $device))->assertOk()
-            ->assertSee('Pronto para configurar a OLT.')
             ->assertSee('<strong>Servidor:</strong> 192.0.2.20', false)
             ->assertSee('<strong>Porta:</strong> 21', false)
             ->assertSee('<strong>Usuário:</strong> bmdev'.$device->id, false)
+            ->assertSee('Já configurei estes dados na OLT')
+            ->assertSee('data-wizard-panel="4" aria-label="Configuração da OLT"', false)
             ->assertSee('Diretório remoto:')
-            ->assertSee('Configuração inicial da OLT — feita uma única vez')
-            ->assertSee('Execução de backup — feita a cada backup')
-            ->assertSee('A V2 não executa')
+            ->assertSee('Avançar para teste')
             ->assertDontSee('SSH Host Key')
-            ->assertDontSee('Não configure a OLT ainda.')
+            ->assertDontSee('O que fazer agora')
             ->assertDontSee('synthetic-only-secret');
 
         $account->update(['is_active' => false]);
         $this->get(route('devices.edit', $device))->assertOk()
-            ->assertSee('Não configure a OLT ainda.')
-            ->assertSee('Ative a conta FTP deste equipamento.');
+            ->assertSee('Manter conta atual');
 
         $device->update(['platform' => 'network']);
         $this->get(route('devices.edit', $device))->assertOk()
             ->assertSee('SSH Host Key')
-            ->assertDontSee('O que fazer agora');
+            ->assertDontSee('Configuração Huawei OLT / FTP');
+    }
+
+    public function test_server_settings_are_persisted_and_advance_wizard(): void
+    {
+        [$device] = $this->fixture();
+        $this->actingAs(User::factory()->create());
+        config()->set('backup.ftp_host', '192.0.2.20');
+        config()->set('backup.ftp_passive_address', '192.0.2.30');
+
+        $this->get(route('devices.edit', [$device, 'olt_wizard' => 1]))->assertOk()
+            ->assertSee('value="192.0.2.20"', false)
+            ->assertSee('value="192.0.2.30"', false)
+            ->assertSee('value="21"', false);
+
+        config()->set('backup.ftp_host', '');
+        $this->get(route('devices.olt-ftp.status', $device))->assertJsonPath('state', 'server');
+        $this->post(route('devices.olt-ftp.server', $device), [
+            'ftp_host' => 'olt.example.net', 'ftp_passive_address' => '192.0.2.30', 'ftp_port' => 21,
+        ])->assertRedirect(route('devices.edit', [$device, 'olt_wizard' => 1]));
+        $this->assertDatabaseHas('application_settings', [
+            'id' => 1, 'ftp_host' => 'olt.example.net', 'ftp_passive_address' => '192.0.2.30', 'ftp_port' => 21,
+        ]);
+        $this->get(route('devices.olt-ftp.status', $device))->assertJsonPath('state', 'olt');
+        $this->get(route('devices.edit', [$device, 'olt_wizard' => 1]))->assertOk()
+            ->assertSee('value="olt.example.net"', false)
+            ->assertSee('value="192.0.2.30"', false)
+            ->assertSee('value="21"', false)
+            ->assertSee('data-wizard-step="4"', false)
+            ->assertDontSee('synthetic-only-secret');
+    }
+
+    public function test_server_settings_reject_invalid_addresses_and_ports(): void
+    {
+        [$device] = $this->fixture();
+        $this->actingAs(User::factory()->create());
+        foreach (['bad host', 'https://ftp.example.net', '-bad.example.net', '2001:db8::zz', '999.999.999.999'] as $address) {
+            $this->post(route('devices.olt-ftp.server', $device), [
+                'ftp_host' => $address, 'ftp_passive_address' => '', 'ftp_port' => 21,
+            ])->assertSessionHasErrors('ftp_host');
+        }
+        foreach ([0, 65536, 'abc'] as $port) {
+            $this->post(route('devices.olt-ftp.server', $device), [
+                'ftp_host' => '192.0.2.20', 'ftp_passive_address' => '', 'ftp_port' => $port,
+            ])->assertSessionHasErrors('ftp_port');
+        }
+        $this->post(route('devices.olt-ftp.server', $device), [
+            'ftp_host' => '192.0.2.20', 'ftp_passive_address' => 'invalid/address', 'ftp_port' => 21,
+        ])->assertSessionHasErrors('ftp_passive_address');
+        $this->assertDatabaseHas('application_settings', ['id' => 1, 'ftp_host' => null]);
+    }
+
+    public function test_server_settings_reject_passive_address_different_from_compose(): void
+    {
+        [$device] = $this->fixture();
+        $this->actingAs(User::factory()->create());
+        config()->set('backup.ftp_passive_address', '192.0.2.30');
+
+        $this->post(route('devices.olt-ftp.server', $device), [
+            'ftp_host' => '192.0.2.20', 'ftp_passive_address' => '192.0.2.31', 'ftp_port' => 21,
+        ])->assertSessionHasErrors('ftp_passive_address');
+        $this->assertDatabaseHas('application_settings', ['id' => 1, 'ftp_host' => null]);
+    }
+
+    public function test_server_settings_keep_passive_fallback_and_default_port(): void
+    {
+        [$device] = $this->fixture();
+        $this->actingAs(User::factory()->create());
+        config()->set('backup.ftp_host', '');
+        config()->set('backup.ftp_passive_address', 'passive.example.net');
+
+        $this->post(route('devices.olt-ftp.server', $device), ['ftp_host' => '2001:db8::20', 'ftp_passive_address' => 'passive.example.net'])
+            ->assertRedirect();
+        $this->assertDatabaseHas('application_settings', [
+            'id' => 1, 'ftp_host' => '2001:db8::20', 'ftp_passive_address' => 'passive.example.net', 'ftp_port' => 21,
+        ]);
+        $this->get(route('devices.edit', [$device, 'olt_wizard' => 1]))->assertOk()
+            ->assertSee('value="2001:db8::20"', false)
+            ->assertSee('value="passive.example.net"', false)
+            ->assertSee('value="21"', false);
+    }
+
+    public function test_server_settings_use_fallbacks_when_fields_are_missing_or_null(): void
+    {
+        config()->set('backup.ftp_host', '192.0.2.20');
+        config()->set('backup.ftp_passive_address', '192.0.2.30');
+        $expected = ['host' => '192.0.2.20', 'passive_address' => '192.0.2.30', 'port' => 21];
+
+        $this->assertSame($expected, app(FtpServerSettings::class)->get());
+
+        $query = \Mockery::mock();
+        $query->shouldReceive('where')->once()->with('id', 1)->andReturnSelf();
+        $query->shouldReceive('first')->once()->andReturn((object) ['id' => 1]);
+        DB::shouldReceive('table')->once()->with('application_settings')->andReturn($query);
+        $this->assertSame($expected, app(FtpServerSettings::class)->get());
+    }
+
+    public function test_execution_22_accepts_provisioned_device_4_account_and_saved_ftp_host(): void
+    {
+        $site = Site::create(['name' => 'Lab', 'is_active' => true]);
+        for ($id = 1; $id <= 3; $id++) {
+            Device::create(['site_id' => $site->id, 'name' => 'Other '.$id,
+                'management_ip' => '192.0.2.'.$id, 'vendor' => 'Huawei', 'platform' => 'olt', 'is_active' => true]);
+        }
+        [$device, $policy] = $this->fixture(false);
+        $this->assertSame(4, $device->id);
+
+        $account = new FtpAccount(['device_id' => $device->id, 'username' => 'bmdev4', 'is_active' => true]);
+        $account->secret = 'Manual!Password123';
+        $account->save();
+        $this->assertSame(1, $account->id);
+        DB::table('ftp_accounts')->where('id', $account->id)->update([
+            'provisioned_at' => now()->subMinute(), 'sync_error' => null,
+        ]);
+        config()->set('backup.ftp_host', '');
+        DB::table('application_settings')->where('id', 1)->update(['ftp_host' => '192.0.2.20']);
+
+        $association = DeviceBackupPolicy::create(['device_id' => $device->id,
+            'backup_policy_id' => $policy->id, 'credential_id' => null, 'is_active' => true]);
+        for ($id = 1; $id <= 21; $id++) {
+            BackupExecution::createManual($association);
+        }
+        $this->actingAs(User::factory()->create());
+        $this->post(route('devices.olt-ftp.confirm', $device), ['olt_configured' => '1'])->assertRedirect();
+        $this->post(route('devices.olt-ftp.test', $device))->assertRedirect();
+        $execution = $device->fresh()->oltFtpIntegration->testExecution;
+        $this->assertSame(22, $execution->id);
+        $this->assertSame('queued', $execution->status);
+
+        $engine = app(EngineJobService::class);
+        $this->assertSame($execution->id, $engine->claim()->id);
+        $payload = $engine->job($execution->id);
+        $this->assertTrue($payload['ftp_account_available']);
+        $this->assertTrue($payload['eligible']);
+        $this->assertSame('192.0.2.20', $payload['ftp_host']);
+        $this->assertSame('bmdev4', $payload['ftp_username']);
+        $this->assertSame('bm-exec-22.cfg', $payload['ftp_filename']);
+        $this->assertStringNotContainsString('Manual!Password123', json_encode($payload));
+
+        DB::table('ftp_accounts')->where('id', $account->id)->update(['sync_error' => 'Falha de sincronização']);
+        $this->assertFalse($engine->job($execution->id)['ftp_account_available']);
+        DB::table('ftp_accounts')->where('id', $account->id)->update(['sync_error' => null, 'provisioned_at' => null]);
+        $this->assertFalse($engine->job($execution->id)['ftp_account_available']);
+        DB::table('ftp_accounts')->where('id', $account->id)->update(['provisioned_at' => now(), 'is_active' => false]);
+        $this->assertFalse($engine->job($execution->id)['ftp_account_available']);
     }
 
     public function test_ftp_requires_olt_account_and_no_ssh_credential(): void
@@ -152,7 +477,28 @@ class HuaweiOltFtpTest extends TestCase
             file_put_contents($path, 'invalid');
             try { $engine->complete($job->id, $relative); $this->fail('Invalid artifact accepted'); }
             catch (ValidationException) { $this->assertSame('running', $job->fresh()->status); }
-            $valid = "#\nsysname OLT-Lab\n#\ninterface gpon 0/1\n description lab\n#\n";
+            $valid = file_get_contents(dirname(__DIR__, 3).'/engine/tests/fixtures/ma5800_ftp.cfg');
+            foreach ([
+                substr($valid, 0, strpos($valid, "#\n") + 2),
+                substr($valid, 0, strpos($valid, '[global-config]')),
+                substr($valid, 0, strpos($valid, ' vlan 100 smart')),
+                substr($valid, 0, -3),
+                "<html>error</html>\n".$valid,
+                "Error: backup failed\n".$valid,
+                $valid."\0",
+                $valid."\xff",
+            ] as $invalid) {
+                file_put_contents($path, $invalid);
+                try { $engine->complete($job->id, $relative); $this->fail('Invalid artifact accepted'); }
+                catch (ValidationException) { $this->assertSame('running', $job->fresh()->status); }
+            }
+            $ftpMaxBytes = config('backup.ftp_max_bytes');
+            config()->set('backup.ftp_max_bytes', strlen($valid) - 1);
+            file_put_contents($path, $valid);
+            try { $engine->complete($job->id, $relative); $this->fail('Oversized artifact accepted'); }
+            catch (ValidationException) { $this->assertSame('running', $job->fresh()->status); }
+            config()->set('backup.ftp_max_bytes', $ftpMaxBytes);
+            $valid = str_replace('[global-config]', str_repeat(" board add 0/2 H901X\n", 300).'[global-config]', $valid);
             file_put_contents($path, $valid);
             $artifact = $engine->complete($job->id, $relative);
             $this->assertSame(hash('sha256', $valid), $artifact->sha256);
@@ -226,5 +572,297 @@ class HuaweiOltFtpTest extends TestCase
             ->assertSee('bm-exec-'.$execution->id.'.cfg')
             ->assertSee('backup configuration ftp 192.0.2.20 bm-exec-'.$execution->id.'.cfg')
             ->assertDontSee('synthetic-only-secret');
+    }
+
+    public function test_wizard_tracks_real_readiness_confirmation_and_validated_test(): void
+    {
+        [$device] = $this->fixture();
+        $this->actingAs(User::factory()->create());
+        config()->set('backup.ftp_host', '192.0.2.20');
+
+        $this->get(route('devices.olt-ftp.status', $device))->assertOk()->assertJsonPath('state', 'olt');
+        $this->post(route('devices.olt-ftp.confirm', $device))->assertSessionHasErrors('olt_configured');
+        $this->post(route('devices.olt-ftp.test', $device))->assertSessionHasErrors('wizard');
+        $this->post(route('devices.olt-ftp.confirm', $device), ['olt_configured' => '1'])->assertRedirect();
+        $this->get(route('devices.olt-ftp.status', $device))->assertJsonPath('state', 'test');
+        $this->get(route('devices.edit', [$device, 'olt_wizard' => 1]))->assertOk()
+            ->assertSee('Iniciar teste de integração')
+            ->assertSee('data-wizard-panel="5" aria-label="Teste de integração"', false);
+        $this->post(route('devices.olt-ftp.test', $device))->assertRedirect();
+        $execution = $device->fresh()->oltFtpIntegration->testExecution;
+        $this->assertSame('queued', $execution->status);
+        $this->get(route('devices.edit', [$device, 'olt_wizard' => 1]))->assertOk()
+            ->assertSee('backup configuration ftp 192.0.2.20 bm-exec-'.$execution->id.'.cfg')
+            ->assertSee('Esta tela será atualizada automaticamente quando o arquivo for recebido e validado.')
+            ->assertDontSee('synthetic-only-secret');
+        $this->get(route('devices.olt-ftp.status', $device))->assertJsonPath('state', 'waiting');
+        $this->get(route('devices.olt-ftp.status', $device))->assertJsonPath('current_step', 5);
+
+        app(EngineJobService::class)->claim();
+        $root = sys_get_temp_dir().'/olt-wizard-test-'.bin2hex(random_bytes(8));
+        mkdir($root, 0700);
+        config()->set('backup.storage_root', $root);
+        $relative = app(EngineJobService::class)->relativePath($execution);
+        $path = $root.'/'.$relative;
+        mkdir(dirname($path), 0700, true);
+        try {
+            file_put_contents($path, file_get_contents(dirname(__DIR__, 3).'/engine/tests/fixtures/ma5800_ftp.cfg'));
+            app(EngineJobService::class)->complete($execution->id, $relative);
+            $this->get(route('devices.olt-ftp.status', $device))->assertJsonPath('state', 'operational');
+            $this->get(route('devices.olt-ftp.status', $device))->assertJsonPath('current_step', 6);
+            $this->get(route('devices.edit', $device))->assertSee('Integração operacional.')
+                ->assertSee('id="finish-olt-wizard"', false)
+                ->assertSee('Concluir');
+        } finally {
+            unlink($path);
+            $dir = dirname($path);
+            while ($dir !== $root) { rmdir($dir); $dir = dirname($dir); }
+            rmdir($root);
+        }
+
+        config()->set('backup.ftp_host', '192.0.2.21');
+        $this->get(route('devices.olt-ftp.status', $device))->assertJsonPath('state', 'olt');
+    }
+
+    public function test_wizard_failure_allows_retry_with_new_filename(): void
+    {
+        [$device] = $this->fixture();
+        $this->actingAs(User::factory()->create());
+        config()->set('backup.ftp_host', '192.0.2.20');
+        $this->post(route('devices.olt-ftp.confirm', $device), ['olt_configured' => '1']);
+        $this->post(route('devices.olt-ftp.test', $device));
+        $first = $device->fresh()->oltFtpIntegration->testExecution;
+        $this->post(route('devices.olt-ftp.test', $device));
+        $this->assertSame($first->id, $device->fresh()->oltFtpIntegration->test_execution_id);
+        app(EngineJobService::class)->claim();
+        app(EngineJobService::class)->fail($first->id, 'FTP_FILE_INVALID');
+        $this->get(route('devices.olt-ftp.status', $device))->assertJsonPath('state', 'failed');
+        $this->get(route('devices.olt-ftp.status', $device))->assertJsonPath('current_step', 5);
+        $this->get(route('devices.edit', $device))->assertSee('Arquivo FTP inválido.')->assertSee('Tentar novamente');
+        $this->post(route('devices.olt-ftp.test', $device))->assertRedirect();
+        $second = $device->fresh()->oltFtpIntegration->testExecution;
+        $this->assertNotSame($first->id, $second->id);
+        $this->assertSame('queued', $second->status);
+        $this->assertSame('failed', $first->fresh()->status);
+        $this->get(route('devices.edit', [$device, 'olt_wizard' => 1]))->assertOk()
+            ->assertSee('Execução de teste #'.$second->id)
+            ->assertSee('bm-exec-'.$second->id.'.cfg')
+            ->assertSee('backup configuration ftp 192.0.2.20 bm-exec-'.$second->id.'.cfg')
+            ->assertSee('Copiar comando')
+            ->assertSee('Cada nova tentativa gera um novo número de execução e um novo nome de arquivo. Use sempre o comando exibido nesta tentativa.')
+            ->assertDontSee('backup configuration ftp 192.0.2.20 bm-exec-'.$first->id.'.cfg');
+        $this->assertSame($first->backup_policy_id, $second->backup_policy_id);
+        $this->post(route('devices.ftp-account.rotate', $device))->assertOk();
+        $this->get(route('devices.olt-ftp.status', $device))->assertJsonPath('state', 'sync');
+    }
+
+    public function test_failed_execution_keeps_only_first_four_steps_complete_and_reopens_at_five(): void
+    {
+        [$device] = $this->fixture();
+        $this->actingAs(User::factory()->create());
+        config()->set('backup.ftp_host', '192.0.2.20');
+        $this->post(route('devices.olt-ftp.confirm', $device), ['olt_configured' => '1'])->assertRedirect();
+        $this->post(route('devices.olt-ftp.test', $device))->assertRedirect();
+        $execution = $device->fresh()->oltFtpIntegration->testExecution;
+        app(EngineJobService::class)->claim();
+        app(EngineJobService::class)->fail($execution->id, 'FTP_ACCOUNT_UNAVAILABLE');
+
+        $snapshot = app(\App\Services\OltFtpWizard::class)->snapshot($device);
+        $this->assertSame(5, $snapshot['current_step']);
+        $this->assertFalse($snapshot['operational']);
+        $this->get(route('devices.olt-ftp.status', $device))->assertJsonPath('state', 'failed')
+            ->assertJsonPath('current_step', 5);
+
+        $html = $this->get(route('devices.edit', [$device, 'olt_wizard' => 1]))->assertOk()
+            ->assertSee('data-current-step="5"', false)
+            ->assertSee('Etapa 5 de 6')
+            ->assertSee('Tentar novamente')
+            ->getContent();
+        $dom = new \DOMDocument();
+        @$dom->loadHTML($html);
+        $xpath = new \DOMXPath($dom);
+        foreach ([1, 2, 3, 4] as $step) {
+            $item = $xpath->query('//li[@data-wizard-step-item="'.$step.'"]')->item(0);
+            $this->assertStringContainsString('is-complete', $item->getAttribute('class'));
+            $this->assertSame('Concluído', trim($xpath->query('.//small', $item)->item(0)->textContent));
+        }
+        $current = $xpath->query('//li[@data-wizard-step-item="5"]')->item(0);
+        $this->assertStringContainsString('is-current', $current->getAttribute('class'));
+        $this->assertSame('Etapa atual', trim($xpath->query('.//small', $current)->item(0)->textContent));
+        $future = $xpath->query('//li[@data-wizard-step-item="6"]')->item(0);
+        $this->assertStringContainsString('is-pending', $future->getAttribute('class'));
+        $this->assertSame('Pendente', trim($xpath->query('.//small', $future)->item(0)->textContent));
+        $this->assertStringContainsString('const active = number === currentStep;', $html);
+        $this->assertStringContainsString('showStep(currentStep); dialog.showModal(); poll();', $html);
+        $this->assertSame(5, app(\App\Services\OltFtpWizard::class)->snapshot($device)['current_step']);
+    }
+
+    public function test_account_operational_update_does_not_rewind_confirmed_wizard(): void
+    {
+        [$device] = $this->fixture();
+        $this->actingAs(User::factory()->create());
+        config()->set('backup.ftp_host', '192.0.2.20');
+        $this->post(route('devices.olt-ftp.confirm', $device), ['olt_configured' => '1'])->assertRedirect();
+        $account = $device->ftpAccount()->firstOrFail();
+        DB::table('ftp_accounts')->where('id', $account->id)->update(['updated_at' => now()->addMinute()]);
+        $snapshot = app(\App\Services\OltFtpWizard::class)->snapshot($device->fresh());
+        $this->assertTrue($snapshot['synced']);
+        $this->assertTrue((bool) $snapshot['confirmed']);
+        $this->assertSame(5, $snapshot['current_step']);
+    }
+
+    public function test_provisioning_sync_error_retry_and_polling_preserve_confirmation_and_test(): void
+    {
+        [$device] = $this->fixture();
+        $this->actingAs(User::factory()->create());
+        config()->set('backup.ftp_host', '192.0.2.20');
+        $this->post(route('devices.olt-ftp.confirm', $device), ['olt_configured' => '1'])->assertRedirect();
+        $this->post(route('devices.olt-ftp.test', $device))->assertRedirect();
+        $integration = $device->fresh()->oltFtpIntegration;
+        $confirmedAt = $integration->getRawOriginal('olt_confirmed_at');
+        $executionId = $integration->test_execution_id;
+        $updatedAt = $integration->getRawOriginal('updated_at');
+        $account = $device->ftpAccount()->firstOrFail();
+
+        $this->patch(route('devices.ftp-account.update', $device), ['is_active' => true])->assertRedirect();
+        $this->assertDatabaseHas('olt_ftp_integrations', [
+            'device_id' => $device->id, 'olt_confirmed_at' => $confirmedAt,
+            'test_execution_id' => $executionId, 'updated_at' => $updatedAt,
+        ]);
+        $this->assertSame(2, app(\App\Services\OltFtpWizard::class)->snapshot($device->fresh())['current_step']);
+
+        $this->artisan('ftp:sync-failed')->assertExitCode(0);
+        $this->assertSame('sync_error', app(\App\Services\OltFtpWizard::class)->snapshot($device->fresh())['state']);
+        $this->post(route('devices.ftp-account.retry', $device))->assertRedirect();
+        Artisan::call('ftp:accounts');
+        $version = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)[0]['updated_at'];
+        $this->artisan('ftp:provisioned', ['id' => $account->id, 'version' => $version])->assertExitCode(0);
+        DB::table('ftp_accounts')->where('id', $account->id)->update(['updated_at' => now()->addMinute()]);
+
+        for ($poll = 0; $poll < 3; $poll++) {
+            $this->get(route('devices.olt-ftp.status', $device))->assertOk()
+                ->assertJsonPath('current_step', 5)->assertJsonPath('execution_id', $executionId);
+        }
+        $this->assertDatabaseHas('olt_ftp_integrations', [
+            'device_id' => $device->id, 'olt_confirmed_at' => $confirmedAt,
+            'test_execution_id' => $executionId, 'updated_at' => $updatedAt,
+            'ftp_host' => '192.0.2.20',
+        ]);
+    }
+
+    public function test_replacing_with_identical_manual_credentials_preserves_confirmation_and_test(): void
+    {
+        [$device] = $this->fixture();
+        $this->actingAs(User::factory()->create());
+        config()->set('backup.ftp_host', '192.0.2.20');
+        $this->post(route('devices.olt-ftp.confirm', $device), ['olt_configured' => '1'])->assertRedirect();
+        $this->post(route('devices.olt-ftp.test', $device))->assertRedirect();
+        $before = $device->fresh()->oltFtpIntegration;
+
+        $this->post(route('devices.ftp-account.replace', $device), [
+            'mode' => 'manual', 'username' => $device->ftpAccount->username,
+            'password' => 'synthetic-only-secret', 'password_confirmation' => 'synthetic-only-secret',
+        ])->assertOk();
+        $after = $device->fresh()->oltFtpIntegration;
+        $this->assertSame($before->getRawOriginal('olt_confirmed_at'), $after->getRawOriginal('olt_confirmed_at'));
+        $this->assertSame($before->test_execution_id, $after->test_execution_id);
+        $this->assertSame($before->getRawOriginal('updated_at'), $after->getRawOriginal('updated_at'));
+    }
+
+    public function test_real_password_and_username_changes_invalidate_confirmation_and_test(): void
+    {
+        [$device] = $this->fixture();
+        $this->actingAs(User::factory()->create());
+        config()->set('backup.ftp_host', '192.0.2.20');
+        foreach (['password', 'username'] as $changedField) {
+            $this->post(route('devices.olt-ftp.confirm', $device), ['olt_configured' => '1'])->assertRedirect();
+            $this->post(route('devices.olt-ftp.test', $device))->assertRedirect();
+            $account = $device->ftpAccount()->firstOrFail();
+            $oldSecret = $account->secret;
+            $oldUsername = $account->username;
+            $username = $changedField === 'username' ? 'new_olt_user'.$device->id : $oldUsername;
+            $password = $changedField === 'password' ? 'NewSynthetic!Pass123' : $oldSecret;
+
+            $this->post(route('devices.ftp-account.replace', $device), [
+                'mode' => 'manual', 'username' => $username,
+                'password' => $password, 'password_confirmation' => $password,
+            ])->assertOk();
+            $integration = $device->fresh()->oltFtpIntegration;
+            $this->assertNull($integration->olt_confirmed_at, $changedField);
+            $this->assertNull($integration->test_execution_id, $changedField);
+            $this->assertNotNull($integration->account_updated_at, $changedField);
+            $this->assertSame('192.0.2.20', $integration->ftp_host);
+            $this->assertSame(2, app(\App\Services\OltFtpWizard::class)->snapshot($device->fresh())['current_step']);
+            DB::table('ftp_accounts')->where('id', $account->id)->update(['provisioned_at' => now()]);
+            $this->assertSame(4, app(\App\Services\OltFtpWizard::class)->snapshot($device->fresh())['current_step']);
+        }
+    }
+
+    public function test_persisted_ftp_settings_must_be_valid_before_olt_step(): void
+    {
+        [$device] = $this->fixture();
+        config()->set('backup.ftp_host', '');
+        DB::table('application_settings')->where('id', 1)->update(['ftp_host' => '192.0.2.20', 'ftp_port' => 0]);
+        $this->assertSame(4, app(\App\Services\OltFtpWizard::class)->snapshot($device)['current_step']);
+        DB::table('application_settings')->where('id', 1)->update(['ftp_port' => 21, 'ftp_passive_address' => 'bad/address']);
+        $this->assertSame(4, app(\App\Services\OltFtpWizard::class)->snapshot($device)['current_step']);
+        DB::table('application_settings')->where('id', 1)->update(['ftp_passive_address' => null]);
+        $this->assertSame(4, app(\App\Services\OltFtpWizard::class)->snapshot($device)['current_step']);
+    }
+
+    public function test_wizard_and_engine_agree_on_sync_error_contract(): void
+    {
+        [$device, $policy] = $this->fixture();
+        config()->set('backup.ftp_host', '192.0.2.20');
+        $association = DeviceBackupPolicy::create([
+            'device_id' => $device->id, 'backup_policy_id' => $policy->id,
+            'credential_id' => null, 'is_active' => true,
+        ]);
+        $execution = BackupExecution::createManual($association);
+        $execution->transitionTo('queued');
+        app(EngineJobService::class)->claim();
+
+        foreach ([null, '', 'erro qualquer'] as $error) {
+            DB::table('ftp_accounts')->where('device_id', $device->id)->update(['sync_error' => $error]);
+            $snapshot = app(\App\Services\OltFtpWizard::class)->snapshot($device->fresh());
+            $available = app(EngineJobService::class)->job($execution->id)['ftp_account_available'];
+            $this->assertSame($error === null, $snapshot['synced']);
+            $this->assertSame($snapshot['synced'], $available);
+            $this->assertSame($error === null ? 4 : 2, $snapshot['current_step']);
+        }
+    }
+
+    public function test_all_nonvalidated_execution_statuses_keep_test_current(): void
+    {
+        [$device] = $this->fixture();
+        $this->actingAs(User::factory()->create());
+        config()->set('backup.ftp_host', '192.0.2.20');
+        $this->post(route('devices.olt-ftp.confirm', $device), ['olt_configured' => '1'])->assertRedirect();
+        $this->post(route('devices.olt-ftp.test', $device))->assertRedirect();
+        $execution = $device->fresh()->oltFtpIntegration->testExecution;
+        foreach (['pending', 'queued', 'running', 'failed', 'cancelled', 'succeeded'] as $status) {
+            DB::table('backup_executions')->where('id', $execution->id)->update(['status' => $status]);
+            $snapshot = app(\App\Services\OltFtpWizard::class)->snapshot($device);
+            $this->assertTrue($snapshot['synced']);
+            $this->assertSame(5, $snapshot['current_step'], $status);
+            $this->assertFalse($snapshot['operational'], $status);
+        }
+    }
+
+    public function test_succeeded_without_validated_artifact_stays_at_test_and_can_retry(): void
+    {
+        [$device] = $this->fixture();
+        $this->actingAs(User::factory()->create());
+        config()->set('backup.ftp_host', '192.0.2.20');
+        $this->post(route('devices.olt-ftp.confirm', $device), ['olt_configured' => '1'])->assertRedirect();
+        $this->post(route('devices.olt-ftp.test', $device))->assertRedirect();
+        $first = $device->fresh()->oltFtpIntegration->testExecution;
+        DB::table('backup_executions')->where('id', $first->id)->update(['status' => 'succeeded']);
+        $this->get(route('devices.olt-ftp.status', $device))->assertJsonPath('current_step', 5);
+        $this->get(route('devices.edit', $device))->assertSee('Tentar novamente');
+        $this->post(route('devices.olt-ftp.test', $device))->assertRedirect();
+        $second = $device->fresh()->oltFtpIntegration->testExecution;
+        $this->assertNotSame($first->id, $second->id);
+        $this->assertSame('succeeded', $first->fresh()->status);
     }
 }

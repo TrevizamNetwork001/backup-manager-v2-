@@ -10,4 +10,5 @@ return [
     'retention_time' => env('BACKUP_RETENTION_TIME', '04:30'),
     // Address shown to the operator for the OLT; independent of Pure-FTPd's passive address.
     'ftp_host' => env('BACKUP_FTP_HOST', ''),
+    'ftp_passive_address' => env('BACKUP_FTP_PASSIVE_ADDRESS') ?: env('BACKUP_FTP_PUBLIC_IP', ''),
 ];

@@ -48,6 +48,11 @@ class Device extends Model
         return $this->hasOne(FtpAccount::class);
     }
 
+    public function oltFtpIntegration(): \Illuminate\Database\Eloquent\Relations\HasOne
+    {
+        return $this->hasOne(OltFtpIntegration::class);
+    }
+
     public function deviceBackupPolicies(): HasMany
     {
         return $this->hasMany(DeviceBackupPolicy::class);

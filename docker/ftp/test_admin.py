@@ -46,6 +46,7 @@ class FtpAdminTests(unittest.TestCase):
 
     def test_account_path_is_derived_from_numeric_device_id(self):
         self.assertEqual(Path('/data/ftp/12/incoming'), ftp_admin.account_home({'device_id': 12, 'username': 'bmdev12'}))
+        self.assertEqual(Path('/data/ftp/12/incoming'), ftp_admin.account_home({'device_id': 12, 'username': 'olt_backup-12'}))
         for row in ({'device_id': '../12', 'username': 'bmdev12'},
                     {'device_id': 12, 'username': '../../etc'},
                     {'device_id': -1, 'username': 'bmdev-1'}):
@@ -80,13 +81,13 @@ class FtpAdminTests(unittest.TestCase):
             passwd = root / 'pureftpd.passwd'
             db.write_bytes(b'previous-db')
             passwd.write_bytes(b'previous-passwd')
-            row = {'id': 1, 'device_id': 12, 'username': 'bmdev12',
+            row = {'id': 1, 'device_id': 12, 'username': 'olt_backup-12',
                    'is_active': True, 'updated_at': '2026-09-22T00:00:00Z'}
             def artisan(command, *args, **kwargs):
                 if command == 'ftp:accounts':
                     return __import__('json').dumps([row]).encode()
                 if command == 'ftp:secret':
-                    return b'a' * 48
+                    return b'Strong!Pass12345'
                 raise AssertionError(command)
             def pure(command, *args, **kwargs):
                 if command == 'mkdb':

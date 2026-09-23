@@ -53,8 +53,8 @@ class EngineJobService
             'port' => $job->credential?->port ?: 22, 'username' => $job->credential?->username,
             'relative_path' => $this->relativePath($job),
             'ftp_username' => $hasFtp ? $job->device->ftpAccount?->username : null,
-            'ftp_account_available' => $hasFtp && (bool) ($job->device->ftpAccount?->is_active && $job->device->ftpAccount?->provisioned_at && $job->device->ftpAccount->provisioned_at >= $job->device->ftpAccount->updated_at),
-            'ftp_host' => config('backup.ftp_host'),
+            'ftp_account_available' => $hasFtp && (bool) ($job->device->ftpAccount?->is_active && $job->device->ftpAccount?->provisioned_at && $job->device->ftpAccount?->sync_error === null),
+            'ftp_host' => app(FtpServerSettings::class)->get()['host'],
             'ftp_filename' => 'bm-exec-'.$job->id.'.cfg',
             'eligible' => $job->association->is_active && $job->device->is_active &&
                 $job->backupPolicy->is_active &&
@@ -195,12 +195,11 @@ class EngineJobService
             $validContent = $vendor === 'mikrotik'
                 ? (bool) preg_match('/^\/[a-z]/mi', $preview)
                 : ($payload['method'] === 'ftp_push'
-                    ? strlen($contents ?: '') >= 32 && preg_match('/^#\s*$/m', $preview) && preg_match('/^(?:sysname|interface (?:gpon|epon)|ont |service-port|vlan )/mi', $preview)
+                    ? $this->validHuaweiOltConfig($contents ?: '')
                     : strlen($contents ?: '') >= 32 && preg_match('/^#\s*$/m', $preview) &&
                     preg_match('/^(?:sysname|interface|vlan(?: batch)?|ip route-static|aaa|user-interface|stelnet server|snmp-agent)\b/mi', $preview) &&
                     ! preg_match('/^\s*(?:Error:|%\s*(?:Error|Unrecognized|Unknown)|Unrecognized command|Unknown command|Incomplete command)/mi', $contents) &&
                     ! preg_match('/(?:-{3,}\s*more\s*-{3,}|\bmore\s*:\s*|press\s+(?:any key|space))/i', $contents));
-            if ($payload['method'] === 'ftp_push' && preg_match('/(?im)^\s*(?:error:|%\s*error|authentication failed|backing up files is fail|<html)/', $contents ?: '')) $validContent = false;
             if ($contents === false || ! mb_check_encoding($contents, 'UTF-8') ||
                 str_contains($contents, "\0") || ! $validContent) {
                 throw ValidationException::withMessages(['artifact' => 'Export de configuração inválido.']);
@@ -217,6 +216,25 @@ class EngineJobService
             $job->save();
             return $artifact;
         });
+    }
+
+    private function validHuaweiOltConfig(string $contents): bool
+    {
+        if (strlen($contents) < 32 || ! str_ends_with($contents, "\n") ||
+            preg_match('/^\s*(?:error:|%\s*error|authentication failed|backing up files is fail|<!doctype html\b|<html\b)/mi', $contents) ||
+            ! preg_match('/^#[ \t]*\r?$/m', $contents)) return false;
+
+        $preview = substr($contents, 0, 4096);
+        if (! preg_match('/^\[!Software Version MA5800[^\]\r\n]*\]\r?$/m', $preview, $header, PREG_OFFSET_CAPTURE) ||
+            ! preg_match('/^\[Saving time: [^\]\r\n]+\]\r?$/m', $preview, $savingTime, PREG_OFFSET_CAPTURE) ||
+            ! preg_match('/^\[global-config\][ \t]*\r?$/m', $contents, $section, PREG_OFFSET_CAPTURE) ||
+            ! preg_match('/^[ \t]*<global-config>[ \t]*\r?$/m', $contents, $block, PREG_OFFSET_CAPTURE) ||
+            ! preg_match('/^[ \t]*sysname[ \t]+\S[^\r\n]*\r?$/mi', $contents, $sysname, PREG_OFFSET_CAPTURE)) return false;
+
+        if (! preg_match('/^#[ \t]*\r?$/m', $contents, offset: $sysname[0][1] + strlen($sysname[0][0]))) return false;
+
+        return $header[0][1] < $savingTime[0][1] && $savingTime[0][1] < $section[0][1] &&
+            $section[0][1] < $block[0][1] && $block[0][1] < $sysname[0][1];
     }
 
     public function fail(int $id, string $code, ?string $workerId = null): void

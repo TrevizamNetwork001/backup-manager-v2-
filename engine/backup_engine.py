@@ -10,7 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 from drivers.mikrotik_ssh import BackupError, export_config
 from drivers.huawei_vrp_ssh import export_config as export_huawei_config
 from drivers.huawei_olt_ftp import collect_config as collect_huawei_olt_config
-from ftp_incoming import scan_orphans
+from ftp_incoming import existing_files, scan_orphans
 from storage import store
 
 
@@ -109,6 +109,8 @@ def main():
     with ThreadPoolExecutor(max_workers=4) as pool:
         active = set()
         orphan_observed = {}
+        ftp_root = os.environ.get('BACKUP_FTP_ROOT')
+        preserved_uploads = existing_files(ftp_root) if ftp_root else {}
         last_orphan_scan = 0
         while True:
             if time.monotonic() - last_orphan_scan >= 5 and os.environ.get('BACKUP_FTP_ROOT'):
@@ -116,7 +118,8 @@ def main():
                 try:
                     expected = json.loads(command('ftp:expected'))
                     scan_orphans(os.environ['BACKUP_FTP_ROOT'], expected,
-                                 int(os.environ.get('BACKUP_FTP_STABLE_SECONDS', '5')), orphan_observed)
+                                 int(os.environ.get('BACKUP_FTP_STABLE_SECONDS', '5')), orphan_observed,
+                                 preserved_uploads)
                 except Exception:
                     logging.error(json.dumps({'status': 'ftp_orphan_scan_failed'}))
             active = {future for future in active if not future.done()}

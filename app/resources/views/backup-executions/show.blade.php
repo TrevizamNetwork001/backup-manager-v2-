@@ -13,7 +13,7 @@
     <p><strong>Credencial:</strong> {{ $backupExecution->credential ? $backupExecution->credential->name.' · '.$backupExecution->credential->username.' · '.strtoupper($backupExecution->credential->type) : 'Conta FTP do equipamento' }}</p>
     @if($backupExecution->backupPolicy->method === 'ftp_push' && $backupExecution->origin === 'manual')
         <p><strong>Arquivo esperado:</strong> <code>bm-exec-{{ $backupExecution->id }}.cfg</code></p>
-        <p>Na OLT previamente configurada, execute manualmente: <code>backup configuration ftp {{ config('backup.ftp_host') ?: 'IP_DO_SERVIDOR_FTP' }} bm-exec-{{ $backupExecution->id }}.cfg</code></p>
+        <p>Na OLT previamente configurada, execute manualmente: <code>backup configuration ftp {{ app(\App\Services\FtpServerSettings::class)->get()['host'] ?: 'IP_DO_SERVIDOR_FTP' }} bm-exec-{{ $backupExecution->id }}.cfg</code></p>
         <p>O arquivo deve chegar durante a execução. O envio da OLT não é iniciado pela V2.</p>
     @endif
     <p><strong>Associação:</strong> #{{ $backupExecution->device_backup_policy_id }}</p>
