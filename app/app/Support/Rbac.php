@@ -36,6 +36,7 @@ class Rbac
         'audit.view',
         'settings.view', 'settings.manage',
         'users.view', 'users.manage',
+        'system_health.view',
     ];
 
     private const OPERATOR_PERMISSIONS = [
@@ -47,6 +48,7 @@ class Rbac
         'backup_policies.view', 'backup_policies.manage',
         'backup_executions.view', 'backup_executions.run',
         'backup_artifacts.view', 'backup_artifacts.download',
+        'system_health.view',
     ];
 
     private const VIEWER_PERMISSIONS = [
@@ -58,6 +60,7 @@ class Rbac
         'backup_policies.view',
         'backup_executions.view',
         'backup_artifacts.view', 'backup_artifacts.download',
+        'system_health.view',
     ];
 
     private const AUDITOR_PERMISSIONS = [
@@ -70,6 +73,7 @@ class Rbac
         'backup_policies.view',
         'backup_executions.view',
         'backup_artifacts.view',
+        'system_health.view',
     ];
 
     /** @return list<string> */

@@ -8,6 +8,7 @@ use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 
 class BackupRetention
 {
@@ -86,6 +87,14 @@ class BackupRetention
                     });
                 }
             });
+
+        // Summary-level record for EngineHealth's retention check (ENGINE-3) —
+        // reuses the existing audit_events table rather than a new migration
+        // (see docs/ENGINE_HEALTH.md, item 21/43).
+        if (Schema::hasTable('audit_events')) {
+            app(AuditEvents::class)->record('backup_retention.completed', 'system', null, null,
+                $totals['errors'] > 0 ? 'warning' : 'success', $totals + ['mode' => $apply ? 'apply' : 'dry_run']);
+        }
 
         return $totals;
     }

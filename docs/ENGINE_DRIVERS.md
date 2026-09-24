@@ -278,3 +278,15 @@ MikroTik), e registrar um conjunto pequeno de lacunas conscientes para fases
 futuras (lixeira com prazo de graça na retenção, detecção de versão
 RouterOS, auditoria de sufixos "em progresso" no scanner FTP) sem reabrir
 código já testado sem necessidade concreta.
+
+## Nota (ENGINE-3)
+
+A auditoria de sufixos "em progresso" do scanner FTP, listada acima como
+pendência, foi revisitada no ENGINE-3: confirmado que `ftp_spontaneous.py`/
+`ftp_incoming.py` já protegem uploads em andamento via janela de estabilidade
+(`BACKUP_FTP_STABLE_SECONDS`), não apenas por sufixo de nome — não havia
+lacuna funcional a fechar. O engine Python também ganhou seu primeiro
+consumidor de saída voltado a diagnóstico (`engine/health_snapshot.py`, sem
+tocar o contrato de driver descrito acima) e um teste de integração real
+Laravel↔Python que fecha a dívida citada no topo deste documento — ver
+[docs/ENGINE_HEALTH.md](ENGINE_HEALTH.md).

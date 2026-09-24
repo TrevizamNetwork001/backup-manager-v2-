@@ -30,6 +30,11 @@ class DriverRegistry:
     def capabilities(self, vendor, platform, method):
         return self.resolve(vendor, platform, method).capabilities
 
+    def all(self):
+        """(vendor, platform, method) -> driver for every registered entry —
+        used by health_snapshot.py to report what's loaded, never by dispatch."""
+        return dict(self._drivers)
+
     def _vendor_known(self, vendor):
         vendor = (vendor or '').strip().casefold()
         return any(key[0] == vendor for key in self._drivers)

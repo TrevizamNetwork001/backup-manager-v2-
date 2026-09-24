@@ -22,4 +22,10 @@ return [
     // Address shown to the operator for the OLT; independent of Pure-FTPd's passive address.
     'ftp_host' => env('BACKUP_FTP_HOST', ''),
     'ftp_passive_address' => env('BACKUP_FTP_PASSIVE_ADDRESS') ?: env('BACKUP_FTP_PUBLIC_IP', ''),
+    // Where the Python engine drops its own health snapshot (ENGINE-3) — see
+    // docs/ENGINE_HEALTH.md. Laravel has no other way to observe the engine
+    // process: no shared filesystem/venv access, no HTTP endpoint by design.
+    // Default matches the path compose.yml mounts inside the app container.
+    'engine_health_snapshot_path' => env('BACKUP_ENGINE_HEALTH_SNAPSHOT_PATH', storage_path('app/engine-health/snapshot.json')),
+    'engine_health_snapshot_stale_seconds' => (int) env('BACKUP_ENGINE_HEALTH_SNAPSHOT_STALE_SECONDS', 90),
 ];

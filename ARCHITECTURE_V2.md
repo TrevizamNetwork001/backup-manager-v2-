@@ -770,3 +770,33 @@ quanto para o scheduler. Detalhes completos, modelo de estados, e a
 comparação com o legado V1 (que tinha lock/heartbeat mais fracos e nenhum
 retry ou cancelamento automático de job) em
 [docs/ENGINE_QUEUE.md](docs/ENGINE_QUEUE.md).
+
+## ENGINE-3: Health, diagnóstico e observabilidade operacional
+
+Camada de observabilidade sobre o lifecycle do ENGINE-2: um único agregador
+(`App\Services\EngineHealth::report()`) roda 15 checks (banco, Redis, engine,
+drivers, worker, scheduler, fila, jobs presos, retry, taxa de falha,
+equipamentos, storage, FTP, file server, retenção), cada um sempre retornando
+um de quatro status uniformes (`App\Support\HealthStatus`:
+healthy/warning/critical/unknown), nunca derrubando os demais se um falhar
+(fail-soft). Um problema de arquitetura real motivou a peça mais importante
+desta fase: o container `app` (Laravel) não tem acesso ao Python/venv do
+engine (`compose.yml`), então o próprio processo Python passou a escrever
+periodicamente um snapshot JSON atômico e sanitizado
+(`engine/health_snapshot.py`) que Laravel só lê — e cuja **idade** já é o
+sinal de "engine parado", sem heartbeat separado. Fecha uma dívida do
+ENGINE-1 (nenhum teste real Laravel↔Python existia) com
+`EnginePythonIntegrationTest`, que roda o interpretador Python de verdade
+contra o driver registry real. Um serviço dedicado
+(`App\Services\DeviceBackupHealth`) classifica cada equipamento distinguindo
+cadência agendada de manual — nunca penaliza um device manual por não ter
+backup recente. Página somente leitura em `/system/health`
+(`system_health.view`, todos os quatro papéis) e comandos
+`engine:health`/`engine:diagnose` (`--json`, exit codes 0/1/2). Redis ganhou
+seu primeiro uso real no projeto: heartbeat do scheduler
+(`health:scheduler:last_tick`), sempre com fail-soft se Redis cair — nunca
+fonte de verdade. Corrigiu, de passagem, uma regressão do ENGINE-2 nunca
+coberta por teste (`Carbon::diffInX()` sem `abs()` produzindo idades
+negativas). Detalhes completos e a comparação com o legado V1 (que já tinha
+quase todos os conceitos certos, espalhados de forma inconsistente entre
+subsistemas) em [docs/ENGINE_HEALTH.md](docs/ENGINE_HEALTH.md).

@@ -16,6 +16,7 @@ from drivers.huawei_olt_ftp import collect_config as collect_huawei_olt_config
 from ftp_incoming import existing_files, scan_orphans
 from ftp_spontaneous import scan as scan_spontaneous
 from storage import store, validate_ssh_command_output
+from health_snapshot import build_snapshot, write_snapshot
 
 
 logging.basicConfig(level=logging.INFO, format='%(message)s')
@@ -23,6 +24,12 @@ logging.getLogger('paramiko').setLevel(logging.WARNING)
 ARTISAN = ['php', '/var/www/html/artisan']
 WORKER_ID = secrets.token_hex(16)
 HEARTBEAT_SECONDS = max(1, int(os.environ.get('BACKUP_ENGINE_HEARTBEAT_SECONDS', '30')))
+# ENGINE-3: see docs/ENGINE_HEALTH.md — Laravel's `app` container has no
+# access to this process (no shared venv, /engine not mounted), so it can
+# only learn the engine's state by reading this file, atomically refreshed
+# here. An empty/unset path disables the feature entirely (never crashes).
+HEALTH_SNAPSHOT_PATH = os.environ.get('BACKUP_ENGINE_HEALTH_SNAPSHOT_PATH', '')
+HEALTH_SNAPSHOT_SECONDS = max(5, int(os.environ.get('BACKUP_ENGINE_HEALTH_SNAPSHOT_SECONDS', '30')))
 
 
 def command(*args, env=None, pass_fds=()):
@@ -141,7 +148,15 @@ def main():
         ftp_root = os.environ.get('BACKUP_FTP_ROOT')
         preserved_uploads = existing_files(ftp_root) if ftp_root else {}
         last_orphan_scan = 0
+        last_health_snapshot = 0
         while True:
+            if HEALTH_SNAPSHOT_PATH and time.monotonic() - last_health_snapshot >= HEALTH_SNAPSHOT_SECONDS:
+                last_health_snapshot = time.monotonic()
+                try:
+                    snapshot = build_snapshot(registry, WORKER_ID, os.environ.get('BACKUP_STORAGE_ROOT'))
+                    write_snapshot(HEALTH_SNAPSHOT_PATH, snapshot)
+                except Exception:
+                    logging.error(json.dumps({'status': 'health_snapshot_failed'}))
             if time.monotonic() - last_orphan_scan >= 5 and os.environ.get('BACKUP_FTP_ROOT'):
                 last_orphan_scan = time.monotonic()
                 try:

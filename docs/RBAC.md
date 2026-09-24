@@ -49,6 +49,7 @@ Definida inteiramente em `App\Support\Rbac` (constantes `PERMISSIONS` e um
 | `audit.view` | ✅ | — | — | ✅ |
 | `settings.view` / `settings.manage` | ✅ / ✅ | — / — | — / — | — / — |
 | `users.view` / `users.manage` | ✅ / ✅ | — / — | — / — | — / — |
+| `system_health.view` | ✅ | ✅ | ✅ | ✅ |
 
 Notas:
 
@@ -72,6 +73,12 @@ Notas:
   `index`/`edit`), quem não tem `backup_policies.manage` só vê a listagem,
   não o detalhe/associações de uma política. É uma limitação herdada da
   estrutura de rotas existente, não uma decisão nova desta fase.
+- `system_health.view` (ENGINE-3) é concedida a todos os quatro papéis — a
+  página `/system/health` é somente leitura, nunca muta nada e não expõe
+  segredo algum (ver [docs/ENGINE_HEALTH.md](ENGINE_HEALTH.md),
+  "Segurança/sanitização"), então não há motivo para restringir Viewer ou
+  Auditor, e Auditor em particular se beneficia diretamente de um
+  diagnóstico operacional somente leitura.
 
 ## Autorização centralizada
 

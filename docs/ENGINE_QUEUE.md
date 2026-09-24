@@ -307,3 +307,12 @@ justamente para fechar.
   FTP espontâneo — o teto foi adicionado como constante
   (`MAX_PROCESSING_RETRIES`); torná-lo configurável fica para quando houver
   necessidade real de ajustá-lo por ambiente.
+
+## Nota (ENGINE-3)
+
+A camada de observabilidade construída em cima deste lifecycle (health por
+check, diagnóstico, `/system/health`) está documentada separadamente em
+[docs/ENGINE_HEALTH.md](ENGINE_HEALTH.md) — inclui, entre outras coisas, o
+primeiro uso real de Redis no projeto (heartbeat do scheduler) e a correção
+de uma regressão encontrada neste documento: `EngineHealth::oldestAgeSeconds()`
+retornava um valor com sinal invertido (nunca coberto por teste até então).

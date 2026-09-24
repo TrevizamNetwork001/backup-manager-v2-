@@ -12,6 +12,7 @@ use App\Http\Controllers\DeviceController;
 use App\Http\Controllers\FtpAccountController;
 use App\Http\Controllers\FtpAdminController;
 use App\Http\Controllers\SiteController;
+use App\Http\Controllers\SystemHealthController;
 use App\Http\Controllers\InstanceSettingsController;
 use App\Http\Controllers\OltFtpWizardController;
 use App\Http\Controllers\UserController;
@@ -34,6 +35,7 @@ Route::middleware(['auth', 'active'])->group(function () {
     Route::get('settings', [InstanceSettingsController::class, 'edit'])->name('settings.edit');
     Route::put('settings', [InstanceSettingsController::class, 'update'])->name('settings.update');
     Route::get('audit', [AuditController::class, 'index'])->name('audit.index');
+    Route::get('system/health', [SystemHealthController::class, 'index'])->name('system-health.index');
     Route::get('audit/{auditEvent}', [AuditController::class, 'show'])->name('audit.show');
 
     Route::get('users', [UserController::class, 'index'])->name('users.index');

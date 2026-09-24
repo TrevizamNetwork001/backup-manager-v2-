@@ -84,8 +84,14 @@
                 </a>
             @endcan
 
-            @canany(['settings.view', 'audit.view', 'users.view'])
+            @canany(['settings.view', 'audit.view', 'users.view', 'system_health.view'])
                 <div class="nav-section">Administração</div>
+                @can('system_health.view')
+                    <a href="{{ route('system-health.index') }}" class="nav-link {{ request()->routeIs('system-health.*') ? 'active' : '' }}">
+                        <span class="nav-icon">♥</span>
+                        Saúde do sistema
+                    </a>
+                @endcan
                 @can('settings.view')
                     <a href="{{ route('settings.edit') }}" class="nav-link {{ request()->routeIs('settings.*') ? 'active' : '' }}">
                         <span class="nav-icon">⚙</span>

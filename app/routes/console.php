@@ -202,12 +202,53 @@ Artisan::command('engine:recover-stale', function (EngineJobService $engine) {
     $this->line((string) $engine->recoverStale());
 });
 
-Artisan::command('engine:health', function (\App\Services\EngineHealth $health) {
-    $this->line(json_encode($health->snapshot()));
+Artisan::command('engine:health {--json}', function (\App\Services\EngineHealth $health) {
+    $report = $health->report();
+    if ($this->option('json')) {
+        $this->line(json_encode($report));
+    } else {
+        $this->line('Status geral: '.strtoupper($report['overall_status']));
+        foreach ($report['checks'] as $check) {
+            $this->line(sprintf('- %-16s %-10s %s', $check['check'], strtoupper($check['status']), $check['message']));
+        }
+        if ($report['alerts'] !== []) {
+            $this->line('Alertas: '.implode(', ', $report['alerts']));
+        }
+    }
+
+    return match ($report['overall_status']) {
+        'critical' => 2,
+        'warning' => 1,
+        default => 0,
+    };
+});
+
+Artisan::command('engine:diagnose {--json}', function (\App\Services\EngineDiagnosticSnapshot $diagnostics) {
+    $snapshot = $diagnostics->build();
+    if ($this->option('json')) {
+        $this->line(json_encode($snapshot));
+
+        return 0;
+    }
+    $this->line('Diagnóstico gerado em: '.$snapshot['timestamp']);
+    $this->line('Commit: '.($snapshot['app_commit'] ?? 'desconhecido'));
+    $this->line('PHP: '.$snapshot['php_version'].' | Laravel: '.$snapshot['laravel_version']);
+    $this->line('Status geral: '.strtoupper($snapshot['health']['overall_status']));
+    foreach ($snapshot['health']['checks'] as $check) {
+        $this->line(sprintf('- %-16s %-10s %s', $check['check'], strtoupper($check['status']), $check['message']));
+    }
+
+    return 0;
 });
 
 Artisan::command('backups:schedule', function (BackupScheduler $scheduler) {
-    $this->line((string) $scheduler->run());
+    $count = $scheduler->run();
+    try {
+        \Illuminate\Support\Facades\Cache::store('redis')->put('health:scheduler:last_tick', now()->timestamp, now()->addHours(1));
+    } catch (\Throwable $e) {
+        // Scheduler health degrades to 'unknown' without this — never fails the actual scheduling run over it.
+    }
+    $this->line((string) $count);
 });
 
 Artisan::command('backups:retention {--dry-run} {--apply}', function (BackupRetention $retention) {

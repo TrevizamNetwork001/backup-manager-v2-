@@ -32,6 +32,7 @@ services:
       - ./app:/var/www/html
       - backups:/data/backups
       - ftp-data:/data/ftp:ro
+      - engine-health:/var/www/html/storage/app/engine-health
     networks:
       - backup-manager-v2
     depends_on:
@@ -39,6 +40,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      engine-health-init:
+        condition: service_completed_successfully
 
   backup-storage-init:
     image: busybox:1.37.0
@@ -46,6 +49,20 @@ services:
     command: ["sh", "-c", "chown 65534:65534 /data/backups && chmod 700 /data/backups"]
     volumes:
       - backups:/data/backups
+    restart: "no"
+
+  # ENGINE-3: the engine (user: nobody) and the app (php-fpm, www-data) are
+  # different UIDs with no shared group, so the tiny health-snapshot file
+  # they exchange (see docs/ENGINE_HEALTH.md) needs a spot both can touch.
+  # It carries no secrets (versions, driver names, capability lists only),
+  # so world-writable on this one small, dedicated volume is an accepted
+  # trade-off — never reuse this volume for anything else.
+  engine-health-init:
+    image: busybox:1.37.0
+    network_mode: none
+    command: ["sh", "-c", "chmod 777 /health"]
+    volumes:
+      - engine-health:/health
     restart: "no"
 
   engine:
@@ -65,18 +82,22 @@ services:
       BACKUP_FTP_STABLE_SECONDS: ${BACKUP_FTP_STABLE_SECONDS:-5}
       BACKUP_FTP_RECEIVE_TIMEOUT_SECONDS: ${BACKUP_FTP_RECEIVE_TIMEOUT_SECONDS:-180}
       BACKUP_ENGINE_HEARTBEAT_SECONDS: ${BACKUP_ENGINE_HEARTBEAT_SECONDS:-30}
+      BACKUP_ENGINE_HEALTH_SNAPSHOT_PATH: /var/www/html/storage/app/engine-health/snapshot.json
     volumes:
       - ./app:/var/www/html:ro
       - ./engine:/engine:ro
       - backups:/data/backups
       - ftp-data:/data/ftp
       - ./app/storage:/var/www/html/storage
+      - engine-health:/var/www/html/storage/app/engine-health
     networks:
       - backup-manager-v2
     depends_on:
       postgres:
         condition: service_healthy
       backup-storage-init:
+        condition: service_completed_successfully
+      engine-health-init:
         condition: service_completed_successfully
 
   scheduler:
@@ -201,3 +222,4 @@ volumes:
   backups:
   ftp-data:
   ftp-db:
+  engine-health:
