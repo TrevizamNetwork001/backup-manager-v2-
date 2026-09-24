@@ -161,6 +161,24 @@ class BackupSchedulerTest extends TestCase
         DB::table('backup_executions')->insert($duplicate);
     }
 
+    public function test_scheduler_skips_device_with_a_live_manual_execution(): void
+    {
+        // Lesson from V1 (backup_manager/jobs.py queue_run): reject a duplicate
+        // at creation time rather than only relying on claim()'s per-device guard.
+        $association = $this->association();
+        BackupExecution::createManual($association);
+        $this->assertSame(0, $this->runAt('2026-09-23 06:02:00'));
+        $this->assertDatabaseCount('backup_executions', 1);
+    }
+
+    public function test_manual_creation_rejects_second_live_execution_for_same_device(): void
+    {
+        $association = $this->association();
+        BackupExecution::createManual($association);
+        $this->expectException(\Illuminate\Validation\ValidationException::class);
+        BackupExecution::createManual($association);
+    }
+
     public function test_scheduled_job_uses_engine_and_keeps_host_trust_and_stale_recovery(): void
     {
         $this->actingAs(User::factory()->create());

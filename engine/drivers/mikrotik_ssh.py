@@ -56,7 +56,7 @@ def _negotiation_failed(error):
     return 'incompatible ssh peer' in message or 'no acceptable ' in message
 
 
-def export_config(host, port, username, password, algorithm=None, fingerprint=None, observe=None):
+def export_config(host, port, username, password, algorithm=None, fingerprint=None, observe=None, cancel_check=None):
     try:
         ipaddress.ip_address(host)
         port = int(port)
@@ -84,6 +84,8 @@ def export_config(host, port, username, password, algorithm=None, fingerprint=No
         while True:
             if time.monotonic() > deadline:
                 raise BackupError('SSH_TIMEOUT')
+            if cancel_check is not None and cancel_check():
+                raise BackupError('CANCELLED')
             if channel.recv_ready():
                 chunk = channel.recv(min(65536, MAX_BYTES + 1 - size))
                 size += len(chunk)
@@ -202,10 +204,11 @@ class MikroTikRouterOsSshDriver(BackupDriver):
             return ProbeResult(success=False, code=error.code,
                                latency_ms=round((time.monotonic() - started) * 1000, 1))
 
-    def backup(self, context, secret=None, observe=None):
+    def backup(self, context, secret=None, observe=None, cancel_check=None):
         try:
             payload = export_config(context.host, context.port, context.username, secret,
-                                    context.ssh_host_key_algorithm, context.ssh_host_key_fingerprint, observe)
+                                    context.ssh_host_key_algorithm, context.ssh_host_key_fingerprint, observe,
+                                    cancel_check)
             return BackupResult(success=True, transport=self.transport, payload=payload,
                                 size_bytes=len(payload), filename_hint='export.rsc')
         except BackupError as error:

@@ -187,13 +187,23 @@ Artisan::command('engine:observe-host-key {id} {worker} {host} {algorithm} {fing
 });
 
 Artisan::command('engine:heartbeat {id} {worker}', function (EngineJobService $engine) {
-    if (! $engine->heartbeat((int) $this->argument('id'), $this->argument('worker'))) {
+    $result = $engine->heartbeat((int) $this->argument('id'), $this->argument('worker'));
+    if (! $result['updated']) {
         throw new RuntimeException('Execução indisponível para heartbeat.');
     }
+    $this->line(json_encode(['cancel_requested' => $result['cancel_requested']]));
+});
+
+Artisan::command('engine:cancel-ack {id} {worker}', function (EngineJobService $engine) {
+    $engine->cancelAck((int) $this->argument('id'), $this->argument('worker'));
 });
 
 Artisan::command('engine:recover-stale', function (EngineJobService $engine) {
     $this->line((string) $engine->recoverStale());
+});
+
+Artisan::command('engine:health', function (\App\Services\EngineHealth $health) {
+    $this->line(json_encode($health->snapshot()));
 });
 
 Artisan::command('backups:schedule', function (BackupScheduler $scheduler) {

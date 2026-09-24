@@ -48,11 +48,26 @@ def sync_directory(path):
         os.close(fd)
 
 
-def remember_failure(metadata, record, error, receipt):
+# V1 lesson (backup_manager/ftp_importer.py): a file claimed into 'processing'
+# with no path back to 'waiting_stable' retries forever if it can never
+# succeed (e.g. Laravel unreachable for days, or a permanently malformed
+# sidecar) — nothing there ever gives up. Cap it: after this many failed scan
+# cycles, quarantine instead of retrying again.
+MAX_PROCESSING_RETRIES = 20
+
+
+def remember_failure(root_name, staged, metadata, record, error, receipt):
     code = error.code if isinstance(error, BackupError) else 'FTP_PROCESSING_RETRY'
     record['retry_count'] = int(record.get('retry_count', 0)) + 1
     record['last_error'] = code
     record['last_attempt_at'] = int(time.time())
+    if record['retry_count'] > MAX_PROCESSING_RETRIES:
+        quarantine(root_name, staged, 'processing_retry_exhausted', device_id=record.get('device_id'),
+                   ftp_account_id=record.get('account_id'), original_filename=record.get('original_filename'))
+        metadata.unlink(missing_ok=True)
+        logging.error(json.dumps({'event': 'ftp_processing_retry_exhausted', 'claim_token': metadata.stem,
+                                  'account_id': record.get('account_id'), 'attempts': record['retry_count'], 'code': code}))
+        return
     temporary = metadata.with_name('.' + metadata.name + '.' + uuid.uuid4().hex)
     fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
     try:
@@ -226,7 +241,7 @@ def scan(root_name, storage_root, stable_seconds, observed, expected, receive, c
             process(root_name, storage_root, staged, metadata, record, receive, complete, fail, receipt)
         except Exception as error:
             if 'record' in locals() and isinstance(record, dict):
-                remember_failure(metadata, record, error, receipt)
+                remember_failure(root_name, staged, metadata, record, error, receipt)
             else:
                 logging.error(json.dumps({'event': 'ftp_metadata_invalid', 'claim_token': metadata.stem}))
         finally:
@@ -280,4 +295,4 @@ def scan(root_name, storage_root, stable_seconds, observed, expected, receive, c
                 try:
                     process(root_name, storage_root, *claimed, receive, complete, fail, receipt)
                 except Exception as error:
-                    remember_failure(claimed[1], claimed[2], error, receipt)
+                    remember_failure(root_name, claimed[0], claimed[1], claimed[2], error, receipt)

@@ -93,6 +93,35 @@ class SpontaneousTests(unittest.TestCase):
         self.assertEqual({'invalid_file'}, {item['reason'] for item in self.sidecars()})
         self.assertEqual([], self.completed)
 
+    def test_processing_retry_is_quarantined_after_exhausting_max_attempts(self):
+        # V1 lesson (backup_manager/ftp_importer.py): nothing there ever gave
+        # up on a stuck 'processing' row — it retried forever. Here it must
+        # eventually quarantine instead of retrying indefinitely. `receive`
+        # (not `complete`) is the one that fails on every attempt: failing
+        # `complete` instead would re-run `store()` for the same execution id
+        # on each retry, which has its own (unrelated, pre-existing) collision
+        # rule after a couple of attempts — orthogonal to what's under test.
+        from ftp_spontaneous import MAX_PROCESSING_RETRIES
+        failing_receive = lambda *_: (_ for _ in ()).throw(RuntimeError('db offline'))
+        (self.home / 'stuck.cfg').write_bytes(FIXTURE.read_bytes())
+        self.scan()
+        for key, (identity, seen) in self.observed.items():
+            self.observed[key] = (identity, seen - 2)
+        os.utime(self.home / 'stuck.cfg', (time.time() - 3, time.time() - 3))
+        self.scan()
+        for key, (identity, seen) in self.observed.items():
+            self.observed[key] = (identity, seen - 2)
+        for attempt in range(1, MAX_PROCESSING_RETRIES + 1):
+            scan(self.ftp.name, self.storage.name, 1, self.observed, [], failing_receive, self.complete,
+                 lambda *args: self.failed.append(args))
+            metadata = next(Path(self.ftp.name, 'processing').glob('*.json'))
+            self.assertEqual(attempt, json.loads(metadata.read_text())['retry_count'])
+        scan(self.ftp.name, self.storage.name, 1, self.observed, [], failing_receive, self.complete,
+             lambda *args: self.failed.append(args))
+        self.assertEqual([], list(Path(self.ftp.name, 'processing').iterdir()))
+        self.assertEqual({'processing_retry_exhausted'}, {item['reason'] for item in self.sidecars()})
+        self.assertEqual([], self.completed)
+
     def test_restart_recovers_claim_after_completion_failure(self):
         (self.home / 'restart.cfg').write_bytes(FIXTURE.read_bytes())
         self.scan()

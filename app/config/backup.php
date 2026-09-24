@@ -6,6 +6,16 @@ return [
     'max_artifact_bytes' => 8 * 1024 * 1024,
     'ftp_max_bytes' => (int) env('BACKUP_FTP_MAX_BYTES', 8 * 1024 * 1024),
     'engine_stale_seconds' => (int) env('BACKUP_ENGINE_STALE_SECONDS', 300),
+    // Overall wall-clock budget for a single execution, independent of heartbeat
+    // freshness — catches a worker that keeps heartbeating but is stuck in a
+    // loop. Must stay comfortably above engine_stale_seconds.
+    'engine_execution_timeout_seconds' => (int) env('BACKUP_ENGINE_EXECUTION_TIMEOUT_SECONDS', 1800),
+    'engine_max_attempts' => (int) env('BACKUP_ENGINE_MAX_ATTEMPTS', 3),
+    // Backoff applied when scheduling a retry after attempt N fails, keyed by
+    // the *next* attempt number. Anything beyond the highest key uses the last
+    // value. Kept intentionally small/explicit rather than a formula — easy to
+    // reason about and to change without touching code.
+    'engine_retry_backoff_seconds' => [2 => 60, 3 => 300, 4 => 900],
     'scheduler_grace_minutes' => (int) env('BACKUP_SCHEDULER_GRACE_MINUTES', 5),
     'retention_enabled' => env('BACKUP_RETENTION_ENABLED', false),
     'retention_time' => env('BACKUP_RETENTION_TIME', '04:30'),

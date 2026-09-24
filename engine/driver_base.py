@@ -48,8 +48,14 @@ class BackupDriver(ABC):
         configuration. Returns a `results.ProbeResult`."""
         raise NotImplementedError(f'{self.name} does not support probe()')
 
-    def backup(self, context, secret=None):
-        """Perform the actual backup. Returns a `results.BackupResult`."""
+    def backup(self, context, secret=None, observe=None, cancel_check=None):
+        """Perform the actual backup. Returns a `results.BackupResult`.
+
+        `cancel_check`, when given, is a zero-arg callable returning True once
+        cancellation has been requested. A driver MAY consult it at its own
+        safe checkpoints (never mid-write) and raise `errors.CANCELLED` — see
+        docs/ENGINE_QUEUE.md. Not every driver implements this; treat it as
+        best-effort, not a guaranteed instant stop."""
         raise NotImplementedError(f'{self.name} does not support backup()')
 
     def analyze(self, payload, context=None):

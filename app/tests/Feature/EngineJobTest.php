@@ -36,6 +36,9 @@ class EngineJobTest extends TestCase
     public function test_claim_is_single_use_and_terminal_job_cannot_be_reprocessed(): void
     {
         $job = $this->queued();
+        // max_attempts=1: this test is about terminal-state reprocessing
+        // guards, not the retry policy — see EngineRetryTest for that.
+        $job->update(['max_attempts' => 1]);
         $engine = app(EngineJobService::class);
         $this->assertSame($job->id, $engine->claim()->id);
         $this->assertNull($engine->claim());
@@ -128,11 +131,15 @@ class EngineJobTest extends TestCase
     public function test_heartbeat_and_recovery_respect_threshold_and_terminal_state(): void
     {
         config()->set('backup.engine_stale_seconds', 300);
+        config()->set('backup.engine_execution_timeout_seconds', 1800);
         $job = $this->queued();
+        // max_attempts=1: this test covers the immediately-terminal case;
+        // the multi-attempt retry path is covered by EngineRetryTest.
+        $job->update(['max_attempts' => 1]);
         $engine = app(EngineJobService::class);
         $engine->claim(str_repeat('d', 32));
-        $this->assertTrue($engine->heartbeat($job->id, str_repeat('d', 32)));
-        $this->assertFalse($engine->heartbeat($job->id, str_repeat('e', 32)));
+        $this->assertTrue($engine->heartbeat($job->id, str_repeat('d', 32))['updated']);
+        $this->assertFalse($engine->heartbeat($job->id, str_repeat('e', 32))['updated']);
         $this->assertSame(0, $engine->recoverStale());
         DB::table('backup_executions')->where('id', $job->id)->update(['heartbeat_at' => now()->subSeconds(301)]);
         $this->assertSame(1, $engine->recoverStale());
@@ -140,7 +147,7 @@ class EngineJobTest extends TestCase
         $this->assertSame('ENGINE_STALE', $job->fresh()->error_code);
         $this->assertSame('Execução interrompida: heartbeat expirado.', $job->fresh()->error_message);
         $this->assertNull($job->fresh()->worker_id);
-        $this->assertFalse($engine->heartbeat($job->id, str_repeat('d', 32)));
+        $this->assertFalse($engine->heartbeat($job->id, str_repeat('d', 32))['updated']);
         $this->assertSame(0, $engine->recoverStale());
     }
 

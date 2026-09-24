@@ -202,7 +202,16 @@ class HuaweiVrpSshDriver(BackupDriver):
             return ProbeResult(success=False, code=error.code,
                                latency_ms=round((time.monotonic() - started) * 1000, 1))
 
-    def backup(self, context, secret=None, observe=None):
+    def backup(self, context, secret=None, observe=None, cancel_check=None):
+        # cancel_check is accepted for interface uniformity with the driver
+        # contract (backup_engine.py calls every driver the same way) but not
+        # consulted here: the VRP CLI is driven through an interactive shell
+        # with blocking reads (see export_config's paging loop), which has no
+        # safe checkpoint to interrupt mid-read without risking a half-drained
+        # channel. Cancellation of a VRP job is still effective — the overall
+        # job will be forcibly ended by ENGINE-2's execution timeout if it
+        # runs long — it's just not as immediate as MikroTik's. See
+        # docs/ENGINE_QUEUE.md.
         try:
             payload = export_config(context.host, context.port, context.username, secret,
                                     context.ssh_host_key_algorithm, context.ssh_host_key_fingerprint, observe)

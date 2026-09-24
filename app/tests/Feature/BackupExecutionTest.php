@@ -77,6 +77,9 @@ class BackupExecutionTest extends TestCase
     public function test_state_machine_sets_timestamps_and_rejects_reopening(): void
     {
         $execution = BackupExecution::createManual($this->association());
+        // max_attempts=1: this test is about terminal-state timestamps and the
+        // reopening guard, not the ENGINE-2 retry policy (see EngineRetryTest).
+        $execution->update(['max_attempts' => 1]);
         $execution->transitionTo('queued');
         app(\App\Services\EngineJobService::class)->claim();
         $execution->refresh();

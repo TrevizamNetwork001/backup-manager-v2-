@@ -700,7 +700,11 @@ class HuaweiOltFtpTest extends TestCase
         $association = DeviceBackupPolicy::create(['device_id' => $device->id,
             'backup_policy_id' => $policy->id, 'credential_id' => null, 'is_active' => true]);
         for ($id = 1; $id <= 21; $id++) {
-            BackupExecution::createManual($association);
+            // Cancel immediately: only bumping the execution id sequence up to
+            // 22 here, not exercising concurrency — ENGINE-2's per-device busy
+            // guard (BackupExecution::LIVE_STATUSES) would otherwise reject the
+            // next iteration since a 'pending' execution is still live.
+            BackupExecution::createManual($association)->transitionTo('cancelled');
         }
         $this->actingAs(User::factory()->create());
         $this->post(route('devices.olt-ftp.confirm', $device), ['olt_configured' => '1'])->assertRedirect();

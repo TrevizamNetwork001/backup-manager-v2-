@@ -746,3 +746,27 @@ vendor). O canal Laravel↔Python não mudou — continua `subprocess` chamando
 `php artisan engine:*`/`ftp:*`, nunca HTTP nem acesso direto ao Postgres
 pelo Python. Detalhes completos, catálogo de erros e como adicionar um novo
 driver em [docs/ENGINE_DRIVERS.md](docs/ENGINE_DRIVERS.md).
+
+## ENGINE-2: Fila robusta, retry, timeout, stale recovery e cancelamento
+
+O ciclo de vida de `BackupExecution` ganhou os dois estados que faltavam
+(`retry_wait`, `timed_out`) e três colunas (`max_attempts`, `next_attempt_at`,
+`cancellation_requested_at`) sobre a infraestrutura de claim/heartbeat/stale
+que já existia desde ENGINE-1. `EngineJobService::scheduleRetryOrFail()` é o
+ponto único que decide, a partir de `is_retryable()` (ENGINE-1) e
+`attempt`/`max_attempts`, se um erro reagenda o job (`retry_wait` +
+backoff incremental) ou o termina; usado tanto por `fail()` (erro de driver)
+quanto por `recoverStale()`, que agora também detecta um segundo tipo de
+problema — execução presa além de um orçamento total mesmo com heartbeat
+saudável (`engine_execution_timeout_seconds`), não só heartbeat parado.
+Cancelamento de um job em execução é cooperativo: `cancellation_requested_at`
+é sinalizado pelo Laravel, o worker Python o aprende no próximo
+`engine:heartbeat` e confirma via `engine:cancel-ack` — com um checkpoint
+extra dentro do próprio loop de polling do driver MikroTik. PostgreSQL
+continua sendo a única fonte de verdade do ciclo de vida; Redis não participa
+dela (ver justificativa em `docs/ENGINE_QUEUE.md`). Guard de duplicidade por
+device adicionado na criação (não só no claim) tanto para execução manual
+quanto para o scheduler. Detalhes completos, modelo de estados, e a
+comparação com o legado V1 (que tinha lock/heartbeat mais fracos e nenhum
+retry ou cancelamento automático de job) em
+[docs/ENGINE_QUEUE.md](docs/ENGINE_QUEUE.md).

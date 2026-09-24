@@ -123,6 +123,19 @@ class MikroTikDriverTests(unittest.TestCase):
             result = self.driver.backup(self.context, secret='x', observe=lambda *a: None)
         self.assertTrue(result.retryable)
 
+    def test_backup_forwards_cancel_check_and_cancelled_is_never_retried(self):
+        # The poll-loop-level check that cancel_check is actually consulted
+        # lives in test_engine.py (against a fake paramiko channel); this
+        # confirms the driver forwards it and classifies the outcome.
+        marker = lambda: True  # noqa: E731 — identity-compared below, not called
+        with patch.object(mikrotik_ssh, 'export_config', side_effect=BackupError('CANCELLED')) as export:
+            result = self.driver.backup(self.context, secret='x', observe=lambda *a: None, cancel_check=marker)
+        export.assert_called_once()
+        self.assertIs(marker, export.call_args.args[-1])
+        self.assertFalse(result.success)
+        self.assertEqual('CANCELLED', result.code)
+        self.assertFalse(result.retryable)
+
     def test_probe_success_reports_latency_without_running_a_command(self):
         with patch.object(mikrotik_ssh, 'probe_connection', return_value=42.0) as probe:
             result = self.driver.probe(ProbeContext(device_id=2, host='192.0.2.1', port=22,

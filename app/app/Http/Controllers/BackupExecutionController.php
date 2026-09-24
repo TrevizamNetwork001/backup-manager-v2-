@@ -6,6 +6,7 @@ use App\Models\BackupExecution;
 use App\Models\BackupPolicy;
 use App\Models\Device;
 use App\Models\DeviceBackupPolicy;
+use App\Services\EngineJobService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -68,11 +69,15 @@ class BackupExecutionController extends Controller
         return $this->transition($backupExecution, 'queued');
     }
 
-    public function cancel(BackupExecution $backupExecution): RedirectResponse
+    public function cancel(BackupExecution $backupExecution, EngineJobService $engine): RedirectResponse
     {
         $this->authorize('backup_executions.run');
+        $engine->requestCancel($backupExecution->id, auth()->id());
+        $message = $backupExecution->fresh()->status === 'cancelled'
+            ? 'Execução cancelada.'
+            : 'Cancelamento solicitado. A execução será interrompida pelo engine em andamento.';
 
-        return $this->transition($backupExecution, 'cancelled');
+        return redirect()->route('backup-executions.show', $backupExecution)->with('success', $message);
     }
 
     private function transition(BackupExecution $execution, string $status): RedirectResponse

@@ -84,6 +84,30 @@ class EngineTests(unittest.TestCase):
                 backup_engine.execute(self.job)
                 command.assert_called_once_with('engine:fail', 1, error, backup_engine.WORKER_ID)
 
+    def test_cancellation_observed_via_heartbeat_discards_result_and_acks_cancel(self):
+        # ENGINE-2: the heartbeat thread learns cancellation was requested
+        # (Laravel's engine:heartbeat now echoes cancel_requested) and the
+        # main thread, seeing that flag once the driver call returns, reports
+        # engine:cancel-ack instead of engine:complete/engine:fail — even
+        # though the transport call itself "succeeded."
+        def slow_export(*args, **kwargs):
+            time.sleep(0.1)
+            return b'# RouterOS\n/interface bridge\nadd name=br1\n'
+
+        def fake_command(*args, **kwargs):
+            if args[0] == 'engine:heartbeat':
+                return b'{"cancel_requested": true}'
+            return b'{}'
+
+        with patch.object(backup_engine, 'HEARTBEAT_SECONDS', 0.01), \
+             patch.object(backup_engine, 'secret_for', return_value='private'), \
+             patch.object(mikrotik_ssh, 'export_config', side_effect=slow_export), \
+             patch.object(backup_engine, 'command', side_effect=fake_command) as command:
+            backup_engine.execute(self.job)
+            command.assert_any_call('engine:cancel-ack', 1, backup_engine.WORKER_ID)
+            self.assertFalse(any(call.args[0] == 'engine:fail' for call in command.call_args_list))
+            self.assertFalse(any(call.args[0] == 'engine:complete' for call in command.call_args_list))
+
     def test_huawei_dispatch_policy_and_storage(self):
         data = b'#\nsysname Lab\n#\ninterface GigabitEthernet0/0/0\n description test\n#\n'
         with tempfile.TemporaryDirectory() as root, \

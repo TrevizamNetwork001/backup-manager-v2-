@@ -8,7 +8,6 @@ use App\Models\Site;
 use App\Models\User;
 use App\Support\Rbac;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Tests\TestCase;
@@ -189,7 +188,12 @@ class RbacTest extends TestCase
 
     public function test_migration_backfills_existing_admin_and_preserves_access(): void
     {
-        Artisan::call('migrate:rollback', ['--step' => 1]);
+        // Roll back this specific migration by file, not "the last migration
+        // run" — ENGINE-2 (and any future phase) adds migrations after this
+        // one, so `--step 1` would target whichever migration is newest
+        // instead of the role/status migration this test actually exercises.
+        $migration = require database_path('migrations/2026_09_24_000002_add_role_and_status_to_users_table.php');
+        $migration->down();
 
         $legacyAdminId = DB::table('users')->insertGetId([
             'name' => 'Legacy Admin', 'email' => 'legacy-admin@example.com',
@@ -202,7 +206,7 @@ class RbacTest extends TestCase
             'created_at' => now(), 'updated_at' => now(),
         ]);
 
-        Artisan::call('migrate');
+        $migration->up();
 
         $this->assertSame(Rbac::ROLE_ADMIN, DB::table('users')->where('id', $legacyAdminId)->value('role'));
         $this->assertSame(Rbac::ROLE_VIEWER, DB::table('users')->where('id', $legacyUserId)->value('role'));

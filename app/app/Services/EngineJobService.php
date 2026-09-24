@@ -13,6 +13,16 @@ use Illuminate\Validation\ValidationException;
 
 class EngineJobService
 {
+    // Mirrors engine/errors.py RETRYABLE_CODES (see docs/ENGINE_QUEUE.md for why
+    // this can't be a single shared source of truth across PHP/Python) plus two
+    // codes that only ever originate on this side (ENGINE_STALE, ENGINE_TIMEOUT
+    // — see recoverStale()). Keep both lists in sync by hand when either changes.
+    private const RETRYABLE_CODES = [
+        'SSH_TIMEOUT', 'SSH_CONNECTION_REFUSED', 'SSH_CONNECT_FAILED', 'SSH_NEGOTIATION_FAILED',
+        'FTP_RECEIVE_TIMEOUT', 'STORAGE_FAILED', 'ENGINE_FAILED', 'ENGINE_STALE', 'ENGINE_TIMEOUT',
+    ];
+
+
     public function receiveFtp(int $deviceId, string $token, string $filename, int $receivedAt, string $workerId): ?array
     {
         if (! preg_match('/\A[a-f0-9]{32}\z/D', $token) ||
@@ -70,8 +80,15 @@ class EngineJobService
     {
         $workerId ??= bin2hex(random_bytes(16));
         if (! preg_match('/\A[a-f0-9]{32}\z/D', $workerId)) throw new \InvalidArgumentException('Worker inválido.');
-        return DB::transaction(function () use ($workerId) {
-            $job = BackupExecution::query()->where('status', 'queued')
+        $job = DB::transaction(function () use ($workerId) {
+            $job = BackupExecution::query()
+                ->where(function ($query) {
+                    $query->where('status', 'queued')
+                        ->orWhere(function ($query) {
+                            // A retry becomes claimable once its backoff window has elapsed.
+                            $query->where('status', 'retry_wait')->where('next_attempt_at', '<=', now());
+                        });
+                })
                 ->whereNotExists(function ($query) {
                     $query->selectRaw('1')->from('backup_executions as running_jobs')
                         ->whereColumn('running_jobs.device_id', 'backup_executions.device_id')
@@ -84,9 +101,14 @@ class EngineJobService
             $job->claimed_at = now();
             $job->heartbeat_at = now();
             $job->worker_id = $workerId;
+            $job->next_attempt_at = null;
             $job->save();
             return $job;
         });
+        if ($job) {
+            $this->audit('backup_execution.claimed', $job->id, 'success', ['attempt' => $job->attempt, 'origin' => $job->origin]);
+        }
+        return $job;
     }
 
     public function job(int $id): array
@@ -159,10 +181,71 @@ class EngineJobService
         return $relative === $base || $relative === $stem.'-exec-'.$job->id.$extension;
     }
 
-    public function heartbeat(int $id, string $workerId): bool
+    /**
+     * @return array{updated: bool, cancel_requested: bool}
+     */
+    public function heartbeat(int $id, string $workerId): array
     {
-        return BackupExecution::query()->whereKey($id)->where('status', 'running')
-            ->where('worker_id', $workerId)->update(['heartbeat_at' => now()]) === 1;
+        $job = BackupExecution::query()->where('id', $id)->where('status', 'running')
+            ->where('worker_id', $workerId)->first(['id', 'cancellation_requested_at']);
+        if (! $job) {
+            return ['updated' => false, 'cancel_requested' => false];
+        }
+        BackupExecution::query()->whereKey($id)->update(['heartbeat_at' => now()]);
+        return ['updated' => true, 'cancel_requested' => $job->cancellation_requested_at !== null];
+    }
+
+    /**
+     * User-facing cancellation request. pending/queued/retry_wait executions
+     * are cancelled immediately (nothing is running yet). A running execution
+     * cannot be force-stopped synchronously — this only flags the intent; the
+     * worker observes it on its next heartbeat and self-reports via
+     * cancelAck() once it has stopped (see docs/ENGINE_QUEUE.md — this is the
+     * deliberate improvement over V1, which never signalled a live worker at
+     * all, see "Comparação com V1").
+     */
+    public function requestCancel(int $id, ?int $actorId = null): void
+    {
+        $outcome = DB::transaction(function () use ($id) {
+            $job = BackupExecution::query()->lockForUpdate()->findOrFail($id);
+            if (in_array($job->status, ['pending', 'queued', 'retry_wait'], true)) {
+                $job->status = 'cancelled';
+                $job->finished_at = now();
+                $job->next_attempt_at = null;
+                $job->save();
+                return 'cancelled';
+            }
+            if ($job->status !== 'running') {
+                throw ValidationException::withMessages(['status' => 'Execução não pode ser cancelada neste estado.']);
+            }
+            if ($job->cancellation_requested_at === null) {
+                $job->cancellation_requested_at = now();
+                $job->save();
+            }
+            return 'cancel_requested';
+        });
+        $this->audit('backup_execution.'.$outcome, $id, 'success', [], $actorId);
+    }
+
+    /**
+     * Worker-initiated: the engine observed cancellation_requested_at (via
+     * heartbeat) or its own cooperative check and stopped. Only the owning
+     * worker of a still-running, still-cancellation-pending job may call this
+     * — mirrors the ownership guard already used by fail()/complete().
+     */
+    public function cancelAck(int $id, string $workerId): void
+    {
+        DB::transaction(function () use ($id, $workerId) {
+            $job = BackupExecution::query()->lockForUpdate()->findOrFail($id);
+            if ($job->status !== 'running' || $job->worker_id !== $workerId || $job->cancellation_requested_at === null) {
+                throw new \RuntimeException('Cancelamento indisponível.');
+            }
+            $job->status = 'cancelled';
+            $job->finished_at = now();
+            $job->worker_id = null;
+            $job->save();
+        });
+        $this->audit('backup_execution.cancelled', $id, 'success', ['worker_id' => $workerId]);
     }
 
     public function observeHostKey(int $id, string $workerId, string $host, string $algorithm, string $fingerprint): void
@@ -185,29 +268,103 @@ class EngineJobService
         });
     }
 
+    /**
+     * Reclaims executions abandoned by a dead/restarted worker (heartbeat
+     * expired) and executions that exceeded their overall wall-clock budget
+     * even while still heartbeating (a stuck-but-alive worker). Each is either
+     * requeued as retry_wait (retryable code, attempts remain) or terminalized
+     * — see scheduleRetryOrFail(). Meant to run every minute (see
+     * routes/console.php Schedule::command('engine:recover-stale')).
+     */
     public function recoverStale(): int
     {
-        $seconds = (int) config('backup.engine_stale_seconds');
-        if ($seconds < 1) throw new \InvalidArgumentException('Threshold de stale inválido.');
-        $cutoff = now()->subSeconds($seconds);
-        return DB::transaction(function () use ($cutoff) {
+        $staleSeconds = (int) config('backup.engine_stale_seconds');
+        $timeoutSeconds = (int) config('backup.engine_execution_timeout_seconds');
+        if ($staleSeconds < 1 || $timeoutSeconds < 1) {
+            throw new \InvalidArgumentException('Threshold de stale/timeout inválido.');
+        }
+        $staleCutoff = now()->subSeconds($staleSeconds);
+        $timeoutCutoff = now()->subSeconds($timeoutSeconds);
+        $events = [];
+        $recovered = DB::transaction(function () use ($staleCutoff, $timeoutCutoff, &$events) {
             $jobs = BackupExecution::query()->where('status', 'running')
-                ->where(function ($query) use ($cutoff) {
-                    $query->where('heartbeat_at', '<', $cutoff)
-                        ->orWhere(function ($query) use ($cutoff) {
-                            $query->whereNull('heartbeat_at')->where('started_at', '<', $cutoff);
-                        });
+                ->where(function ($query) use ($staleCutoff, $timeoutCutoff) {
+                    $query->where('heartbeat_at', '<', $staleCutoff)
+                        ->orWhere(function ($query) use ($staleCutoff) {
+                            $query->whereNull('heartbeat_at')->where('started_at', '<', $staleCutoff);
+                        })
+                        ->orWhere('started_at', '<', $timeoutCutoff);
                 })->orderBy('id')->limit(100)->lock('FOR UPDATE SKIP LOCKED')->get();
             foreach ($jobs as $job) {
-                $job->status = 'failed';
-                $job->finished_at = now();
-                $job->error_code = 'ENGINE_STALE';
-                $job->error_message = 'Execução interrompida: heartbeat expirado.';
-                $job->worker_id = null;
-                $job->save();
+                $heartbeatStale = $job->heartbeat_at ? $job->heartbeat_at->lt($staleCutoff) : $job->started_at->lt($staleCutoff);
+                if ($job->cancellation_requested_at !== null) {
+                    $job->status = 'cancelled';
+                    $job->finished_at = now();
+                    $job->worker_id = null;
+                    $job->save();
+                    $events[] = ['backup_execution.cancelled', $job->id, 'success', ['reason' => 'stale_while_cancelling']];
+                } elseif ($heartbeatStale) {
+                    $outcome = $this->scheduleRetryOrFail($job, 'ENGINE_STALE', 'Execução interrompida: heartbeat expirado.', 'failed');
+                    $events[] = $this->recoveryEvent($job->id, $outcome, 'stale_worker');
+                } else {
+                    $outcome = $this->scheduleRetryOrFail($job, 'ENGINE_TIMEOUT', 'Execução excedeu o tempo máximo permitido.', 'timed_out');
+                    $events[] = $this->recoveryEvent($job->id, $outcome, 'execution_timeout');
+                }
             }
             return $jobs->count();
         });
+        foreach ($events as [$action, $id, $result, $metadata]) {
+            $this->audit($action, $id, $result, $metadata);
+        }
+        return $recovered;
+    }
+
+    /**
+     * Shared by fail() and recoverStale(): applies the retry/backoff policy
+     * (RETRYABLE_CODES + attempt vs max_attempts) or terminalizes the job.
+     * $job must already be locked (SELECT ... FOR UPDATE) by the caller.
+     * Returns 'retry_scheduled' or the terminal status that was applied.
+     */
+    private function scheduleRetryOrFail(BackupExecution $job, string $code, string $message, string $terminalStatus): string
+    {
+        if (in_array($code, self::RETRYABLE_CODES, true) && $job->attempt < $job->max_attempts) {
+            $nextAttempt = $job->attempt + 1;
+            $job->attempt = $nextAttempt;
+            $job->status = 'retry_wait';
+            $job->next_attempt_at = now()->addSeconds($this->backoffSeconds($nextAttempt));
+            $job->error_code = $code;
+            $job->error_message = $message;
+            $job->worker_id = null;
+            $job->save();
+            return 'retry_scheduled';
+        }
+        $job->status = $terminalStatus;
+        $job->finished_at = now();
+        $job->error_code = $code;
+        $job->error_message = $message;
+        $job->worker_id = null;
+        $job->save();
+        return $terminalStatus;
+    }
+
+    private function backoffSeconds(int $nextAttempt): int
+    {
+        $schedule = config('backup.engine_retry_backoff_seconds');
+        if (isset($schedule[$nextAttempt])) return (int) $schedule[$nextAttempt];
+        return (int) $schedule[max(array_keys($schedule))];
+    }
+
+    private function recoveryEvent(int $id, string $outcome, string $reason): array
+    {
+        return $outcome === 'retry_scheduled'
+            ? ['backup_execution.recovered', $id, 'success', ['reason' => $reason]]
+            : ['backup_execution.'.$outcome, $id, 'failure', ['reason' => $reason]];
+    }
+
+    private function audit(string $action, int $executionId, string $result, array $metadata, ?int $actorId = null): void
+    {
+        if (! Schema::hasTable('audit_events')) return;
+        app(AuditEvents::class)->record($action, 'backup_execution', (string) $executionId, null, $result, $metadata, $actorId);
     }
 
     public function resolvePath(string $relative): string
@@ -286,6 +443,7 @@ class EngineJobService
             $job->save();
             return $artifact;
         });
+        $this->audit('backup_execution.succeeded', $id, 'success', []);
         if ($analysisData !== null) {
             try {
                 $analysis = $this->analyzeContent($analysisData, $analysisVendor, $analysisPlatform);
@@ -335,15 +493,25 @@ class EngineJobService
             'FTP_QUARANTINED' => 'Arquivo FTP movido para quarentena.',
         ];
         if (! isset($messages[$code])) $code = 'ENGINE_FAILED';
-        DB::transaction(function () use ($id, $code, $messages, $workerId) {
+        $outcome = DB::transaction(function () use ($id, $code, $messages, $workerId) {
             $job = BackupExecution::query()->lockForUpdate()->findOrFail($id);
-            if ($job->status !== 'running' || ($workerId !== null && $job->worker_id !== $workerId)) return;
-            $job->status = 'failed';
-            $job->finished_at = now();
-            $job->error_code = $code;
-            $job->error_message = $messages[$code];
-            $job->worker_id = null;
-            $job->save();
+            if ($job->status !== 'running' || ($workerId !== null && $job->worker_id !== $workerId)) return null;
+            if ($job->cancellation_requested_at !== null) {
+                $job->status = 'cancelled';
+                $job->finished_at = now();
+                $job->worker_id = null;
+                $job->save();
+                return 'cancelled';
+            }
+            return $this->scheduleRetryOrFail($job, $code, $messages[$code], 'failed');
         });
+        if ($outcome === null) return;
+        if ($outcome === 'retry_scheduled') {
+            $this->audit('backup_execution.retry_scheduled', $id, 'success', ['code' => $code]);
+        } elseif ($outcome === 'cancelled') {
+            $this->audit('backup_execution.cancelled', $id, 'success', ['code' => $code]);
+        } else {
+            $this->audit('backup_execution.failed', $id, 'failure', ['code' => $code]);
+        }
     }
 }

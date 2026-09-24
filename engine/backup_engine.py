@@ -54,10 +54,13 @@ def execute(job):
     status = 'failed'
     code = None
     stop = threading.Event()
+    cancelled = threading.Event()
     def heartbeat():
         while not stop.wait(HEARTBEAT_SECONDS):
             try:
-                command('engine:heartbeat', job_id, WORKER_ID)
+                response = json.loads(command('engine:heartbeat', job_id, WORKER_ID))
+                if response.get('cancel_requested'):
+                    cancelled.set()
             except Exception:
                 logging.error(json.dumps({'execution_id': job_id, 'status': 'heartbeat_failed'}))
                 break
@@ -92,8 +95,14 @@ def execute(job):
                                     platform=job['platform'], method=job['method'], policy_id=job['policy_id'],
                                     ssh_host_key_algorithm=job.get('ssh_host_key_algorithm'),
                                     ssh_host_key_fingerprint=job.get('ssh_host_key_fingerprint'))
-            result = driver.backup(context, secret=password, observe=observe)
+            result = driver.backup(context, secret=password, observe=observe, cancel_check=cancelled.is_set)
             del password
+            # A cancellation observed right as the driver returns wins over a
+            # late success: the operator asked to stop, so the payload (even
+            # if fully collected) is discarded rather than stored. See
+            # docs/ENGINE_QUEUE.md.
+            if cancelled.is_set():
+                raise BackupError('CANCELLED')
             if not result.success:
                 raise BackupError(result.code)
             validate_ssh_command_output(result.payload, vendor)
@@ -108,7 +117,13 @@ def execute(job):
     finally:
         stop.set()
         monitor.join()
-    if code:
+    if code == 'CANCELLED':
+        try:
+            command('engine:cancel-ack', job_id, WORKER_ID)
+            status = 'cancelled'
+        except Exception:
+            logging.error(json.dumps({'execution_id': job_id, 'status': 'cancel_ack_failed'}))
+    elif code:
         try:
             command('engine:fail', job_id, code, WORKER_ID)
         except Exception:

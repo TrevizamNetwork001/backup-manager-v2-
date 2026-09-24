@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\BackupExecution;
 use App\Models\DeviceBackupPolicy;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
@@ -49,6 +50,15 @@ class BackupScheduler
                         }
                         $delay = $occurrence->diffInSeconds($localNow, false);
                         if ($delay < 0 || $delay >= $grace * 60) {
+                            continue;
+                        }
+
+                        // Best-effort per-device busy guard (see BackupExecution::LIVE_STATUSES):
+                        // a manual/scheduled run already in flight for this device blocks a
+                        // new scheduled occurrence rather than piling up a concurrent one.
+                        $busy = BackupExecution::query()->where('device_id', $association->device_id)
+                            ->whereIn('status', BackupExecution::LIVE_STATUSES)->exists();
+                        if ($busy) {
                             continue;
                         }
 

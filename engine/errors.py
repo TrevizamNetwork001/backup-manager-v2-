@@ -46,6 +46,12 @@ HUAWEI_EXPORT_FAILED = 'HUAWEI_EXPORT_FAILED'
 # Storage primitive (local filesystem)
 STORAGE_FAILED = 'STORAGE_FAILED'
 
+# ENGINE-2: cooperative cancellation. Raised by a driver when it notices (at
+# one of its own safe checkpoints — see docs/ENGINE_QUEUE.md) that the
+# operator requested cancellation. Never retried: the job wasn't going to be
+# resumed, it was stopped on purpose.
+CANCELLED = 'CANCELLED'
+
 # FTP received flow (spontaneous auto-backup and the manual diagnostic path)
 FTP_FILE_INVALID = 'FTP_FILE_INVALID'
 FTP_STORAGE_FAILED = 'FTP_STORAGE_FAILED'
@@ -92,6 +98,7 @@ NON_RETRYABLE_CODES = frozenset({
     UNSUPPORTED_DEVICE,
     MISSING_BACKUP_POLICY,
     INVALID_BACKUP_POLICY,
+    CANCELLED,
 })
 
 

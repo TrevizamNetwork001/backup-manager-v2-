@@ -30,7 +30,7 @@ def directory(root_name, device_id):
 
 
 def quarantine(root_name, path, reason, *, device_id=None, ftp_account_id=None, original_filename=None):
-    if reason not in {'invalid_name', 'uncorrelated', 'invalid_file', 'duplicate', 'invalid_account', 'missing_backup_policy', 'invalid_backup_policy', 'unsupported_device', 'changed_during_claim', 'processing_failed'}:
+    if reason not in {'invalid_name', 'uncorrelated', 'invalid_file', 'duplicate', 'invalid_account', 'missing_backup_policy', 'invalid_backup_policy', 'unsupported_device', 'changed_during_claim', 'processing_failed', 'processing_retry_exhausted'}:
         raise ValueError('invalid reason')
     root = Path(root_name).resolve(strict=True)
     target_dir = root / 'quarantine'
