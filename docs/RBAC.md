@@ -39,11 +39,11 @@ Definida inteiramente em `App\Support\Rbac` (constantes `PERMISSIONS` e um
 | Permissão | Admin | Operador | Viewer | Auditor |
 | --- | :-: | :-: | :-: | :-: |
 | `dashboard.view` | ✅ | ✅ | ✅ | ✅ |
-| `sites.view` / `sites.manage` | ✅ / ✅ | ✅ / ✅ | ✅ / — | ✅ / — |
-| `devices.view` / `devices.manage` | ✅ / ✅ | ✅ / ✅ | ✅ / — | ✅ / — |
-| `credentials.view` / `credentials.manage` | ✅ / ✅ | ✅ / ✅ | ✅ / — | ✅ / — |
+| `sites.view` / `sites.manage` / `sites.delete` | ✅ / ✅ / ✅ | ✅ / ✅ / — | ✅ / — / — | ✅ / — / — |
+| `devices.view` / `devices.manage` / `devices.delete` | ✅ / ✅ / ✅ | ✅ / ✅ / — | ✅ / — / — | ✅ / — / — |
+| `credentials.view` / `credentials.manage` / `credentials.disable` | ✅ / ✅ / ✅ | ✅ / ✅ / — | ✅ / — / — | ✅ / — / — |
 | `ftp.view` / `ftp.manage` / `ftp.delete` | ✅ / ✅ / ✅ | ✅ / ✅ / — | ✅ / — / — | ✅ / — / — |
-| `backup_policies.view` / `.manage` | ✅ / ✅ | ✅ / ✅ | ✅ / — | ✅ / — |
+| `backup_policies.view` / `.manage` / `.delete` | ✅ / ✅ / ✅ | ✅ / ✅ / — | ✅ / — / — | ✅ / — / — |
 | `backup_executions.view` / `.run` | ✅ / ✅ | ✅ / ✅ | ✅ / — | ✅ / — |
 | `backup_artifacts.view` / `.download` / `.delete` | ✅ / ✅ / ✅ | ✅ / ✅ / — | ✅ / ✅ / — | ✅ / — / — |
 | `audit.view` | ✅ | — | — | ✅ |
@@ -55,10 +55,14 @@ Notas:
 - `ftp.delete` cobre a exclusão destrutiva de conta FTP (`FtpAdminController::delete`)
   — deliberadamente fora do alcance do Operador, mesmo ele tendo `ftp.manage`
   (criar, rotacionar senha, ativar/desativar, preparar backup).
-- `backup_artifacts.delete` está definida na matriz para uso futuro — hoje
-  não existe rota de exclusão de artefato no sistema (`BackupArtifactController`
-  só tem `index`/`show`), então essa permissão não é exercida por nenhum
-  controller ainda.
+- `backup_artifacts.delete`, `sites.delete`, `devices.delete`,
+  `credentials.disable` e `backup_policies.delete` são as permissões
+  destrutivas dedicadas introduzidas em ADMIN-3 (ver
+  [docs/DESTRUCTIVE_ACTIONS.md](DESTRUCTIVE_ACTIONS.md)) — todas exclusivas
+  do papel `admin`. Até ADMIN-2, a exclusão física desses quatro recursos
+  (exceto artifact, que não tinha rota) usava a permissão `.manage`
+  correspondente, que o Operador também possui; ADMIN-3 separou "operar"
+  de "excluir permanentemente".
 - `credentials.view` nunca expõe segredo em texto plano — isso já era
   garantido pelas views antes desta fase (nenhuma view de credencial
   renderiza o campo `secret`) e continua valendo para todos os papéis,

@@ -80,6 +80,9 @@ próprio código técnico, sem quebrar a tela.
 | `ftp.physical.inspect` | Inspeção física FTP |
 | `ftp.physical.request` | Solicitação de inspeção FTP |
 | `backup.content_analyzed` | Análise de conteúdo de backup |
+| `user.created` / `user.updated` / `user.role_changed` | Criação / Atualização / Alteração de papel do usuário |
+| `user.enabled` / `user.disabled` / `user.password_reset` | Ativação / Desativação / Redefinição de senha do usuário |
+| `backup_artifact.delete` / `backup_artifact.delete_failed` | Excluir artefato de backup / Falha ao excluir (ADMIN-3, ver [docs/DESTRUCTIVE_ACTIONS.md](DESTRUCTIVE_ACTIONS.md)) |
 
 A action técnica original é sempre preservada e exibida no detalhe do
 evento, ao lado do rótulo amigável.

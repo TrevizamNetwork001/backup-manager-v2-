@@ -26,11 +26,11 @@ class Rbac
 
     public const PERMISSIONS = [
         'dashboard.view',
-        'sites.view', 'sites.manage',
-        'devices.view', 'devices.manage',
-        'credentials.view', 'credentials.manage',
+        'sites.view', 'sites.manage', 'sites.delete',
+        'devices.view', 'devices.manage', 'devices.delete',
+        'credentials.view', 'credentials.manage', 'credentials.disable',
         'ftp.view', 'ftp.manage', 'ftp.delete',
-        'backup_policies.view', 'backup_policies.manage',
+        'backup_policies.view', 'backup_policies.manage', 'backup_policies.delete',
         'backup_executions.view', 'backup_executions.run',
         'backup_artifacts.view', 'backup_artifacts.download', 'backup_artifacts.delete',
         'audit.view',

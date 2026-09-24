@@ -161,7 +161,8 @@ class DeviceTest extends TestCase
 
     public function test_authenticated_user_can_delete_device(): void
     {
-        $user = User::factory()->create();
+        // Destroy is admin-only (devices.delete) since ADMIN-3.
+        $user = User::factory()->admin()->create();
 
         $site = Site::create([
             'name' => 'POP Principal',

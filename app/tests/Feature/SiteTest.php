@@ -140,7 +140,8 @@ class SiteTest extends TestCase
 
     public function test_authenticated_user_can_delete_site(): void
     {
-        $user = User::factory()->create();
+        // Destroy is admin-only (sites.delete) since ADMIN-3.
+        $user = User::factory()->admin()->create();
 
         $site = Site::create([
             'name' => 'POP Temporário',
@@ -155,5 +156,19 @@ class SiteTest extends TestCase
         $this->assertDatabaseMissing('sites', [
             'id' => $site->id,
         ]);
+    }
+
+    public function test_site_with_devices_cannot_be_deleted(): void
+    {
+        $this->actingAs(User::factory()->admin()->create());
+        $site = Site::create(['name' => 'POP Com Equipamento', 'is_active' => true]);
+        \App\Models\Device::create(['site_id' => $site->id, 'name' => 'Router preso',
+            'management_ip' => '192.0.2.99', 'vendor' => 'MikroTik', 'is_active' => true]);
+
+        $this->delete("/sites/{$site->id}")
+            ->assertRedirect(route('sites.index'))
+            ->assertSessionHas('warning');
+
+        $this->assertDatabaseHas('sites', ['id' => $site->id]);
     }
 }

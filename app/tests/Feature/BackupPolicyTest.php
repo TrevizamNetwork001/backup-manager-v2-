@@ -71,7 +71,8 @@ class BackupPolicyTest extends TestCase
 
     public function test_authenticated_user_can_view_create_edit_and_delete_unassigned_policy(): void
     {
-        $this->actingAs(User::factory()->create());
+        // Destroy is admin-only (backup_policies.delete) since ADMIN-3.
+        $this->actingAs(User::factory()->admin()->create());
         $this->get('/backup-policies')->assertOk()->assertSee('Políticas de Backup');
 
         $this->post('/backup-policies', $this->payload())
@@ -89,7 +90,7 @@ class BackupPolicyTest extends TestCase
 
     public function test_policy_is_reused_and_associated_policy_cannot_be_removed(): void
     {
-        $this->actingAs(User::factory()->create());
+        $this->actingAs(User::factory()->admin()->create());
         $policy = $this->policy();
         $first = $this->device();
         $second = $this->device('192.0.2.11');
@@ -238,7 +239,7 @@ class BackupPolicyTest extends TestCase
 
     public function test_device_and_credential_in_use_cannot_be_removed_or_moved(): void
     {
-        $this->actingAs(User::factory()->create());
+        $this->actingAs(User::factory()->admin()->create());
         $policy = $this->policy();
         $device = $this->device();
         $other = $this->device('192.0.2.11');

@@ -31,6 +31,8 @@ class AuditPresenter
         'user.enabled' => 'Ativação de usuário',
         'user.disabled' => 'Desativação de usuário',
         'user.password_reset' => 'Redefinição de senha do usuário',
+        'backup_artifact.delete' => 'Excluir artefato de backup',
+        'backup_artifact.delete_failed' => 'Falha ao excluir artefato de backup',
     ];
 
     private const RESULT_LABELS = [
@@ -102,9 +104,14 @@ class AuditPresenter
         'new_role' => 'Novo papel',
         'old_status' => 'Status anterior',
         'new_status' => 'Novo status',
+        'execution_id' => 'ID da execução',
+        'relative_path' => 'Path relativo',
+        'file_existed' => 'Arquivo existia',
+        'preserved_execution' => 'Execução preservada',
+        'size_bytes' => 'Tamanho',
     ];
 
-    private const BYTE_KEYS = ['bytes_removed', 'ftp_bytes_removed'];
+    private const BYTE_KEYS = ['bytes_removed', 'ftp_bytes_removed', 'size_bytes'];
 
     private const STATUS_LABELS = [
         'active' => 'Ativo',

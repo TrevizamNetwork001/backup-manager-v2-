@@ -186,7 +186,8 @@ class CredentialTest extends TestCase
     {
         $device = $this->device();
         $credential = $this->credential($device);
-        $this->actingAs(User::factory()->create());
+        // Destroy is admin-only (credentials.disable) since ADMIN-3.
+        $this->actingAs(User::factory()->admin()->create());
 
         $this->delete("/devices/{$device->id}")
             ->assertRedirect(route('devices.index'))

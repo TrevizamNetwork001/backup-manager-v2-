@@ -46,7 +46,9 @@
                 <td class="table-actions">
                     @can('backup_policies.manage')
                     <a href="{{ route('backup-policies.edit', $policy) }}" class="table-action">Editar / Gerenciar</a>
-                    <form method="POST" action="{{ route('backup-policies.destroy', $policy) }}" onsubmit="return confirm('Remover esta política?');">
+                    @endcan
+                    @can('backup_policies.delete')
+                    <form method="POST" action="{{ route('backup-policies.destroy', $policy) }}" onsubmit="return confirm('Remover esta política? Só é possível sem associações.');">
                         @csrf @method('DELETE')
                         <button type="submit" class="table-action danger-text">Remover</button>
                     </form>

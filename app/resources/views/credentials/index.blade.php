@@ -63,7 +63,9 @@
                             <td class="table-actions">
                                 @can('credentials.manage')
                                 <a href="{{ route('credentials.edit', $credential) }}" class="table-action">Editar</a>
-                                <form method="POST" action="{{ route('credentials.destroy', $credential) }}" onsubmit="return confirm('Remover esta credencial?');">
+                                @endcan
+                                @can('credentials.disable')
+                                <form method="POST" action="{{ route('credentials.destroy', $credential) }}" onsubmit="return confirm('Remover esta credencial? Só é possível sem vínculos ativos.');">
                                     @csrf
                                     @method('DELETE')
                                     <button type="submit" class="table-action danger-text">Remover</button>

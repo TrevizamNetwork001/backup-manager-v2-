@@ -98,11 +98,12 @@
                                 <div class="table-actions">
                                     @can('sites.manage')
                                     <a href="{{ route('sites.edit', $site) }}" class="btn btn--ghost btn--sm">Editar</a>
-
+                                    @endcan
+                                    @can('sites.delete')
                                     <form
                                         method="POST"
                                         action="{{ route('sites.destroy', $site) }}"
-                                        onsubmit="return confirm('Remover este Site / POP?');"
+                                        onsubmit="return confirm('Remover este Site / POP? Só é possível se não houver equipamentos vinculados.');"
                                     >
                                         @csrf
                                         @method('DELETE')

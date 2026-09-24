@@ -88,7 +88,7 @@ class BackupPolicyController extends Controller
 
     public function destroy(BackupPolicy $backupPolicy): RedirectResponse
     {
-        $this->authorize('backup_policies.manage');
+        $this->authorize('backup_policies.delete');
         if ($backupPolicy->deviceBackupPolicies()->exists()) {
             return redirect()->route('backup-policies.index')
                 ->with('warning', 'Remova as associações antes de remover esta política.');

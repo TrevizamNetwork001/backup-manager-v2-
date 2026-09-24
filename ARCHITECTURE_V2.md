@@ -678,3 +678,40 @@ senha de usuários — sem exclusão física. Toda ação administrativa relevan
 `user.disabled`, `user.password_reset`) gera um evento em `audit_events`,
 reaproveitando a infraestrutura da ADMIN-1. Detalhes completos, matriz de
 permissões e limitações conhecidas em [docs/RBAC.md](docs/RBAC.md).
+
+A migration de `role`/`is_active` foi homologada no PostgreSQL real
+(backup `pg_dump --format=custom` antes de aplicar): o admin existente foi
+preservado (`role=admin`, `is_active=true`), e a matriz completa
+(operator/viewer/auditor) foi validada via HTTP contra a instância real com
+três contas de homologação, sem nenhuma divergência frente à suíte
+automatizada.
+
+## ADMIN-3: Ações destrutivas padronizadas e exclusão de artefatos
+
+Fundação reutilizável para ações destrutivas: `App\Support\DestructiveMode`
+generaliza o esquema de frase de confirmação forte já validado em
+FTP-CORE-2 (`DESATIVAR`/`ARQUIVAR`/`EXCLUIR`/`EXCLUIR DADOS`/`APAGAR TUDO
+<nome>`, comparado com `hash_equals()` no backend); `App\Support\DestructiveActionPreview`
+é um DTO simples de impacto (dependências, arquivos afetados, preservados,
+bloqueios) que cada recurso monta à mão; `<x-risk-zone>` é o componente
+Blade compartilhado para a seção "Zona de risco" no fim da página de
+detalhe.
+
+`App\Services\ArtifactStorage` centraliza a única primitive de remoção
+física de `BackupArtifact` (resolve path, confina à raiz configurada,
+bloqueia symlink/traversal, exige arquivo regular, confirma hash/tamanho,
+remove com `@unlink()`) — extraída do antigo `BackupRetention::verify()` sem
+duplicar lógica. `BackupRetention` (retenção automática) e a nova exclusão
+manual (`App\Services\ArtifactDeletionService`, primeiro recurso completo
+desta fase, com preview + confirmação forte + auditoria) usam exatamente a
+mesma primitive, assim como `FtpAccountDeletionService` (atualizado para
+não manter sua própria cópia). Execução de backup e equipamento nunca são
+apagados por essa ação — só o registro do artifact vira `status=deleted`
+(reaproveitando o lifecycle já existente desde ADMIN-1, sem migration nova).
+
+Permissões destrutivas dedicadas (`sites.delete`, `devices.delete`,
+`credentials.disable`, `backup_policies.delete`, `backup_artifacts.delete`)
+separam "operar" (papel Operador) de "excluir permanentemente" (só
+Administrador) — Site também ganhou o bloqueio por equipamentos vinculados
+que não existia antes. Detalhes completos, matriz e o que ainda não foi
+implementado em [docs/DESTRUCTIVE_ACTIONS.md](docs/DESTRUCTIVE_ACTIONS.md).

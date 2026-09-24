@@ -81,7 +81,16 @@ class SiteController extends Controller
 
     public function destroy(Site $site): RedirectResponse
     {
-        $this->authorize('sites.manage');
+        $this->authorize('sites.delete');
+
+        $deviceCount = $site->devices()->count();
+        if ($deviceCount > 0) {
+            $names = $site->devices()->orderBy('name')->limit(5)->pluck('name')->implode(', ');
+            return redirect()->route('sites.index')->with('warning',
+                "Remova ou realoque {$deviceCount} equipamento(s) antes de excluir este Site / POP: {$names}".
+                ($deviceCount > 5 ? '…' : '.'));
+        }
+
         $site->delete();
 
         return redirect()

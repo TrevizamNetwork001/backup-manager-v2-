@@ -48,7 +48,7 @@ class FtpAccountDeletionService
         $stored = $receipts->where('status', 'stored')->filter(fn ($r) => $account->purpose === 'file_server');
         $unattributable = 0;
         foreach ($artifacts as $artifact) {
-            $check = app(BackupRetention::class)->verify($artifact);
+            $check = app(ArtifactStorage::class)->verify($artifact);
             if ($check['result'] !== 'valid' && ! ($check['result'] === 'missing' && $artifact->status !== 'available')) $unattributable++;
         }
         $home = $account->homePath();
@@ -242,7 +242,7 @@ class FtpAccountDeletionService
         if ($mode === 'all') {
             $jobs = DB::table('backup_executions')->where('ftp_account_id', $account->id)->lockForUpdate()->get();
             foreach (BackupArtifact::query()->whereIn('backup_execution_id', $jobs->pluck('id'))->with('backupExecution')->lockForUpdate()->get() as $artifact) {
-                $check = app(BackupRetention::class)->verify($artifact);
+                $check = app(ArtifactStorage::class)->verify($artifact);
                 if ($check['result'] === 'missing' && $artifact->status !== 'available') continue;
                 if ($check['result'] !== 'valid') throw new RuntimeException('Artifact não atribuível ou inválido: '.$artifact->id.' ('.$check['result'].').');
                 $paths[] = $check['path'];

@@ -77,6 +77,7 @@ Route::middleware(['auth', 'active'])->group(function () {
     Route::post('backup-executions/{backup_execution}/cancel', [BackupExecutionController::class, 'cancel'])->name('backup-executions.cancel');
     Route::get('backup-artifacts', [BackupArtifactController::class, 'index'])->name('backup-artifacts.index');
     Route::get('backup-artifacts/{backup_artifact}', [BackupArtifactController::class, 'show'])->name('backup-artifacts.show');
+    Route::delete('backup-artifacts/{backup_artifact}', [BackupArtifactController::class, 'destroy'])->name('backup-artifacts.destroy');
 
     Route::post('/logout', [AuthController::class, 'destroy'])->name('logout');
 });

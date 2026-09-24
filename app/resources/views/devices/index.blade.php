@@ -120,11 +120,12 @@
                         >
                             Editar
                         </a>
-
+                        @endcan
+                        @can('devices.delete')
                         <form
                             method="POST"
                             action="{{ route('devices.destroy', $device) }}"
-                            onsubmit="return confirm('Remover este equipamento?');"
+                            onsubmit="return confirm('Remover este equipamento? Só é possível sem histórico ou vínculos.');"
                         >
                             @csrf
                             @method('DELETE')

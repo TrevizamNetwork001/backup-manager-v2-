@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class BackupArtifact extends Model
 {
     public const STATUSES = ['available', 'deleted', 'missing'];
-    public const DELETION_REASONS = ['retention_days', 'retention_count', 'retention_days_and_count'];
+    public const DELETION_REASONS = ['retention_days', 'retention_count', 'retention_days_and_count', 'manual'];
 
     public function statusLabel(): string
     {
@@ -23,6 +23,7 @@ class BackupArtifact extends Model
             'retention_days' => 'Retenção em dias',
             'retention_count' => 'Retenção em quantidade',
             'retention_days_and_count' => 'Retenção em dias e quantidade',
+            'manual' => 'Exclusão manual',
             default => null,
         };
     }

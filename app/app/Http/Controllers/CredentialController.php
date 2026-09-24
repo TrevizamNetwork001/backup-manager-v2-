@@ -89,7 +89,7 @@ class CredentialController extends Controller
 
     public function destroy(Credential $credential): RedirectResponse
     {
-        $this->authorize('credentials.manage');
+        $this->authorize('credentials.disable');
         if ($credential->deviceBackupPolicies()->exists()) {
             return redirect()->route('credentials.index')
                 ->with('warning', 'Remova as associações de políticas antes de remover esta credencial.');
