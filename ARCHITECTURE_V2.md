@@ -644,3 +644,9 @@ A exclusão de conta FTP usa `FtpAccountDeletionService`: o painel registra o pe
 ## Fronteira de privilégios FTP-CORE-2
 
 O web app calcula impacto lógico e recebe relatórios físicos pelo banco; não inspeciona `/data/ftp`. O ftp-admin, com mount RW e UID 0, deriva paths da identidade da conta, inspeciona, revoga PureDB e limpa dados FTP antes da finalização do Laravel. O app mantém o mount `/data/ftp` RO. Sem relatório físico recente do ftp-admin, exclusão destrutiva fica bloqueada. Ver `docs/FTP_CORE_2.md`.
+
+## ADMIN-1: Auditoria global administrativa
+
+`audit_events` deixou de ser uma tabela de suporte pontual do fluxo FTP e passou a ser a fonte central de auditoria consultável em `/audit` (admin-only, checagem inline `is_admin` — sem RBAC novo). `AuditController` lista com filtros server-side (período, usuário, ação, recurso, resultado, busca) e paginação real (50/página, `created_at DESC, id DESC`); `/audit/{auditEvent}` mostra o detalhe com metadata sanitizada. `AuditPresenter` converte códigos técnicos (`ftp.account.delete_with_data`, `result`, `resource_type`) em rótulos humanos e redige recursivamente qualquer chave sensível (`password`, `token`, `secret`, `authorization`, etc.) antes de renderizar — a tela nunca expõe segredos, mesmo que o produtor do evento os inclua por engano. A tela é somente leitura (append-only): não há edição, exclusão ou marcação de eventos.
+
+A tabela legada `ftp_account_audits` (log específico de criar/rotacionar/ativar credencial FTP) continua existindo em paralelo e não foi migrada; nesta fase, `FtpAccountManager` passou a também emitir eventos equivalentes em `audit_events` (`ftp.account.create`, `ftp.account.password_rotated`, `ftp.account.enable`/`disable`) para que o ciclo de vida completo da conta FTP fique visível na auditoria global, sem remover o log legado. Detalhes completos em [docs/AUDIT.md](docs/AUDIT.md).

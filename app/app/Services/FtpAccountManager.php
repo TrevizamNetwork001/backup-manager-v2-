@@ -5,12 +5,17 @@ namespace App\Services;
 use App\Models\Device;
 use App\Models\FtpAccount;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Support\Str;
 
 class FtpAccountManager
 {
+    public function __construct(private AuditEvents $auditEvents)
+    {
+    }
+
     public function create(?Device $device, array $input, int $actorId): array
     {
         $values = $this->credentials($input, $device);
@@ -98,5 +103,21 @@ class FtpAccountManager
             'user_id' => $actorId, 'action' => $action, 'username' => $account->username,
             'created_at' => now(),
         ]);
+
+        if (! Schema::hasTable('audit_events')) {
+            return;
+        }
+        $globalAction = match ($action) {
+            'create' => 'ftp.account.create',
+            'rotate' => 'ftp.account.password_rotated',
+            'enable' => 'ftp.account.enable',
+            'disable' => 'ftp.account.disable',
+            default => null,
+        };
+        if ($globalAction === null) {
+            return;
+        }
+        $this->auditEvents->record($globalAction, 'ftp_account', (string) $account->id, $account->username,
+            'success', ['device_id' => $account->device_id, 'purpose' => $account->purpose], $actorId, request()?->ip());
     }
 }

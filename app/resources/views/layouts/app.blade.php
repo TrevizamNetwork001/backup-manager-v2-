@@ -77,6 +77,10 @@
                     <span class="nav-icon">⚙</span>
                     Configurações
                 </a>
+                <a href="{{ route('audit.index') }}" class="nav-link {{ request()->routeIs('audit.*') ? 'active' : '' }}">
+                    <span class="nav-icon">☰</span>
+                    Auditoria
+                </a>
             @endif
         </nav>
 

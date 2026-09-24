@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\AuditController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\BackupExecutionController;
 use App\Http\Controllers\BackupArtifactController;
@@ -31,6 +32,8 @@ Route::middleware('auth')->group(function () {
     Route::delete('ftp/accounts/{ftpAccount}', [FtpAdminController::class, 'delete'])->name('ftp.delete');
     Route::get('settings', [InstanceSettingsController::class, 'edit'])->name('settings.edit');
     Route::put('settings', [InstanceSettingsController::class, 'update'])->name('settings.update');
+    Route::get('audit', [AuditController::class, 'index'])->name('audit.index');
+    Route::get('audit/{auditEvent}', [AuditController::class, 'show'])->name('audit.show');
 
     Route::resource('sites', SiteController::class)
         ->except(['show']);

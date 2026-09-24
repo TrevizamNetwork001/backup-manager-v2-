@@ -1590,3 +1590,21 @@ textarea.form-control { resize: vertical; }
 }
 .form-control:focus-visible { border-color: var(--color-focus); }
 .form-control[aria-invalid="true"]:focus-visible { border-color: var(--color-danger); }
+
+/* Audit module (ADMIN-1) */
+.audit-filters { align-items: flex-end; justify-content: flex-start; }
+.audit-filters .form-field { width: auto; min-width: 160px; }
+.audit-filters__search { flex: 1 1 220px; }
+.audit-filters__actions { margin-inline-start: auto; }
+.audit-detail .data-table th { width: 220px; color: var(--color-text-muted); font-weight: var(--font-weight-semibold); white-space: nowrap; }
+.audit-metadata-block {
+    margin: 0;
+    padding: var(--space-3);
+    background: var(--color-surface-sunken);
+    border: 1px solid var(--color-border-soft);
+    border-radius: var(--radius-md);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-label);
+    white-space: pre-wrap;
+    word-break: break-word;
+}
