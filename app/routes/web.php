@@ -14,6 +14,7 @@ use App\Http\Controllers\FtpAdminController;
 use App\Http\Controllers\SiteController;
 use App\Http\Controllers\InstanceSettingsController;
 use App\Http\Controllers\OltFtpWizardController;
+use App\Http\Controllers\UserController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware('guest')->group(function () {
@@ -21,7 +22,7 @@ Route::middleware('guest')->group(function () {
     Route::post('/login', [AuthController::class, 'store'])->name('login.store');
 });
 
-Route::middleware('auth')->group(function () {
+Route::middleware(['auth', 'active'])->group(function () {
     Route::get('/', DashboardController::class)->name('dashboard');
     Route::get('ftp', [FtpAdminController::class, 'index'])->name('ftp.index');
     Route::post('ftp/accounts', [FtpAdminController::class, 'store'])->name('ftp.store');
@@ -34,6 +35,14 @@ Route::middleware('auth')->group(function () {
     Route::put('settings', [InstanceSettingsController::class, 'update'])->name('settings.update');
     Route::get('audit', [AuditController::class, 'index'])->name('audit.index');
     Route::get('audit/{auditEvent}', [AuditController::class, 'show'])->name('audit.show');
+
+    Route::get('users', [UserController::class, 'index'])->name('users.index');
+    Route::get('users/create', [UserController::class, 'create'])->name('users.create');
+    Route::post('users', [UserController::class, 'store'])->name('users.store');
+    Route::get('users/{user}/edit', [UserController::class, 'edit'])->name('users.edit');
+    Route::put('users/{user}', [UserController::class, 'update'])->name('users.update');
+    Route::patch('users/{user}/status', [UserController::class, 'status'])->name('users.status');
+    Route::post('users/{user}/reset-password', [UserController::class, 'resetPassword'])->name('users.reset-password');
 
     Route::resource('sites', SiteController::class)
         ->except(['show']);

@@ -647,6 +647,34 @@ O web app calcula impacto lógico e recebe relatórios físicos pelo banco; não
 
 ## ADMIN-1: Auditoria global administrativa
 
-`audit_events` deixou de ser uma tabela de suporte pontual do fluxo FTP e passou a ser a fonte central de auditoria consultável em `/audit` (admin-only, checagem inline `is_admin` — sem RBAC novo). `AuditController` lista com filtros server-side (período, usuário, ação, recurso, resultado, busca) e paginação real (50/página, `created_at DESC, id DESC`); `/audit/{auditEvent}` mostra o detalhe com metadata sanitizada. `AuditPresenter` converte códigos técnicos (`ftp.account.delete_with_data`, `result`, `resource_type`) em rótulos humanos e redige recursivamente qualquer chave sensível (`password`, `token`, `secret`, `authorization`, etc.) antes de renderizar — a tela nunca expõe segredos, mesmo que o produtor do evento os inclua por engano. A tela é somente leitura (append-only): não há edição, exclusão ou marcação de eventos.
+`audit_events` deixou de ser uma tabela de suporte pontual do fluxo FTP e passou a ser a fonte central de auditoria consultável em `/audit` (permissão `audit.view` — ver ADMIN-2 abaixo para o modelo de autorização atual). `AuditController` lista com filtros server-side (período, usuário, ação, recurso, resultado, busca) e paginação real (50/página, `created_at DESC, id DESC`); `/audit/{auditEvent}` mostra o detalhe com metadata sanitizada. `AuditPresenter` converte códigos técnicos (`ftp.account.delete_with_data`, `result`, `resource_type`) em rótulos humanos e redige recursivamente qualquer chave sensível (`password`, `token`, `secret`, `authorization`, etc.) antes de renderizar — a tela nunca expõe segredos, mesmo que o produtor do evento os inclua por engano. A tela é somente leitura (append-only): não há edição, exclusão ou marcação de eventos.
 
 A tabela legada `ftp_account_audits` (log específico de criar/rotacionar/ativar credencial FTP) continua existindo em paralelo e não foi migrada; nesta fase, `FtpAccountManager` passou a também emitir eventos equivalentes em `audit_events` (`ftp.account.create`, `ftp.account.password_rotated`, `ftp.account.enable`/`disable`) para que o ciclo de vida completo da conta FTP fique visível na auditoria global, sem remover o log legado. Detalhes completos em [docs/AUDIT.md](docs/AUDIT.md).
+
+## ADMIN-2: Usuários, papéis e permissões (RBAC)
+
+O controle de acesso binário baseado em `users.is_admin` foi substituído por
+papéis (`admin`, `operator`, `viewer`, `auditor`) e uma matriz de permissões
+centralizada em `App\Support\Rbac`. `App\Models\User::hasPermission()` é a
+única forma de checar autorização; `AppServiceProvider::boot()` registra um
+`Gate::define()` por permissão, e todo controller autoriza via
+`$this->authorize('recurso.acao')` (trait `AuthorizesRequests` adicionada ao
+`Controller` base) — as views usam `@can`/`@canany` para esconder ações que o
+usuário não pode executar, mas o bloqueio real é sempre no backend.
+
+`is_admin` permanece no schema por compatibilidade (uma migration faz o
+backfill único `is_admin=true → admin`, `is_admin=false → viewer`; o model
+tem um bridge equivalente para código legado que só define `is_admin`), mas
+deixou de ser lido por qualquer checagem de autorização. Usuários ganharam
+`is_active`: desativados não logam (mensagem genérica, sem revelar o motivo)
+e sessões abertas são derrubadas na próxima requisição (`EnsureUserIsActive`,
+alias de rota `active`). O último administrador ativo não pode ser
+rebaixado nem desativado, e autodesativação é sempre bloqueada.
+
+Nova área `/users` (permissões `users.view`/`users.manage`, hoje só o papel
+`admin`) permite criar, editar, trocar papel, ativar/desativar e redefinir
+senha de usuários — sem exclusão física. Toda ação administrativa relevante
+(`user.created`, `user.updated`, `user.role_changed`, `user.enabled`,
+`user.disabled`, `user.password_reset`) gera um evento em `audit_events`,
+reaproveitando a infraestrutura da ADMIN-1. Detalhes completos, matriz de
+permissões e limitações conhecidas em [docs/RBAC.md](docs/RBAC.md).

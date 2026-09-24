@@ -15,6 +15,7 @@ class BackupPolicyController extends Controller
 {
     public function index(): View
     {
+        $this->authorize('backup_policies.view');
         $policies = BackupPolicy::query()
             ->withCount('deviceBackupPolicies')
             ->orderBy('name')
@@ -25,11 +26,14 @@ class BackupPolicyController extends Controller
 
     public function create(): View
     {
+        $this->authorize('backup_policies.manage');
+
         return view('backup-policies.create');
     }
 
     public function store(Request $request): RedirectResponse
     {
+        $this->authorize('backup_policies.manage');
         $policy = BackupPolicy::create($this->validated($request));
 
         return redirect()->route('backup-policies.edit', $policy)
@@ -38,6 +42,7 @@ class BackupPolicyController extends Controller
 
     public function edit(BackupPolicy $backupPolicy): View
     {
+        $this->authorize('backup_policies.manage');
         $backupPolicy->load(['deviceBackupPolicies' => fn ($query) => $query
             ->with(['device:id,name,is_active', 'credential:id,name,type,username,is_active'])
             ->orderBy('id')]);
@@ -55,6 +60,7 @@ class BackupPolicyController extends Controller
 
     public function update(Request $request, BackupPolicy $backupPolicy): RedirectResponse
     {
+        $this->authorize('backup_policies.manage');
         $validated = $this->validated($request);
         $newType = $validated['method'] === 'ssh_pull' ? 'ssh' : 'none';
 
@@ -82,6 +88,7 @@ class BackupPolicyController extends Controller
 
     public function destroy(BackupPolicy $backupPolicy): RedirectResponse
     {
+        $this->authorize('backup_policies.manage');
         if ($backupPolicy->deviceBackupPolicies()->exists()) {
             return redirect()->route('backup-policies.index')
                 ->with('warning', 'Remova as associações antes de remover esta política.');

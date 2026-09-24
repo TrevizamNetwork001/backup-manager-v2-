@@ -1,7 +1,7 @@
 @extends('layouts.app')
 @section('title', 'Conta FTP — Backup Manager')
 @section('page-header')
-<header class="page-header"><div class="page-header__content"><h1 class="page-header__title">Conta FTP: {{ $ftpAccount->username }}</h1><p class="page-header__description">Acesso e recebimentos da conta.</p></div><div class="page-header__actions"><button type="button" class="btn btn--primary" id="ftp-rotate-open">Rotacionar senha</button></div></header>
+<header class="page-header"><div class="page-header__content"><h1 class="page-header__title">Conta FTP: {{ $ftpAccount->username }}</h1><p class="page-header__description">Acesso e recebimentos da conta.</p></div><div class="page-header__actions">@can('ftp.manage')<button type="button" class="btn btn--primary" id="ftp-rotate-open">Rotacionar senha</button>@endcan</div></header>
 @endsection
 @section('content')
 @php($server = app(\App\Services\FtpServerSettings::class)->get())
@@ -18,12 +18,14 @@
 <section class="ftp-detail-section">
     <h2>Integração de backup FTP</h2>
     <dl class="ftp-detail-list"><div><dt>Conta FTP</dt><dd>{{ $accountReady ? 'OK' : 'Pendente' }}</dd></div><div><dt>PureDB</dt><dd>{{ $pureDbReady ? 'OK' : 'Pendente' }}</dd></div><div><dt>Política ftp_push</dt><dd>{{ $policyReady ? 'OK' : 'Ausente' }}</dd></div><div><dt>Pronto para receber backup</dt><dd>{{ $accountReady && $pureDbReady && $policyReady ? 'SIM' : 'NÃO' }}</dd></div></dl>
+    @can('ftp.manage')
     @if(!$policyReady && !$ftpAccount->deletion_mode)
         <form method="POST" action="{{ route('ftp.prepare', $ftpAccount) }}" id="ftp-prepare-form">
             @csrf
             <button type="submit" class="btn btn--secondary">Preparar backup FTP</button>
         </form>
     @endif
+    @endcan
 </section>
 @endif
 <section class="ftp-detail-section"><h2>Identificação</h2><dl class="ftp-detail-list"><div><dt>Usuário</dt><dd><code>{{ $ftpAccount->username }}</code></dd></div><div><dt>Finalidade</dt><dd>{{ ($ftpAccount->purpose ?? 'backup') === 'backup' ? 'Backup' : 'Servidor de arquivos' }}</dd></div><div><dt>Equipamento</dt><dd>{{ $ftpAccount->device?->name ?? 'Nenhum' }}</dd></div><div><dt>Status</dt><dd>{{ $ftpAccount->is_active ? 'Ativa' : 'Desativada' }}</dd></div></dl></section>
@@ -32,9 +34,14 @@
 </div>
 <section class="ftp-detail-section"><h2>Recebimentos recentes</h2>@if($history->isEmpty())<p>Nenhum arquivo recebido.</p>@else<div class="table-shell"><table class="data-table"><thead><tr><th>Data</th><th>Arquivo</th><th>Tamanho</th><th>Status</th><th>Hash</th><th>Destino / erro</th></tr></thead><tbody>@foreach($history as $item)<tr><td>{{ $item->received_at }}</td><td>{{ $item->original_filename }}</td><td>{{ $item->size_bytes }} bytes</td><td>{{ $item->status }}</td><td><code>{{ $item->sha256 ? substr($item->sha256, 0, 16).'…' : '—' }}</code></td><td>{{ $item->relative_path ?? $item->error_code ?? '—' }}</td></tr>@endforeach</tbody></table></div>@endif</section>
 <details class="ftp-technical"><summary>Técnico / avançado</summary><dl class="ftp-detail-list"><div><dt>UUID</dt><dd><code>{{ $ftpAccount->account_uuid }}</code></dd></div><div><dt>Chroot</dt><dd><code>{{ $ftpAccount->homePath() }}</code></dd></div><div><dt>PureDB</dt><dd>{{ $ftpAccount->sync_error ? 'Erro' : ($ftpAccount->provisioned_at ? 'Sincronizado' : 'Pendente') }}</dd></div><div><dt>Provisionado em</dt><dd>{{ $ftpAccount->provisioned_at?->format('d/m/Y H:i:s') ?? 'Pendente' }}</dd></div>@if($ftpAccount->sync_error)<div><dt>Erro</dt><dd>{{ $ftpAccount->sync_error }}</dd></div>@endif</dl></details>
+@can('ftp.manage')
 <section class="ftp-account-actions"><div><h2>Estado da conta</h2><p>{{ $ftpAccount->is_active ? 'Desativar impede novos acessos FTP.' : 'Ativar permite novamente o acesso FTP.' }}</p></div><form method="POST" action="{{ route('ftp.status', $ftpAccount) }}">@csrf @method('PATCH')<input type="hidden" name="is_active" value="{{ $ftpAccount->is_active ? 0 : 1 }}"><button type="submit" class="btn btn--secondary" @if($impact['deletion_mode']) disabled @endif>{{ $ftpAccount->is_active ? 'Desativar conta' : 'Ativar conta' }}</button></form></section>
+@endcan
+@can('ftp.delete')
 <section class="ftp-account-actions"><div><h2>Zona de risco</h2><p>Confira os dados vinculados antes de excluir. A revogação do PureDB será confirmada antes da remoção.</p></div><button type="button" class="btn btn--secondary" id="ftp-delete-open" @if($impact['deletion_mode']) disabled @endif>Excluir conta</button></section>
+@endcan
 </div>
+@can('ftp.delete')
 <dialog class="modal" id="ftp-delete-dialog" aria-labelledby="ftp-delete-title"><div class="modal__surface"><div class="modal__header"><h2 class="modal__title" id="ftp-delete-title">Excluir conta FTP</h2><button type="button" class="modal__close" data-close-delete aria-label="Fechar"><x-icon name="close" size="sm" /></button></div><form method="POST" action="{{ route('ftp.delete', $ftpAccount) }}">@csrf @method('DELETE')<div class="modal__body ftp-modal-body">
 @if($errors->has('mode') || $errors->has('confirmation'))<div class="alert alert--warning" role="alert" id="ftp-delete-error">@foreach($errors->get('mode') as $error)<p>{{ $error }}</p>@endforeach @foreach($errors->get('confirmation') as $error)<p>{{ $error }}</p>@endforeach</div>@endif
 @if($deletionPreview && $impact['blocker'])<div class="alert alert--warning" role="alert">{{ $impact['blocker'] }}</div>@endif
@@ -44,10 +51,14 @@
 <fieldset @if($errors->has('mode')) aria-describedby="ftp-delete-error" @endif><legend>Modo de exclusão</legend><label><input type="radio" name="mode" value="account" required @checked($selectedDeletionMode === 'account')> Somente conta</label><p>Revoga o acesso FTP e libera o equipamento. Backups existentes permanecem.</p><label><input type="radio" name="mode" value="ftp_data" @checked($selectedDeletionMode === 'ftp_data')> Conta + dados FTP</label><p>Também remove arquivos e histórico próprios da conta FTP. Backups processados permanecem.</p><label><input type="radio" name="mode" value="all" @checked($selectedDeletionMode === 'all')> Conta + todos os dados associados</label><p>Também remove execuções, artifacts e arquivos finais relacionados. Esta ação não pode ser desfeita.</p></fieldset>
 <div class="form-field"><label class="form-label" for="ftp-delete-confirmation">Frase de confirmação: <strong id="ftp-delete-phrase">{{ $confirmationPhrases[$selectedDeletionMode] ?? 'Selecione um modo de exclusão.' }}</strong></label><input class="form-control" id="ftp-delete-confirmation" name="confirmation" autocomplete="off" required @if($errors->has('confirmation')) aria-invalid="true" aria-describedby="ftp-delete-error" @endif></div>
 </div><div class="modal__footer ftp-modal-footer"><button type="button" class="btn btn--ghost" data-close-delete>Cancelar</button><button type="submit" class="btn btn--danger" @if($impact['blocker'] || $impact['safety_error']) disabled @endif>Excluir definitivamente</button></div></form></div></dialog>
+@endcan
+@can('ftp.manage')
 <dialog class="modal modal--sm" id="ftp-rotate-dialog" aria-labelledby="ftp-rotate-title"><div class="modal__surface"><div class="modal__header"><h2 class="modal__title" id="ftp-rotate-title">Rotacionar senha FTP</h2><button type="button" class="modal__close" data-close-rotate aria-label="Fechar"><x-icon name="close" size="sm" /></button></div><form method="POST" action="{{ route('ftp.rotate', $ftpAccount) }}" id="ftp-rotate-form">@csrf<div class="modal__body ftp-modal-body"><div class="form-field"><label class="form-label" for="new_password">Nova senha</label><div style="display:flex;gap:.5rem"><input class="form-control" id="new_password" name="password" type="password" minlength="12" maxlength="40" autocomplete="new-password" required><button class="btn btn--secondary" type="button" data-generate-password>Gerar</button></div></div><div class="form-field"><label class="form-label" for="new_password_confirmation">Confirmar senha</label><input class="form-control" id="new_password_confirmation" name="password_confirmation" type="password" minlength="12" maxlength="40" autocomplete="new-password" required></div></div><div class="modal__footer ftp-modal-footer"><button type="button" class="btn btn--ghost" data-close-rotate>Cancelar</button><button type="submit" class="btn btn--primary">Rotacionar senha</button></div></form></div></dialog>
 <script>
 (() => { const dialog = document.getElementById('ftp-rotate-dialog'); const form = document.getElementById('ftp-rotate-form'); document.getElementById('ftp-rotate-open').addEventListener('click', () => dialog.showModal()); dialog.querySelectorAll('[data-close-rotate]').forEach(button => button.addEventListener('click', () => dialog.close())); dialog.addEventListener('click', event => { if (event.target === dialog) dialog.close(); }); form.querySelector('[data-generate-password]').addEventListener('click', () => { const bytes = new Uint8Array(16); crypto.getRandomValues(bytes); const value = Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join(''); form.elements.password.value = value; form.elements.password_confirmation.value = value; }); @if ($errors->has('password') || $errors->has('password_confirmation')) dialog.showModal(); @endif })();
 </script>
+@endcan
+@can('ftp.delete')
 <script>
 (() => {
     const dialog = document.getElementById('ftp-delete-dialog');
@@ -67,4 +78,5 @@
     @if ($deletionPreview && !$impact['deletion_mode']) syncPhrase(); dialog.showModal(); @endif
 })();
 </script>
+@endcan
 @endsection

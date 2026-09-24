@@ -3,6 +3,7 @@
 namespace Database\Factories;
 
 use App\Models\User;
+use App\Support\Rbac;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
@@ -41,5 +42,30 @@ class UserFactory extends Factory
         return $this->state(fn (array $attributes) => [
             'email_verified_at' => null,
         ]);
+    }
+
+    public function admin(): static
+    {
+        return $this->state(fn () => ['role' => Rbac::ROLE_ADMIN]);
+    }
+
+    public function operator(): static
+    {
+        return $this->state(fn () => ['role' => Rbac::ROLE_OPERATOR]);
+    }
+
+    public function viewer(): static
+    {
+        return $this->state(fn () => ['role' => Rbac::ROLE_VIEWER]);
+    }
+
+    public function auditor(): static
+    {
+        return $this->state(fn () => ['role' => Rbac::ROLE_AUDITOR]);
+    }
+
+    public function inactive(): static
+    {
+        return $this->state(fn () => ['is_active' => false]);
     }
 }

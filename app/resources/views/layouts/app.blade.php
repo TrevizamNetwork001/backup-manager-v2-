@@ -27,61 +27,84 @@
 
             <div class="nav-section">Infraestrutura</div>
 
-            <a
-                href="{{ route('sites.index') }}"
-                class="nav-link {{ request()->routeIs('sites.*') ? 'active' : '' }}"
-            >
-                <span class="nav-icon">◎</span>
-                Sites / POPs
-            </a>
+            @can('sites.view')
+                <a
+                    href="{{ route('sites.index') }}"
+                    class="nav-link {{ request()->routeIs('sites.*') ? 'active' : '' }}"
+                >
+                    <span class="nav-icon">◎</span>
+                    Sites / POPs
+                </a>
+            @endcan
 
-            <a
-                href="{{ route('devices.index') }}"
-                class="nav-link {{ request()->routeIs('devices.*') ? 'active' : '' }}"
-            >
-                <span class="nav-icon">▣</span>
-                Equipamentos
-            </a>
+            @can('devices.view')
+                <a
+                    href="{{ route('devices.index') }}"
+                    class="nav-link {{ request()->routeIs('devices.*') ? 'active' : '' }}"
+                >
+                    <span class="nav-icon">▣</span>
+                    Equipamentos
+                </a>
+            @endcan
 
-            <a href="{{ route('credentials.index') }}" class="nav-link {{ request()->routeIs('credentials.*') ? 'active' : '' }}">
-                <span class="nav-icon">◆</span>
-                Credenciais
-            </a>
+            @can('credentials.view')
+                <a href="{{ route('credentials.index') }}" class="nav-link {{ request()->routeIs('credentials.*') ? 'active' : '' }}">
+                    <span class="nav-icon">◆</span>
+                    Credenciais
+                </a>
+            @endcan
 
-            @if(auth()->user()->is_admin)
+            @can('ftp.view')
                 <a href="{{ route('ftp.index') }}" class="nav-link {{ request()->routeIs('ftp.*') ? 'active' : '' }}">
                     <span class="nav-icon">⇅</span>
                     FTP
                 </a>
-            @endif
+            @endcan
 
             <div class="nav-section">Backup</div>
 
-            <a href="{{ route('backup-policies.index') }}" class="nav-link {{ request()->routeIs('backup-policies.*') ? 'active' : '' }}">
-                <span class="nav-icon">◷</span>
-                Políticas
-            </a>
+            @can('backup_policies.view')
+                <a href="{{ route('backup-policies.index') }}" class="nav-link {{ request()->routeIs('backup-policies.*') ? 'active' : '' }}">
+                    <span class="nav-icon">◷</span>
+                    Políticas
+                </a>
+            @endcan
 
-            <a href="{{ route('backup-executions.index') }}" class="nav-link {{ request()->routeIs('backup-executions.*') ? 'active' : '' }}">
-                <span class="nav-icon">↻</span>
-                Execuções
-            </a>
+            @can('backup_executions.view')
+                <a href="{{ route('backup-executions.index') }}" class="nav-link {{ request()->routeIs('backup-executions.*') ? 'active' : '' }}">
+                    <span class="nav-icon">↻</span>
+                    Execuções
+                </a>
+            @endcan
 
-            <a href="{{ route('backup-artifacts.index') }}" class="nav-link {{ request()->routeIs('backup-artifacts.*') ? 'active' : '' }}">
-                <span class="nav-icon">▤</span>
-                Artefatos
-            </a>
-            @if(auth()->user()->is_admin)
+            @can('backup_artifacts.view')
+                <a href="{{ route('backup-artifacts.index') }}" class="nav-link {{ request()->routeIs('backup-artifacts.*') ? 'active' : '' }}">
+                    <span class="nav-icon">▤</span>
+                    Artefatos
+                </a>
+            @endcan
+
+            @canany(['settings.view', 'audit.view', 'users.view'])
                 <div class="nav-section">Administração</div>
-                <a href="{{ route('settings.edit') }}" class="nav-link {{ request()->routeIs('settings.*') ? 'active' : '' }}">
-                    <span class="nav-icon">⚙</span>
-                    Configurações
-                </a>
-                <a href="{{ route('audit.index') }}" class="nav-link {{ request()->routeIs('audit.*') ? 'active' : '' }}">
-                    <span class="nav-icon">☰</span>
-                    Auditoria
-                </a>
-            @endif
+                @can('settings.view')
+                    <a href="{{ route('settings.edit') }}" class="nav-link {{ request()->routeIs('settings.*') ? 'active' : '' }}">
+                        <span class="nav-icon">⚙</span>
+                        Configurações
+                    </a>
+                @endcan
+                @can('audit.view')
+                    <a href="{{ route('audit.index') }}" class="nav-link {{ request()->routeIs('audit.*') ? 'active' : '' }}">
+                        <span class="nav-icon">☰</span>
+                        Auditoria
+                    </a>
+                @endcan
+                @can('users.view')
+                    <a href="{{ route('users.index') }}" class="nav-link {{ request()->routeIs('users.*') ? 'active' : '' }}">
+                        <span class="nav-icon">☺</span>
+                        Usuários
+                    </a>
+                @endcan
+            @endcanany
         </nav>
 
         <div class="sidebar-footer">
@@ -92,7 +115,7 @@
 
                 <div class="user-info">
                     <strong>{{ auth()->user()->name }}</strong>
-                    <span>{{ auth()->user()->is_admin ? 'Administrador' : 'Usuário' }}</span>
+                    <span>{{ \App\Support\Rbac::roleLabel(auth()->user()->role) }}</span>
                 </div>
             </div>
 

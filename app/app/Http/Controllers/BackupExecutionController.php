@@ -17,6 +17,7 @@ class BackupExecutionController extends Controller
 {
     public function index(Request $request): View
     {
+        $this->authorize('backup_executions.view');
         $filters = $request->validate([
             'status' => ['nullable', Rule::in(BackupExecution::STATUSES)],
             'origin' => ['nullable', Rule::in(BackupExecution::ORIGINS)],
@@ -35,6 +36,7 @@ class BackupExecutionController extends Controller
 
     public function show(BackupExecution $backupExecution): View
     {
+        $this->authorize('backup_executions.view');
         $backupExecution->load([
             'device:id,name', 'backupPolicy:id,name,method',
             'credential:id,name,type,username', 'artifact',
@@ -51,6 +53,7 @@ class BackupExecutionController extends Controller
 
     public function storeManual(BackupPolicy $backupPolicy, DeviceBackupPolicy $association): RedirectResponse
     {
+        $this->authorize('backup_executions.run');
         abort_unless($association->backup_policy_id === $backupPolicy->id, 404);
         $execution = BackupExecution::createManual($association);
 
@@ -60,11 +63,15 @@ class BackupExecutionController extends Controller
 
     public function queue(BackupExecution $backupExecution): RedirectResponse
     {
+        $this->authorize('backup_executions.run');
+
         return $this->transition($backupExecution, 'queued');
     }
 
     public function cancel(BackupExecution $backupExecution): RedirectResponse
     {
+        $this->authorize('backup_executions.run');
+
         return $this->transition($backupExecution, 'cancelled');
     }
 

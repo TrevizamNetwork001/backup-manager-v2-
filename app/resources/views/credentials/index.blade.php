@@ -20,7 +20,7 @@
         <span>{{ $credentials->total() === 1 ? 'credencial cadastrada' : 'credenciais cadastradas' }}</span>
     </div>
 
-    <a href="{{ route('credentials.create') }}" class="primary-button inline-button">+ Nova Credencial</a>
+    @can('credentials.manage')<a href="{{ route('credentials.create') }}" class="primary-button inline-button">+ Nova Credencial</a>@endcan
 </div>
 
 <article class="panel table-panel">
@@ -29,7 +29,7 @@
             <div class="empty-icon">◆</div>
             <h3>Nenhuma credencial cadastrada</h3>
             <p>Cadastre uma credencial para um equipamento.</p>
-            <a href="{{ route('credentials.create') }}" class="primary-button empty-action">Cadastrar primeira credencial</a>
+            @can('credentials.manage')<a href="{{ route('credentials.create') }}" class="primary-button empty-action">Cadastrar primeira credencial</a>@endcan
         </div>
     @else
         <div class="table-responsive">
@@ -61,12 +61,14 @@
                                 @endif
                             </td>
                             <td class="table-actions">
+                                @can('credentials.manage')
                                 <a href="{{ route('credentials.edit', $credential) }}" class="table-action">Editar</a>
                                 <form method="POST" action="{{ route('credentials.destroy', $credential) }}" onsubmit="return confirm('Remover esta credencial?');">
                                     @csrf
                                     @method('DELETE')
                                     <button type="submit" class="table-action danger-text">Remover</button>
                                 </form>
+                                @endcan
                             </td>
                         </tr>
                     @endforeach

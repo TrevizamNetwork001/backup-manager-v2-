@@ -11,7 +11,9 @@
         <p class="page-header__description">Organize os locais onde os equipamentos estão instalados.</p>
     </div>
     <div class="page-header__actions">
-        <a href="{{ route('sites.create') }}" class="btn btn--primary"><x-icon name="add" size="sm" /> Novo Site / POP</a>
+        @can('sites.manage')
+            <a href="{{ route('sites.create') }}" class="btn btn--primary"><x-icon name="add" size="sm" /> Novo Site / POP</a>
+        @endcan
     </div>
 </header>
 @endsection
@@ -44,7 +46,9 @@
                 os equipamentos da infraestrutura.
             </p>
 
+            @can('sites.manage')
             <div class="empty-state__actions"><a href="{{ route('sites.create') }}" class="btn btn--secondary">Cadastrar primeiro Site / POP</a></div>
+            @endcan
         </div>
 
     @else
@@ -92,6 +96,7 @@
 
                             <td>
                                 <div class="table-actions">
+                                    @can('sites.manage')
                                     <a href="{{ route('sites.edit', $site) }}" class="btn btn--ghost btn--sm">Editar</a>
 
                                     <form
@@ -104,6 +109,7 @@
 
                                         <button type="submit" class="btn btn--ghost btn--sm table-actions__danger">Remover</button>
                                     </form>
+                                    @endcan
                                 </div>
                             </td>
                         </tr>

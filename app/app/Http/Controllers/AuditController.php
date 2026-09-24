@@ -15,7 +15,7 @@ class AuditController extends Controller
 {
     public function index(Request $request): View
     {
-        $this->admin();
+        $this->authorize('audit.view');
 
         $filters = $request->validate([
             'period' => ['nullable', Rule::in(['today', '7d', '30d', 'custom'])],
@@ -55,7 +55,7 @@ class AuditController extends Controller
 
     public function show(AuditEvent $auditEvent): View
     {
-        $this->admin();
+        $this->authorize('audit.view');
         $auditEvent->load('actor:id,name,email');
 
         return view('audit.show', compact('auditEvent'));
@@ -100,8 +100,4 @@ class AuditController extends Controller
         });
     }
 
-    private function admin(): void
-    {
-        abort_unless(auth()->user()?->is_admin, 403);
-    }
 }

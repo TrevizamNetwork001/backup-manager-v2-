@@ -112,10 +112,12 @@ class FtpAdminTest extends TestCase
         $this->assertStringNotContainsString('RotatedPass123!', json_encode(DB::table('ftp_account_audits')->get()));
     }
 
-    public function test_non_admin_cannot_access_ftp_administration(): void
+    public function test_viewer_can_see_ftp_but_cannot_manage_accounts(): void
     {
-        $this->actingAs(User::factory()->create(['is_admin' => false]));
-        $this->get(route('ftp.index'))->assertForbidden();
+        // Under RBAC (ADMIN-2), ftp.view (read-only) is broader than the old
+        // is_admin-only gate; only ftp.manage/ftp.delete remain restricted.
+        $this->actingAs(User::factory()->viewer()->create());
+        $this->get(route('ftp.index'))->assertOk();
         $this->post(route('ftp.store'), ['device_id' => $this->device()->id, 'mode' => 'automatic'])->assertForbidden();
     }
 

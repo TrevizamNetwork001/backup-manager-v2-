@@ -12,6 +12,7 @@ class SiteController extends Controller
 {
     public function index(): View
     {
+        $this->authorize('sites.view');
         $sites = Site::query()
             ->orderBy('name')
             ->paginate(20);
@@ -21,11 +22,14 @@ class SiteController extends Controller
 
     public function create(): View
     {
+        $this->authorize('sites.manage');
+
         return view('sites.create');
     }
 
     public function store(Request $request): RedirectResponse
     {
+        $this->authorize('sites.manage');
         $this->normalize($request);
 
         $validated = $request->validate([
@@ -45,11 +49,14 @@ class SiteController extends Controller
 
     public function edit(Site $site): View
     {
+        $this->authorize('sites.manage');
+
         return view('sites.edit', compact('site'));
     }
 
     public function update(Request $request, Site $site): RedirectResponse
     {
+        $this->authorize('sites.manage');
         $this->normalize($request);
 
         $validated = $request->validate([
@@ -74,6 +81,7 @@ class SiteController extends Controller
 
     public function destroy(Site $site): RedirectResponse
     {
+        $this->authorize('sites.manage');
         $site->delete();
 
         return redirect()

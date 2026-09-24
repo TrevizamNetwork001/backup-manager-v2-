@@ -21,12 +21,22 @@ class AuthController extends Controller
             'password' => ['required', 'string'],
         ]);
 
+        // A single generic failure message is used for both "wrong credentials"
+        // and "account disabled" so the response never discloses which case it is.
+        $genericFailure = fn () => back()
+            ->withErrors(['email' => 'Credenciais inválidas ou acesso indisponível.'])
+            ->onlyInput('email');
+
         if (! Auth::attempt($credentials, $request->boolean('remember'))) {
-            return back()
-                ->withErrors([
-                    'email' => 'E-mail ou senha inválidos.',
-                ])
-                ->onlyInput('email');
+            return $genericFailure();
+        }
+
+        if (! Auth::user()->is_active) {
+            Auth::logout();
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+
+            return $genericFailure();
         }
 
         $request->session()->regenerate();

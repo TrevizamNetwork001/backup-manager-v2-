@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\User;
+use App\Support\Rbac;
 use Illuminate\Support\Str;
 
 class AuditPresenter
@@ -24,6 +25,12 @@ class AuditPresenter
         'ftp.physical.inspect' => 'Inspeção física FTP',
         'ftp.physical.request' => 'Solicitação de inspeção FTP',
         'backup.content_analyzed' => 'Análise de conteúdo de backup',
+        'user.created' => 'Criação de usuário',
+        'user.updated' => 'Atualização de usuário',
+        'user.role_changed' => 'Alteração de papel do usuário',
+        'user.enabled' => 'Ativação de usuário',
+        'user.disabled' => 'Desativação de usuário',
+        'user.password_reset' => 'Redefinição de senha do usuário',
     ];
 
     private const RESULT_LABELS = [
@@ -46,6 +53,7 @@ class AuditPresenter
         'site' => 'Site/POP',
         'backup_execution' => 'Execução de backup',
         'backup_artifact' => 'Artefato de backup',
+        'user' => 'Usuário',
     ];
 
     private const MODE_LABELS = [
@@ -87,9 +95,24 @@ class AuditPresenter
         'result' => 'Resultado',
         'status' => 'Status',
         'is_active' => 'Ativa',
+        'target_user_id' => 'ID do usuário',
+        'target_user_name' => 'Usuário',
+        'target_user_email' => 'E-mail',
+        'old_role' => 'Papel anterior',
+        'new_role' => 'Novo papel',
+        'old_status' => 'Status anterior',
+        'new_status' => 'Novo status',
     ];
 
     private const BYTE_KEYS = ['bytes_removed', 'ftp_bytes_removed'];
+
+    private const STATUS_LABELS = [
+        'active' => 'Ativo',
+        'disabled' => 'Desativado',
+    ];
+
+    private const ROLE_VALUE_KEYS = ['old_role', 'new_role'];
+    private const STATUS_VALUE_KEYS = ['old_status', 'new_status'];
 
     public function actionLabel(string $action): string
     {
@@ -210,6 +233,12 @@ class AuditPresenter
         }
         if (in_array($key, self::BYTE_KEYS, true) && is_numeric($value)) {
             return $this->formatBytes((float) $value);
+        }
+        if (in_array($key, self::ROLE_VALUE_KEYS, true) && is_string($value)) {
+            return Rbac::roleLabel($value);
+        }
+        if (in_array($key, self::STATUS_VALUE_KEYS, true) && is_string($value)) {
+            return self::STATUS_LABELS[$value] ?? $value;
         }
 
         return (string) $value;

@@ -16,6 +16,7 @@ class DeviceController extends Controller
 {
     public function index(): View
     {
+        $this->authorize('devices.view');
         $devices = Device::query()
             ->with('site')
             ->orderBy('name')
@@ -26,6 +27,7 @@ class DeviceController extends Controller
 
     public function create(): View
     {
+        $this->authorize('devices.manage');
         $sites = Site::query()
             ->where('is_active', true)
             ->orderBy('name')
@@ -36,6 +38,7 @@ class DeviceController extends Controller
 
     public function store(Request $request): RedirectResponse
     {
+        $this->authorize('devices.manage');
         $this->normalize($request);
 
         $validated = $request->validate([
@@ -69,6 +72,7 @@ class DeviceController extends Controller
 
     public function edit(Device $device): View
     {
+        $this->authorize('devices.manage');
         $sites = Site::query()
             ->where(function ($query) use ($device) {
                 $query
@@ -83,6 +87,7 @@ class DeviceController extends Controller
 
     public function update(Request $request, Device $device): RedirectResponse
     {
+        $this->authorize('devices.manage');
         $this->normalize($request);
 
         $validated = $request->validate([
@@ -124,6 +129,7 @@ class DeviceController extends Controller
 
     public function trustHostKey(Request $request, Device $device): RedirectResponse
     {
+        $this->authorize('devices.manage');
         DB::transaction(function () use ($request, $device) {
             $locked = Device::query()->lockForUpdate()->findOrFail($device->id);
             if (! $locked->ssh_observed_algorithm || ! $locked->ssh_observed_fingerprint) {
@@ -140,6 +146,7 @@ class DeviceController extends Controller
 
     public function destroy(Device $device): RedirectResponse
     {
+        $this->authorize('devices.manage');
         if ($device->deviceBackupPolicies()->exists()) {
             return redirect()->route('devices.index')
                 ->with('warning', 'Remova as políticas associadas antes de remover este equipamento.');

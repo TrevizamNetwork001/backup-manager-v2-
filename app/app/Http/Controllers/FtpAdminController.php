@@ -20,7 +20,7 @@ class FtpAdminController extends Controller
 {
     public function index(): Response
     {
-        $this->admin();
+        $this->authorize('ftp.view');
         $accounts = FtpAccount::query()->with('device:id,name,management_ip')
             ->orderByDesc('id')->get();
         $ftpCoreReady = Schema::hasTable('ftp_received_files') && Schema::hasColumn('ftp_accounts', 'account_uuid');
@@ -39,7 +39,7 @@ class FtpAdminController extends Controller
 
     public function show(Request $request, FtpAccount $ftpAccount, FtpAccountDeletionService $deletion): Response
     {
-        $this->admin();
+        $this->authorize('ftp.view');
         $ftpAccount->load('device');
         $huaweiPolicy = app(\App\Services\HuaweiFtpBackupPolicy::class);
         $isHuaweiBackup = ($ftpAccount->purpose ?? 'backup') === 'backup' && $ftpAccount->device?->platform === 'olt' &&
@@ -67,7 +67,7 @@ class FtpAdminController extends Controller
 
     public function prepare(Request $request, FtpAccount $ftpAccount, HuaweiFtpBackupPolicy $policy, AuditEvents $audit): \Illuminate\Http\RedirectResponse
     {
-        $this->admin();
+        $this->authorize('ftp.manage');
         DB::transaction(function () use ($request, $ftpAccount, $policy, $audit) {
             $account = FtpAccount::query()->lockForUpdate()->findOrFail($ftpAccount->id);
             if ($account->purpose !== 'backup' || ! $account->device_id || $account->deletion_mode) {
@@ -99,7 +99,7 @@ class FtpAdminController extends Controller
 
     public function delete(Request $request, FtpAccount $ftpAccount, FtpAccountDeletionService $deletion): \Illuminate\Http\RedirectResponse
     {
-        $this->admin();
+        $this->authorize('ftp.delete');
         abort_unless(Schema::hasTable('audit_events'), 503, 'A exclusão aguarda a migration FTP-CORE-2.');
         $data = $request->validate([
             'mode' => ['required', Rule::in(array_keys(FtpAccountDeletionService::CONFIRMATION_PREFIXES))],
@@ -115,7 +115,7 @@ class FtpAdminController extends Controller
 
     public function store(Request $request, FtpAccountManager $manager): Response
     {
-        $this->admin();
+        $this->authorize('ftp.manage');
         abort_unless(Schema::hasTable('ftp_received_files') && Schema::hasColumn('ftp_accounts', 'account_uuid'), 503,
             'A criação de contas FTP aguarda a migration FTP-CORE-1.');
         $request->merge(['purpose' => $request->input('purpose', 'backup')]);
@@ -134,14 +134,14 @@ class FtpAdminController extends Controller
 
     public function rotate(Request $request, FtpAccount $ftpAccount, FtpAccountManager $manager): Response
     {
-        $this->admin();
+        $this->authorize('ftp.manage');
         $secret = $manager->rotate($ftpAccount, $request->all(), $request->user()->id);
         return $this->once($ftpAccount, $secret, 'Credencial alterada. Aguarde a sincronização com o PureDB.', true);
     }
 
     public function status(Request $request, FtpAccount $ftpAccount, FtpAccountManager $manager): \Illuminate\Http\RedirectResponse
     {
-        $this->admin();
+        $this->authorize('ftp.manage');
         $data = $request->validate(['is_active' => ['required', 'boolean']]);
         $manager->setActive($ftpAccount, (bool) $data['is_active'], $request->user()->id);
         return redirect()->route('ftp.show', $ftpAccount);
@@ -155,8 +155,4 @@ class FtpAdminController extends Controller
             ->header('Referrer-Policy', 'no-referrer');
     }
 
-    private function admin(): void
-    {
-        abort_unless(auth()->user()?->is_admin, 403);
-    }
 }

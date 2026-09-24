@@ -10,7 +10,7 @@
 
 <div class="page-toolbar">
     <div><strong>{{ $policies->total() }}</strong><span>{{ $policies->total() === 1 ? 'política cadastrada' : 'políticas cadastradas' }}</span></div>
-    <a href="{{ route('backup-policies.create') }}" class="primary-button inline-button">+ Nova Política</a>
+    @can('backup_policies.manage')<a href="{{ route('backup-policies.create') }}" class="primary-button inline-button">+ Nova Política</a>@endcan
 </div>
 
 <article class="panel table-panel">
@@ -19,7 +19,7 @@
         <div class="empty-icon">◷</div>
         <h3>Nenhuma política cadastrada</h3>
         <p>Crie uma política para definir método, agendamento e retenção.</p>
-        <a href="{{ route('backup-policies.create') }}" class="primary-button empty-action">Cadastrar primeira política</a>
+        @can('backup_policies.manage')<a href="{{ route('backup-policies.create') }}" class="primary-button empty-action">Cadastrar primeira política</a>@endcan
     </div>
 @else
     <div class="table-responsive"><table class="data-table">
@@ -44,11 +44,13 @@
                 <td>{{ $policy->device_backup_policies_count }}</td>
                 <td><span class="badge {{ $policy->is_active ? 'success' : 'neutral' }}">{{ $policy->is_active ? 'Ativa' : 'Inativa' }}</span></td>
                 <td class="table-actions">
+                    @can('backup_policies.manage')
                     <a href="{{ route('backup-policies.edit', $policy) }}" class="table-action">Editar / Gerenciar</a>
                     <form method="POST" action="{{ route('backup-policies.destroy', $policy) }}" onsubmit="return confirm('Remover esta política?');">
                         @csrf @method('DELETE')
                         <button type="submit" class="table-action danger-text">Remover</button>
                     </form>
+                    @endcan
                 </td>
             </tr>
         @endforeach

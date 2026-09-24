@@ -284,7 +284,8 @@ class HuaweiOltFtpTest extends TestCase
         [$device] = $this->fixture(false);
         $account = $this->prepareAccount($device);
         $url = route('ftp.prepare', $account);
-        $this->actingAs(User::factory()->create(['is_admin' => false]))->post($url)->assertForbidden();
+        // A viewer has ftp.view but not ftp.manage — preparing a backup policy is a mutation.
+        $this->actingAs(User::factory()->viewer()->create())->post($url)->assertForbidden();
         $this->assertDatabaseCount('device_backup_policies', 0);
         $this->actingAs(User::factory()->create(['is_admin' => true]));
         app()->detectEnvironment(fn () => 'production');

@@ -13,7 +13,7 @@ class InstanceSettingsController extends Controller
 {
     public function edit(InstanceTimezone $timezone): View
     {
-        abort_unless(auth()->user()->is_admin, 403);
+        $this->authorize('settings.view');
 
         return view('settings.edit', [
             'timezone' => $timezone->get(),
@@ -24,7 +24,7 @@ class InstanceSettingsController extends Controller
 
     public function update(Request $request, InstanceTimezone $timezone): RedirectResponse
     {
-        abort_unless(auth()->user()->is_admin, 403);
+        $this->authorize('settings.manage');
         $validated = $request->validate([
             'timezone' => ['required', 'string', Rule::in(DateTimeZone::listIdentifiers())],
         ]);

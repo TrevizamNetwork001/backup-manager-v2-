@@ -13,6 +13,7 @@ class OltFtpWizardController extends Controller
 {
     public function saveServer(Request $request, Device $device, OltFtpWizard $wizard, FtpServerSettings $settings): RedirectResponse
     {
+        $this->authorize('ftp.manage');
         $wizard->assertOlt($device);
         $validated = $request->validate([
             'ftp_host' => ['required', 'string', 'max:255', function ($attribute, $value, $fail) {
@@ -36,6 +37,7 @@ class OltFtpWizardController extends Controller
 
     public function status(Device $device, OltFtpWizard $wizard): JsonResponse
     {
+        $this->authorize('ftp.view');
         $wizard->assertOlt($device);
         $snapshot = $wizard->snapshot($device);
         $execution = $snapshot['execution'];
@@ -49,6 +51,7 @@ class OltFtpWizardController extends Controller
 
     public function confirm(Request $request, Device $device, OltFtpWizard $wizard): RedirectResponse
     {
+        $this->authorize('ftp.manage');
         $request->validate(['olt_configured' => ['accepted']]);
         $wizard->confirm($device);
         return redirect()->route('devices.edit', [$device, 'olt_wizard' => 1]);
@@ -56,6 +59,7 @@ class OltFtpWizardController extends Controller
 
     public function test(Device $device, OltFtpWizard $wizard): RedirectResponse
     {
+        $this->authorize('ftp.manage');
         $wizard->startTest($device);
         return redirect()->route('devices.edit', [$device, 'olt_wizard' => 1]);
     }

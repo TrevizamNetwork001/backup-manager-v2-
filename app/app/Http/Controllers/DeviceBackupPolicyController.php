@@ -15,6 +15,7 @@ class DeviceBackupPolicyController extends Controller
 {
     public function store(Request $request, BackupPolicy $backupPolicy): RedirectResponse
     {
+        $this->authorize('backup_policies.manage');
         if ($backupPolicy->method === 'ftp_push' && $backupPolicy->schedule_type !== 'manual') {
             throw ValidationException::withMessages(['schedule_type' => 'Nesta fase, Huawei OLT via FTP Push suporta somente execução manual.']);
         }
@@ -53,6 +54,7 @@ class DeviceBackupPolicyController extends Controller
 
     public function update(Request $request, BackupPolicy $backupPolicy, DeviceBackupPolicy $association): RedirectResponse
     {
+        $this->authorize('backup_policies.manage');
         abort_unless($association->backup_policy_id === $backupPolicy->id, 404);
 
         $validated = $request->validate(['is_active' => ['required', 'boolean']]);
@@ -67,6 +69,7 @@ class DeviceBackupPolicyController extends Controller
 
     public function destroy(BackupPolicy $backupPolicy, DeviceBackupPolicy $association): RedirectResponse
     {
+        $this->authorize('backup_policies.manage');
         abort_unless($association->backup_policy_id === $backupPolicy->id, 404);
         if ($association->backupExecutions()->exists()) {
             return redirect()->route('backup-policies.edit', $backupPolicy)

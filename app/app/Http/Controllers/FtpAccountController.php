@@ -14,6 +14,7 @@ class FtpAccountController extends Controller
 {
     public function store(Request $request, Device $device): Response
     {
+        $this->authorize('ftp.manage');
         abort_unless(Schema::hasTable('ftp_accounts'), 503);
         abort_unless(Schema::hasColumn('ftp_accounts', 'account_uuid'), 503, 'A criação de contas FTP aguarda a migration FTP-CORE-1.');
         abort_unless(mb_strtolower(trim($device->vendor)) === 'huawei' && $device->platform === 'olt', 422);
@@ -32,6 +33,7 @@ class FtpAccountController extends Controller
 
     public function update(Request $request, Device $device): \Illuminate\Http\RedirectResponse
     {
+        $this->authorize('ftp.manage');
         abort_unless(Schema::hasTable('ftp_accounts'), 503);
         $account = $device->ftpAccount()->firstOrFail();
         abort_if($account->deletion_mode, 409, 'Conta em exclusão.');
@@ -44,6 +46,7 @@ class FtpAccountController extends Controller
 
     public function rotate(Device $device): Response
     {
+        $this->authorize('ftp.manage');
         abort_unless(Schema::hasTable('ftp_accounts'), 503);
         $account = $device->ftpAccount()->firstOrFail();
         abort_if($account->deletion_mode, 409, 'Conta em exclusão.');
@@ -57,6 +60,7 @@ class FtpAccountController extends Controller
 
     public function replace(Request $request, Device $device): Response
     {
+        $this->authorize('ftp.manage');
         abort_unless(Schema::hasTable('ftp_accounts'), 503);
         abort_unless(mb_strtolower(trim($device->vendor)) === 'huawei' && $device->platform === 'olt', 422);
         $account = $device->ftpAccount()->firstOrFail();
@@ -80,6 +84,7 @@ class FtpAccountController extends Controller
 
     public function retry(Device $device): \Illuminate\Http\RedirectResponse
     {
+        $this->authorize('ftp.manage');
         $account = $device->ftpAccount()->firstOrFail();
         abort_if($account->deletion_mode, 409, 'Conta em exclusão.');
         DB::table('ftp_accounts')->where('id', $account->id)

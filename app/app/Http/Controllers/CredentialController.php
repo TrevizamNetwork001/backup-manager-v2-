@@ -13,6 +13,7 @@ class CredentialController extends Controller
 {
     public function index(): View
     {
+        $this->authorize('credentials.view');
         $credentials = Credential::query()
             ->select(['id', 'device_id', 'name', 'type', 'username', 'port', 'is_active'])
             ->with('device:id,name')
@@ -24,6 +25,7 @@ class CredentialController extends Controller
 
     public function create(): View
     {
+        $this->authorize('credentials.manage');
         $devices = Device::query()->orderBy('name')->get(['id', 'name']);
 
         return view('credentials.create', compact('devices'));
@@ -31,6 +33,7 @@ class CredentialController extends Controller
 
     public function store(Request $request): RedirectResponse
     {
+        $this->authorize('credentials.manage');
         $this->normalize($request);
 
         $validated = $request->validate($this->rules(true));
@@ -47,6 +50,7 @@ class CredentialController extends Controller
 
     public function edit(Credential $credential): View
     {
+        $this->authorize('credentials.manage');
         $devices = Device::query()->orderBy('name')->get(['id', 'name']);
 
         return view('credentials.edit', compact('credential', 'devices'));
@@ -54,6 +58,7 @@ class CredentialController extends Controller
 
     public function update(Request $request, Credential $credential): RedirectResponse
     {
+        $this->authorize('credentials.manage');
         $this->normalize($request);
 
         $validated = $request->validate($this->rules(false));
@@ -84,6 +89,7 @@ class CredentialController extends Controller
 
     public function destroy(Credential $credential): RedirectResponse
     {
+        $this->authorize('credentials.manage');
         if ($credential->deviceBackupPolicies()->exists()) {
             return redirect()->route('credentials.index')
                 ->with('warning', 'Remova as associações de políticas antes de remover esta credencial.');

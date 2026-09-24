@@ -11,6 +11,8 @@ class DashboardController extends Controller
 {
     public function __invoke(): View
     {
+        $this->authorize('dashboard.view');
+
         return view('dashboard', [
             'deviceCount' => Device::count(),
             'policyCount' => BackupPolicy::count(),

@@ -1,7 +1,7 @@
 @extends('layouts.app')
 @section('title', 'FTP — Backup Manager')
 @section('page-header')
-<header class="page-header"><div class="page-header__content"><h1 class="page-header__title">FTP</h1><p class="page-header__description">Serviço de transferência de arquivos da infraestrutura.</p></div><div class="page-header__actions"><button type="button" class="btn btn--primary" data-open-ftp-create @disabled(! $ftpCoreReady)>Nova conta FTP</button></div></header>
+<header class="page-header"><div class="page-header__content"><h1 class="page-header__title">FTP</h1><p class="page-header__description">Serviço de transferência de arquivos da infraestrutura.</p></div><div class="page-header__actions">@can('ftp.manage')<button type="button" class="btn btn--primary" data-open-ftp-create @disabled(! $ftpCoreReady)>Nova conta FTP</button>@endcan</div></header>
 @endsection
 @section('content')
 <div class="ftp-page stack">
@@ -9,13 +9,14 @@
     @unless($ftpCoreReady)<div class="alert alert--warning" role="status">As contas atuais continuam disponíveis. A criação de novas contas aguarda a migration FTP-CORE-1.</div>@endunless
     <section class="ftp-accounts" aria-labelledby="ftp-accounts-title">
         <div class="toolbar ftp-list-toolbar"><div class="toolbar__primary"><h2 id="ftp-accounts-title" class="ftp-section-title">Contas</h2><span class="toolbar__count">{{ $accounts->count() }}</span></div></div>
-        @if ($accounts->isEmpty())<div class="empty-state"><h3 class="empty-state__title">Nenhuma conta FTP</h3><button type="button" class="btn btn--secondary" data-open-ftp-create @disabled(! $ftpCoreReady)>Nova conta FTP</button></div>
+        @if ($accounts->isEmpty())<div class="empty-state"><h3 class="empty-state__title">Nenhuma conta FTP</h3>@can('ftp.manage')<button type="button" class="btn btn--secondary" data-open-ftp-create @disabled(! $ftpCoreReady)>Nova conta FTP</button>@endcan</div>
         @else <div class="table-shell" role="region" aria-label="Contas FTP" tabindex="0"><table class="data-table ftp-table"><thead><tr><th>Conta / usuário</th><th>Finalidade</th><th>Equipamento</th><th>Status</th><th>Último recebimento</th><th>Ações</th></tr></thead><tbody>
             @foreach ($accounts as $account)<tr><td><code class="tech-value">{{ $account->username }}</code></td><td>{{ ($account->purpose ?? 'backup') === 'backup' ? 'Backup' : 'Servidor de arquivos' }}</td><td>{{ $account->device?->name ?? 'Nenhum' }}</td><td><span class="badge badge--{{ $account->is_active ? 'success' : 'neutral' }}">{{ $account->is_active ? 'Ativa' : 'Desativada' }}</span></td><td>{{ $receipts[$account->id] ?? 'Nunca recebeu' }}</td><td><a class="btn btn--ghost btn--sm" href="{{ route('ftp.show', $account) }}">Abrir →</a></td></tr>@endforeach
         </tbody></table></div>@endif
     </section>
     <p class="ftp-note">O servidor aplica um único perfil global no próprio chroot. Distribuição de firmware ainda não está disponível.</p>
 </div>
+@can('ftp.manage')
 <dialog class="modal ftp-create-modal" id="ftp-create-dialog" aria-labelledby="ftp-create-title"><div class="modal__surface"><div class="modal__header"><h2 class="modal__title" id="ftp-create-title">Nova conta FTP</h2><button type="button" class="modal__close" data-close-dialog aria-label="Fechar"><x-icon name="close" size="sm" /></button></div>
 <form method="POST" action="{{ route('ftp.store') }}" id="ftp-create-form">@csrf<div class="modal__body ftp-modal-body">
     <div class="form-field"><label class="form-label" for="purpose">Finalidade</label><select class="form-control" id="purpose" name="purpose"><option value="backup" @selected(old('purpose', 'backup') === 'backup')>Backup</option><option value="file_server" @selected(old('purpose') === 'file_server')>Servidor de arquivos</option></select></div>
@@ -37,4 +38,5 @@
  @if ($errors->any()) dialog.showModal(); @endif
 })();
 </script>
+@endcan
 @endsection

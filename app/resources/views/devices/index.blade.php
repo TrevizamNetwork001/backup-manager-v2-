@@ -23,9 +23,11 @@
         <span>{{ $devices->total() === 1 ? 'equipamento cadastrado' : 'equipamentos cadastrados' }}</span>
     </div>
 
+    @can('devices.manage')
     <a href="{{ route('devices.create') }}" class="primary-button inline-button">
         + Novo Equipamento
     </a>
+    @endcan
 
 </div>
 
@@ -44,9 +46,11 @@
             a estruturar a operação de backup.
         </p>
 
+        @can('devices.manage')
         <a href="{{ route('devices.create') }}" class="primary-button empty-action">
             Cadastrar primeiro equipamento
         </a>
+        @endcan
 
     </div>
 
@@ -109,6 +113,7 @@
 
                     <td class="table-actions">
 
+                        @can('devices.manage')
                         <a
                             href="{{ route('devices.edit', $device) }}"
                             class="table-action"
@@ -128,6 +133,7 @@
                                 Remover
                             </button>
                         </form>
+                        @endcan
 
                     </td>
 
