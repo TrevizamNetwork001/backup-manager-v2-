@@ -9,4 +9,5 @@ def collect_config(job, complete):
     receive(os.environ['BACKUP_FTP_ROOT'], int(job['device_id']), job['ftp_filename'],
             os.environ['BACKUP_STORAGE_ROOT'], job['relative_path'],
             int(os.environ.get('BACKUP_FTP_RECEIVE_TIMEOUT_SECONDS', '180')),
-            int(os.environ.get('BACKUP_FTP_STABLE_SECONDS', '5')), complete)
+            int(os.environ.get('BACKUP_FTP_STABLE_SECONDS', '5')), complete,
+            home_path=job.get('ftp_home'))

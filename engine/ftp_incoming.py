@@ -10,7 +10,7 @@ import uuid
 from pathlib import Path
 
 from drivers.mikrotik_ssh import BackupError
-from storage import store, validate, ftp_max_bytes
+from storage import store, ftp_max_bytes, validate_received_file_integrity, analyze_content
 
 
 NAME = re.compile(r'bm-exec-[1-9][0-9]*\.cfg\Z')
@@ -30,7 +30,7 @@ def directory(root_name, device_id):
 
 
 def quarantine(root_name, path, reason, *, device_id=None, ftp_account_id=None, original_filename=None):
-    if reason not in {'invalid_name', 'uncorrelated', 'invalid_file', 'duplicate', 'invalid_account', 'changed_during_claim', 'processing_failed'}:
+    if reason not in {'invalid_name', 'uncorrelated', 'invalid_file', 'duplicate', 'invalid_account', 'missing_backup_policy', 'invalid_backup_policy', 'unsupported_device', 'changed_during_claim', 'processing_failed'}:
         raise ValueError('invalid reason')
     root = Path(root_name).resolve(strict=True)
     target_dir = root / 'quarantine'
@@ -69,19 +69,22 @@ def existing_files(root_name):
     return preserved
 
 
-def scan_orphans(root_name, expected, stable_seconds, observed, preserved=None):
+def scan_orphans(root_name, expected, stable_seconds, observed, preserved=None, accounts=None):
     """Quarantine stable late uploads even when their execution has ended."""
     root = Path(root_name).resolve(strict=True)
     allowed = {(str(item['device_id']), item['filename']) for item in expected}
     now = time.monotonic()
-    for device_root in root.iterdir():
-        if not device_root.name.isdecimal() or device_root.is_symlink() or not device_root.is_dir():
+    sources = [(item.name, item / 'incoming') for item in root.iterdir()
+               if item.name.isdecimal() and item.is_dir() and not item.is_symlink()] if accounts is None else [
+                   (str(account['device_id']), Path(account['home'])) for account in accounts
+                   if account.get('purpose') == 'backup' and account.get('device_id')]
+    for device_name, home in sources:
+        if not home.is_relative_to(root) or home.parent.is_symlink():
             continue
-        home = device_root / 'incoming'
         if home.is_symlink() or not home.is_dir():
             continue
         for path in home.iterdir():
-            key = (device_root.name, path.name)
+            key = (device_name, path.name)
             if not RESERVED.fullmatch(path.name):
                 continue  # The spontaneous receiver owns all other names.
             if key in allowed:
@@ -100,16 +103,21 @@ def scan_orphans(root_name, expected, stable_seconds, observed, preserved=None):
                 continue
             if now - previous[1] >= stable_seconds and time.time_ns() - info.st_mtime_ns >= stable_seconds * 1_000_000_000:
                 quarantine(root_name, path, 'uncorrelated' if NAME.fullmatch(path.name) else 'invalid_name',
-                           device_id=int(device_root.name))
+                           device_id=int(device_name))
                 observed.pop(key, None)
 
 
 def receive(root_name, device_id, expected, storage_root, relative, timeout, stable_seconds,
-            complete, poll=1.0):
+            complete, poll=1.0, home_path=None):
     """Wait only in this execution thread; heartbeat and claiming continue elsewhere."""
     if not NAME.fullmatch(expected) or timeout < 1 or stable_seconds < 1:
         raise BackupError('FTP_STORAGE_FAILED')
-    home = directory(root_name, device_id)
+    home = Path(home_path) if home_path else directory(root_name, device_id)
+    root = Path(root_name).resolve(strict=True)
+    if not home.is_relative_to(root) or home.is_symlink() or home.parent.is_symlink() or home.parent.parent.is_symlink():
+        raise BackupError('FTP_STORAGE_FAILED')
+    if home_path and home != root / str(device_id) / 'incoming' and not (home.parent.parent == root / 'accounts' and re.fullmatch(r'[a-f0-9-]{36}', home.parent.name)):
+        raise BackupError('FTP_STORAGE_FAILED')
     home.mkdir(parents=True, exist_ok=True, mode=0o700)
     deadline = time.monotonic() + timeout
     observed = {}
@@ -134,19 +142,19 @@ def receive(root_name, device_id, expected, storage_root, relative, timeout, sta
                 quarantine(root_name, path, 'invalid_file', device_id=device_id)
                 raise BackupError('FTP_FILE_INVALID')
             try:
-                with path.open('rb') as handle:
-                    opened = os.fstat(handle.fileno())
-                    if (opened.st_dev, opened.st_ino, opened.st_size, opened.st_mtime_ns) != identity:
-                        observed.pop(path.name, None)
-                        continue
-                    data = handle.read(limit + 1)
-                validate(data, 'huawei_olt')
+                data, _ = validate_received_file_integrity(path, identity)
                 if path.lstat().st_mtime_ns != info.st_mtime_ns or path.lstat().st_size != info.st_size:
                     observed.pop(path.name, None)
                     continue
-                final_relative = store(storage_root, relative, data, 'huawei_olt',
+                final_relative = store(storage_root, relative, data, 'ftp',
                                        int(expected[len('bm-exec-'):-len('.cfg')]))
                 complete(final_relative)
+                try:
+                    analysis = analyze_content(data, 'huawei_olt')
+                    logging.info(json.dumps({'event': 'ftp_manual_content_analysis', 'device_id': device_id,
+                                             'status': analysis['status'], 'message': analysis['message']}))
+                except Exception:
+                    logging.warning(json.dumps({'event': 'ftp_content_analysis_unavailable', 'device_id': device_id}))
                 try:
                     path.unlink()
                 except OSError:

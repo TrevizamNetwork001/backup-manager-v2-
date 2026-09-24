@@ -25,8 +25,10 @@ Route::middleware('auth')->group(function () {
     Route::get('ftp', [FtpAdminController::class, 'index'])->name('ftp.index');
     Route::post('ftp/accounts', [FtpAdminController::class, 'store'])->name('ftp.store');
     Route::get('ftp/accounts/{ftpAccount}', [FtpAdminController::class, 'show'])->name('ftp.show');
+    Route::post('ftp/accounts/{ftpAccount}/prepare', [FtpAdminController::class, 'prepare'])->name('ftp.prepare');
     Route::post('ftp/accounts/{ftpAccount}/rotate', [FtpAdminController::class, 'rotate'])->name('ftp.rotate');
     Route::patch('ftp/accounts/{ftpAccount}/status', [FtpAdminController::class, 'status'])->name('ftp.status');
+    Route::delete('ftp/accounts/{ftpAccount}', [FtpAdminController::class, 'delete'])->name('ftp.delete');
     Route::get('settings', [InstanceSettingsController::class, 'edit'])->name('settings.edit');
     Route::put('settings', [InstanceSettingsController::class, 'update'])->name('settings.update');
 

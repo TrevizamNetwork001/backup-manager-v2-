@@ -5,6 +5,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends pure-ftpd pytho
     && rm -rf /var/lib/apt/lists/* \
     && mkdir -p /data/ftp/quarantine /etc/backup-ftp /ftp
 
-COPY docker/ftp/server.py docker/ftp/admin.py /ftp/
+COPY docker/ftp/server.py docker/ftp/admin.py docker/ftp/deletion.py /ftp/
 
 WORKDIR /var/www/html

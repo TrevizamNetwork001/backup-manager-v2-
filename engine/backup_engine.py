@@ -13,7 +13,7 @@ from drivers.huawei_vrp_ssh import export_config as export_huawei_config
 from drivers.huawei_olt_ftp import collect_config as collect_huawei_olt_config
 from ftp_incoming import existing_files, scan_orphans
 from ftp_spontaneous import scan as scan_spontaneous
-from storage import store
+from storage import store, validate_ssh_command_output
 
 
 logging.basicConfig(level=logging.INFO, format='%(message)s')
@@ -86,6 +86,7 @@ def execute(job):
             data = driver(job['host'], job['port'], job['username'], password,
                           job.get('ssh_host_key_algorithm'), job.get('ssh_host_key_fingerprint'), observe)
             del password
+            validate_ssh_command_output(data, vendor)
             relative = job['relative_path']
             relative = store(os.environ['BACKUP_STORAGE_ROOT'], relative, data, vendor, job_id)
             command('engine:complete', job_id, relative, WORKER_ID)
@@ -120,6 +121,7 @@ def main():
                 last_orphan_scan = time.monotonic()
                 try:
                     expected = json.loads(command('ftp:expected'))
+                    accounts = json.loads(command('ftp:accounts'))
                     scan_spontaneous(os.environ['BACKUP_FTP_ROOT'], os.environ['BACKUP_STORAGE_ROOT'],
                                      int(os.environ.get('BACKUP_FTP_STABLE_SECONDS', '5')),
                                      spontaneous_observed, expected,
@@ -128,10 +130,15 @@ def main():
                                          'n' + base64.urlsafe_b64encode(filename.encode('utf-8')).decode('ascii'),
                                          received, WORKER_ID)),
                                      lambda job_id, relative: command('engine:complete', job_id, relative, WORKER_ID),
-                                     lambda job_id, code: command('engine:fail', job_id, code, WORKER_ID))
+                                     lambda job_id, code: command('engine:fail', job_id, code, WORKER_ID),
+                                     accounts,
+                                     lambda account, token, filename, received, status, size, digest, path, error: command(
+                                         'ftp:receipt', account, token,
+                                         'n' + base64.urlsafe_b64encode(filename.encode('utf-8')).decode('ascii'),
+                                         received, status, size, digest, path, error))
                     scan_orphans(os.environ['BACKUP_FTP_ROOT'], expected,
                                  int(os.environ.get('BACKUP_FTP_STABLE_SECONDS', '5')), orphan_observed,
-                                 preserved_uploads)
+                                 preserved_uploads, accounts)
                 except Exception:
                     logging.error(json.dumps({'status': 'ftp_orphan_scan_failed'}))
             active = {future for future in active if not future.done()}

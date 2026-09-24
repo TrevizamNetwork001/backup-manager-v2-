@@ -3,7 +3,6 @@
 namespace App\Services;
 
 use App\Models\BackupExecution;
-use App\Models\BackupPolicy;
 use App\Models\Device;
 use App\Models\DeviceBackupPolicy;
 use App\Models\OltFtpIntegration;
@@ -97,16 +96,9 @@ class OltFtpWizard
             $association = $integration->test_association_id
                 ? DeviceBackupPolicy::findOrFail($integration->test_association_id)
                 : null;
-            if (! $association) {
-                $policy = BackupPolicy::create([
-                    'name' => 'Teste de integração OLT FTP #'.$locked->id,
-                    'method' => 'ftp_push', 'artifact_mode' => 'config', 'schedule_type' => 'manual',
-                    'retention_count' => 1, 'is_active' => true,
-                ]);
-                $association = DeviceBackupPolicy::create([
-                    'device_id' => $locked->id, 'backup_policy_id' => $policy->id,
-                    'credential_id' => null, 'is_active' => true,
-                ]);
+            if (! $association || ! $association->is_active ||
+                ! app(HuaweiFtpBackupPolicy::class)->compatible($association->load('backupPolicy'))) {
+                $association = app(HuaweiFtpBackupPolicy::class)->ensure($locked);
                 $integration->test_association_id = $association->id;
             }
             $execution = BackupExecution::createManual($association);

@@ -1,105 +1,40 @@
 @extends('layouts.app')
 @section('title', 'FTP — Backup Manager')
-@section('page-title', 'FTP')
-@section('page-description', 'Servidor e contas para recebimento de backups.')
+@section('page-header')
+<header class="page-header"><div class="page-header__content"><h1 class="page-header__title">FTP</h1><p class="page-header__description">Serviço de transferência de arquivos da infraestrutura.</p></div><div class="page-header__actions"><button type="button" class="btn btn--primary" data-open-ftp-create @disabled(! $ftpCoreReady)>Nova conta FTP</button></div></header>
+@endsection
 @section('content')
-<div class="ftp-page">
-    <div class="ftp-toolbar">
-        <div><h2>Contas e recebimentos</h2><p>Gerencie o acesso FTP de cada equipamento.</p></div>
-        <button type="button" class="primary-button inline-button" id="ftp-create-open" @disabled($devices->isEmpty())>+ Nova conta FTP</button>
-    </div>
-    @if ($errors->any()) <div class="alert-warning" role="alert">{{ $errors->first() }}</div> @endif
-    <section class="panel ftp-server" aria-labelledby="ftp-server-title">
-        <div class="panel-header"><div><h2 id="ftp-server-title">Servidor FTP</h2></div></div>
-        <div class="ftp-facts">
-            <div><small>Porta</small><strong>21/TCP</strong></div>
-            <div><small>Faixa passiva</small><strong>30000–30009/TCP</strong></div>
-            <div><small>Endereço anunciado</small><strong>{{ $server['passive_address'] ?: 'Não configurado' }}</strong></div>
-            <div><small>PureDB</small><strong>{{ $accounts->whereNotNull('provisioned_at')->whereNull('sync_error')->count() }} contas sincronizadas</strong></div>
-            <div><small>Serviço</small><span class="badge warning">Não monitorado</span></div>
-        </div>
-        <p class="ftp-note">O processo FTP não é monitorado pelo painel. A sincronização das contas é confirmada pelo ftp-admin.</p>
+<div class="ftp-page stack">
+    @if ($errors->any()) <div class="alert alert--warning" role="alert">{{ $errors->first() }}</div> @endif
+    @unless($ftpCoreReady)<div class="alert alert--warning" role="status">As contas atuais continuam disponíveis. A criação de novas contas aguarda a migration FTP-CORE-1.</div>@endunless
+    <section class="ftp-accounts" aria-labelledby="ftp-accounts-title">
+        <div class="toolbar ftp-list-toolbar"><div class="toolbar__primary"><h2 id="ftp-accounts-title" class="ftp-section-title">Contas</h2><span class="toolbar__count">{{ $accounts->count() }}</span></div></div>
+        @if ($accounts->isEmpty())<div class="empty-state"><h3 class="empty-state__title">Nenhuma conta FTP</h3><button type="button" class="btn btn--secondary" data-open-ftp-create @disabled(! $ftpCoreReady)>Nova conta FTP</button></div>
+        @else <div class="table-shell" role="region" aria-label="Contas FTP" tabindex="0"><table class="data-table ftp-table"><thead><tr><th>Conta / usuário</th><th>Finalidade</th><th>Equipamento</th><th>Status</th><th>Último recebimento</th><th>Ações</th></tr></thead><tbody>
+            @foreach ($accounts as $account)<tr><td><code class="tech-value">{{ $account->username }}</code></td><td>{{ ($account->purpose ?? 'backup') === 'backup' ? 'Backup' : 'Servidor de arquivos' }}</td><td>{{ $account->device?->name ?? 'Nenhum' }}</td><td><span class="badge badge--{{ $account->is_active ? 'success' : 'neutral' }}">{{ $account->is_active ? 'Ativa' : 'Desativada' }}</span></td><td>{{ $receipts[$account->id] ?? 'Nunca recebeu' }}</td><td><a class="btn btn--ghost btn--sm" href="{{ route('ftp.show', $account) }}">Abrir →</a></td></tr>@endforeach
+        </tbody></table></div>@endif
     </section>
-    <section class="panel ftp-accounts" aria-labelledby="ftp-accounts-title">
-        <div class="panel-header"><div><h2 id="ftp-accounts-title">Contas FTP</h2><p>{{ $accounts->count() }} {{ $accounts->count() === 1 ? 'conta cadastrada' : 'contas cadastradas' }}</p></div></div>
-        @if ($accounts->isEmpty())
-            <div class="empty-state ftp-empty"><div class="ftp-empty-icon">⇅</div><h3>Nenhuma conta FTP ainda</h3><p>Crie uma conta para permitir o recebimento de backups de um equipamento.</p>@if ($devices->isNotEmpty())<button type="button" class="secondary-button" data-open-ftp-create>Criar primeira conta</button>@endif</div>
-        @else
-            <div class="ftp-table-wrap"><table class="ftp-table"><thead><tr><th>Equipamento</th><th>Usuário</th><th>Status</th><th>Diretório</th><th>PureDB</th><th>Último recebimento</th><th>Ações</th></tr></thead><tbody>
-            @foreach ($accounts as $account)
-                <tr>
-                    <td><span class="ftp-device">{{ $account->device?->name ?? 'Equipamento removido' }}</span><small>{{ $account->device?->management_ip }}</small></td>
-                    <td><code class="ftp-username">{{ $account->username }}</code></td>
-                    <td><span class="badge {{ $account->is_active ? 'success' : 'neutral' }}">{{ $account->is_active ? 'Ativa' : 'Desativada' }}</span></td>
-                    <td><code class="ftp-directory" title="/data/ftp/{{ $account->device_id }}/incoming">/data/ftp/{{ $account->device_id }}/incoming</code></td>
-                    <td><span class="badge {{ $account->sync_error ? 'danger' : ($account->provisioned_at && $account->is_active ? 'success' : 'neutral') }}">{{ $account->sync_error ? 'Erro de sync' : ($account->provisioned_at && $account->is_active ? 'Sincronizada' : 'Pendente') }}</span></td>
-                    <td class="{{ isset($receipts[$account->id]) ? '' : 'ftp-muted' }}">{{ $receipts[$account->id] ?? 'Nunca' }}</td>
-                    <td><a class="secondary-button ftp-open" href="{{ route('ftp.show', $account) }}">Abrir <span aria-hidden="true">→</span></a></td>
-                </tr>
-            @endforeach
-            </tbody></table></div>
-        @endif
-    </section>
+    <p class="ftp-note">O servidor aplica um único perfil global no próprio chroot. Distribuição de firmware ainda não está disponível.</p>
 </div>
-<dialog class="ftp-dialog" id="ftp-create-dialog" aria-labelledby="ftp-create-title" aria-describedby="ftp-create-description">
-    <div class="ftp-dialog-header">
-        <div><h2 id="ftp-create-title">Nova conta FTP</h2><p id="ftp-create-description">Configure uma conta exclusiva para o equipamento.</p></div>
-        <button type="button" class="ftp-dialog-close" data-close-dialog aria-label="Fechar"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M5 5l14 14M19 5L5 19"/></svg></button>
-    </div>
-    <form method="POST" action="{{ route('ftp.store') }}" class="ftp-form" id="ftp-create-form">@csrf
-        <div class="ftp-dialog-body">
-            <div class="ftp-device-field field"><label for="device_id">Equipamento</label><select id="device_id" name="device_id" required><option value="">Selecione um equipamento</option>@foreach ($devices as $device)<option value="{{ $device->id }}" data-device-name="{{ $device->name }}" @selected(old('device_id') == $device->id)>{{ $device->name }} · {{ $device->management_ip }}</option>@endforeach</select><p class="ftp-device-hint" id="ftp-device-hint" hidden>Conta será vinculada exclusivamente a este equipamento.</p></div>
-            <div class="ftp-credentials-grid">
-                <section class="ftp-credential-card" aria-labelledby="ftp-user-label">
-                    <div class="ftp-option-group" role="group" aria-labelledby="ftp-user-label"><h3 id="ftp-user-label">Usuário FTP</h3><div class="ftp-options"><label><input type="radio" name="mode" value="automatic" @checked(old('mode', 'automatic') === 'automatic')><span>Gerar automaticamente</span></label><label><input type="radio" name="mode" value="manual" @checked(old('mode') === 'manual')><span>Definir manualmente</span></label></div></div>
-                    <p class="ftp-hint ftp-user-preview" id="ftp-user-preview" hidden><span>Usuário sugerido</span><strong id="ftp-suggested-name"></strong></p>
-                    <div class="field" id="ftp-manual-user" hidden><label for="username">Usuário FTP</label><input id="username" name="username" value="{{ old('username') }}" minlength="3" maxlength="32" pattern="[a-z][a-z0-9_-]*" autocomplete="off"></div>
-                </section>
-                <section class="ftp-credential-card" aria-labelledby="ftp-password-label">
-                    <div class="ftp-option-group" role="group" aria-labelledby="ftp-password-label"><h3 id="ftp-password-label">Senha</h3><div class="ftp-options"><label><input type="radio" name="password_mode" value="automatic" @checked(old('password_mode', 'automatic') === 'automatic')><span>Gerar automaticamente</span></label><label><input type="radio" name="password_mode" value="manual" @checked(old('password_mode') === 'manual')><span>Definir manualmente</span></label></div></div>
-                    <p class="ftp-hint" id="ftp-auto-password">Será gerada uma senha segura de 32 caracteres.</p>
-                    <div class="ftp-password-fields" id="ftp-manual-password" hidden><div class="field"><label for="password">Nova senha</label><input id="password" name="password" type="password" minlength="12" maxlength="40" autocomplete="new-password"></div><div class="field"><label for="password_confirmation">Confirmar senha</label><input id="password_confirmation" name="password_confirmation" type="password" minlength="12" maxlength="40" autocomplete="new-password"></div></div>
-                </section>
-            </div>
-            <div class="ftp-creation-summary"><h3>Resumo</h3><dl><div><dt>Equipamento</dt><dd id="ftp-summary-device">Selecione um equipamento</dd></div><div><dt>Usuário</dt><dd id="ftp-summary-user">Automático</dd></div><div><dt>Diretório</dt><dd>/</dd></div><div><dt>Senha</dt><dd id="ftp-summary-password">Gerada automaticamente</dd></div></dl><p>O diretório interno e o chroot serão provisionados automaticamente.</p></div>
-        </div>
-        <div class="ftp-dialog-footer"><div class="ftp-dialog-actions"><button type="button" class="secondary-button" data-close-dialog>Cancelar</button><button type="submit" class="primary-button inline-button" @disabled($devices->isEmpty())><span aria-hidden="true">+</span> Criar conta FTP</button></div></div>
-    </form>
-</dialog>
+<dialog class="modal ftp-create-modal" id="ftp-create-dialog" aria-labelledby="ftp-create-title"><div class="modal__surface"><div class="modal__header"><h2 class="modal__title" id="ftp-create-title">Nova conta FTP</h2><button type="button" class="modal__close" data-close-dialog aria-label="Fechar"><x-icon name="close" size="sm" /></button></div>
+<form method="POST" action="{{ route('ftp.store') }}" id="ftp-create-form">@csrf<div class="modal__body ftp-modal-body">
+    <div class="form-field"><label class="form-label" for="purpose">Finalidade</label><select class="form-control" id="purpose" name="purpose"><option value="backup" @selected(old('purpose', 'backup') === 'backup')>Backup</option><option value="file_server" @selected(old('purpose') === 'file_server')>Servidor de arquivos</option></select></div>
+    <div class="form-field" id="ftp-device-field"><label class="form-label" for="device_id">Equipamento</label><select class="form-control" id="device_id" name="device_id"><option value="">Selecione um equipamento</option>@foreach ($devices as $device)<option value="{{ $device->id }}" @selected(old('device_id') == $device->id)>{{ $device->name }} · {{ $device->management_ip }}</option>@endforeach</select></div>
+    <div class="form-field"><label class="form-label" for="username">Usuário FTP</label><input class="form-control" id="username" name="username" value="{{ old('username') }}" minlength="3" maxlength="32" pattern="[a-z][a-z0-9_-]*" autocomplete="off" required></div>
+    <div class="form-field"><label class="form-label" for="password">Senha</label><div style="display:flex;gap:.5rem"><input class="form-control" id="password" name="password" type="password" minlength="12" maxlength="40" autocomplete="new-password" required><button class="btn btn--secondary" type="button" data-generate-password>Gerar</button></div></div>
+    <div class="form-field"><label class="form-label" for="password_confirmation">Confirmar senha</label><input class="form-control" id="password_confirmation" name="password_confirmation" type="password" minlength="12" maxlength="40" autocomplete="new-password" required></div>
+    <p class="form-help">Permissão: perfil global do servidor FTP, sem ajuste por conta.</p>
+</div><div class="modal__footer ftp-modal-footer"><button type="button" class="btn btn--ghost" data-close-dialog>Cancelar</button><button type="submit" class="btn btn--primary">Criar conta FTP</button></div></form></div></dialog>
 <script>
 (() => {
-    const dialog = document.getElementById('ftp-create-dialog');
-    const form = document.getElementById('ftp-create-form');
-    const device = form.elements.device_id;
-    const username = form.elements.username;
-    const password = form.elements.password;
-    const confirmation = form.elements.password_confirmation;
-    const sync = () => {
-        const automaticUser = form.querySelector('[name="mode"]:checked').value === 'automatic';
-        const automaticPassword = form.querySelector('[name="password_mode"]:checked').value === 'automatic';
-        const selected = device.selectedOptions[0];
-        document.getElementById('ftp-device-hint').hidden = !device.value;
-        document.getElementById('ftp-manual-user').hidden = automaticUser;
-        document.getElementById('ftp-user-preview').hidden = !automaticUser || !device.value;
-        document.getElementById('ftp-suggested-name').textContent = device.value ? `bmdev${device.value}` : '';
-        username.disabled = automaticUser;
-        username.required = !automaticUser;
-        document.getElementById('ftp-manual-password').hidden = automaticPassword;
-        document.getElementById('ftp-auto-password').hidden = !automaticPassword;
-        password.disabled = confirmation.disabled = automaticPassword;
-        password.required = confirmation.required = !automaticPassword;
-        document.getElementById('ftp-summary-device').textContent = device.value ? selected.dataset.deviceName : 'Selecione um equipamento';
-        document.getElementById('ftp-summary-user').textContent = automaticUser ? (device.value ? `bmdev${device.value}` : 'Automático') : (username.value || 'A definir');
-        document.getElementById('ftp-summary-password').textContent = automaticPassword ? 'Gerada automaticamente' : 'Definida manualmente';
-    };
-    form.addEventListener('input', sync);
-    form.addEventListener('change', sync);
-    document.getElementById('ftp-create-open').addEventListener('click', () => dialog.showModal());
-    document.querySelectorAll('[data-open-ftp-create]').forEach(button => button.addEventListener('click', () => dialog.showModal()));
-    dialog.querySelectorAll('[data-close-dialog]').forEach(button => button.addEventListener('click', () => dialog.close()));
-    dialog.addEventListener('click', event => { if (event.target === dialog) dialog.close(); });
-    sync();
-    @if ($errors->any()) dialog.showModal(); @endif
+ const dialog = document.getElementById('ftp-create-dialog'); const form = document.getElementById('ftp-create-form'); const purpose = form.elements.purpose; const device = form.elements.device_id;
+ const sync = () => { const backup = purpose.value === 'backup'; document.getElementById('ftp-device-field').hidden = !backup; device.disabled = !backup; device.required = backup; if (!backup) device.value = ''; };
+ purpose.addEventListener('change', sync); sync();
+ document.querySelectorAll('[data-open-ftp-create]').forEach(button => button.addEventListener('click', () => dialog.showModal()));
+ dialog.querySelectorAll('[data-close-dialog]').forEach(button => button.addEventListener('click', () => dialog.close()));
+ dialog.addEventListener('click', event => { if (event.target === dialog) dialog.close(); });
+ form.querySelector('[data-generate-password]').addEventListener('click', () => { const bytes = new Uint8Array(16); crypto.getRandomValues(bytes); const value = Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join(''); form.elements.password.value = value; form.elements.password_confirmation.value = value; });
+ @if ($errors->any()) dialog.showModal(); @endif
 })();
 </script>
 @endsection

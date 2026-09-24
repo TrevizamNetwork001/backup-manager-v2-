@@ -1,5 +1,7 @@
 # Backup Manager V2 — Architecture
 
+No FTP espontâneo Huawei OLT, a conta de backup provisionada identifica o device pelo home, e uma associação ativa `ftp_push/config/manual` autoriza a execução. O wizard `olt_ftp_integrations` é diagnóstico; a criação da conta prepara a policy sem configurar a OLT remotamente. Excluir e recriar a conta preserva o vínculo operacional.
+
 ## Objetivo
 
 O Backup Manager V2 é uma reescrita estrutural do Backup Manager Local.
@@ -25,7 +27,7 @@ primários no próprio ambiente e permitindo réplicas externas opcionais.
 - Credenciais de equipamentos devem seguir princípio de menor privilégio.
 - Backups locais são a cópia primária.
 - Réplicas externas são tratadas separadamente da cópia local.
-- Upload concluído não significa backup validado.
+- Upload concluído exige ainda integridade física, associação autorizada e armazenamento antes de virar artefato.
 - Toda operação relevante deve ser auditável.
 - A V2 deve ser instalável de maneira reproduzível.
 
@@ -169,10 +171,11 @@ Fluxo conceitual:
       -> execução
       -> artefato recebido
       -> estabilização
-      -> validação
+      -> validação de transporte e integridade
       -> SHA-256
       -> armazenamento local
       -> STORED
+      -> análise opcional de conteúdo
       -> réplica externa
       -> verificação remota
 
@@ -194,6 +197,28 @@ Telegram poderá existir como canal adicional de entrega, mas não será conside
 substituto de armazenamento de disaster recovery.
 
 ## FTP Push
+
+FTP é um serviço de transferência de arquivos da infraestrutura. `ftp_accounts` tem
+identidade própria (`account_uuid`) e finalidade `backup` ou `file_server`. Backup
+exige equipamento; `file_server` é standalone e não cria `BackupExecution`.
+Contas anteriores à FTP-CORE-1 conservam `home_layout=legacy` e o chroot
+`/data/ftp/<device_id>/incoming`. Contas novas usam
+`/data/ftp/accounts/<account_uuid>/incoming`. Nenhum diretório legado é movido
+ou apagado pela migration; migração física só seria necessária se uma conta
+legada fosse explicitamente convertida ao layout novo em uma fase posterior.
+O PureDB é reconciliado por conta e usa o home efetivo de cada registro.
+
+`ftp_received_files` registra `processing`, recebimentos armazenados ou enviados
+à quarentena. Um claim em retry conserva sidecar com erro e contador de tentativas.
+O engine mantém estabilização, claim com identidade, `O_NOFOLLOW`, limite de
+tamanho, SHA256 e publicação segura. Para `file_server`, armazena o arquivo em
+`BACKUP_STORAGE_ROOT/ftp-files/<account_uuid>/<claim_token>` sem aplicar validador
+Huawei. Para `backup`, a execução nasce somente após o claim e segue validação
+física, associação com policy e storage de backup. Backup Manager armazena arquivos válidos de transporte independentemente da versão/formato interno. Parsers de vendor são auxiliares e não requisito para retenção. A análise `recognized`, `warning` ou `unknown` pode ser registrada em `audit_events`; não altera `succeeded`, receipt ou download. A expansão de telas de POP e download web fica fora desta fase.
+
+Pure-FTPd usa um perfil global no próprio chroot. Não há permissão individual
+configurável: a UI exibe apenas o perfil real. Firmware e distribuição de
+firmware ainda não estão implementados.
 
 Pure-FTPd poderá continuar sendo utilizado como serviço FTP/FTPS maduro.
 
@@ -580,9 +605,8 @@ paginação `More` durante a leitura também causam falha; saída incompleta nã
 é armazenada. A homologação com modelos e versões reais ainda é necessária.
 
 Somente `ssh_pull` com `artifact_mode=config` e credencial `ssh` é aceito.
-O conteúdo precisa ser UTF-8, ter tamanho válido, separadores `#` e ao menos
-um comando VRP reconhecível; mensagens de erro de CLI e paginação são rejeitadas
-no Python e no Laravel. O artefato é `type=config`, `storage=local`, SHA256
+O resultado do comando SSH precisa ser não vazio e caber no limite; mensagens explícitas de erro de CLI, autenticação, HTML e paginação são rejeitadas
+no Python e no Laravel. Marcadores de configuração VRP são informativos e não obrigatórios para retenção. O artefato é `type=config`, `storage=local`, SHA256
 verificado no registro, escrito via arquivo temporário e rename atômico. O path
 mantém IDs/data padronizados e usa `.cfg` para Huawei; `.rsc` permanece para
 MikroTik e seus artefatos antigos. A retenção valida ambos os formatos contra
@@ -612,3 +636,11 @@ podem ser o mesmo IPv4 privado; em homologação com NAT/IP público, podem ser 
 endereço externo apropriado à rota da OLT. `BACKUP_FTP_PUBLIC_IP` está deprecated
 e serve somente como fallback quando o novo valor não foi definido. Sem ambos,
 o lançador não força um endereço passivo.
+
+## FTP-CORE-2
+
+A exclusão de conta FTP usa `FtpAccountDeletionService`: o painel registra o pedido e desativa a conta; `ftp-admin` confirma a publicação do PureDB sem o usuário e conclui a remoção após revalidar claims, paths e vínculos. `audit_events` registra operações destrutivas genericamente. Veja [docs/FTP_CORE_2.md](docs/FTP_CORE_2.md).
+
+## Fronteira de privilégios FTP-CORE-2
+
+O web app calcula impacto lógico e recebe relatórios físicos pelo banco; não inspeciona `/data/ftp`. O ftp-admin, com mount RW e UID 0, deriva paths da identidade da conta, inspeciona, revoga PureDB e limpa dados FTP antes da finalização do Laravel. O app mantém o mount `/data/ftp` RO. Sem relatório físico recente do ftp-admin, exclusão destrutiva fica bloqueada. Ver `docs/FTP_CORE_2.md`.

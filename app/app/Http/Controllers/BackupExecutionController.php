@@ -8,6 +8,8 @@ use App\Models\Device;
 use App\Models\DeviceBackupPolicy;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 
@@ -37,8 +39,14 @@ class BackupExecutionController extends Controller
             'device:id,name', 'backupPolicy:id,name,method',
             'credential:id,name,type,username', 'artifact',
         ]);
-
-        return view('backup-executions.show', compact('backupExecution'));
+        $contentAnalysis = null;
+        if ($backupExecution->backupPolicy->method === 'ftp_push' && Schema::hasTable('audit_events')) {
+            $event = DB::table('audit_events')->where('action', 'backup.content_analyzed')
+                ->where('resource_type', 'backup_execution')->where('resource_id', (string) $backupExecution->id)
+                ->orderByDesc('id')->first();
+            $contentAnalysis = $event ? json_decode($event->metadata, true) : null;
+        }
+        return view('backup-executions.show', compact('backupExecution', 'contentAnalysis'));
     }
 
     public function storeManual(BackupPolicy $backupPolicy, DeviceBackupPolicy $association): RedirectResponse

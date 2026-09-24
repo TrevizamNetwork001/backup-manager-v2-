@@ -36,15 +36,21 @@ class EngineJobService
                     'relative_path' => $this->relativePath($existing), 'ftp_account_id' => $existing->ftp_account_id];
             }
             $account = FtpAccount::query()->where('device_id', $deviceId)->lockForUpdate()->first();
-            if (! $account || ! $account->is_active || ! $account->provisioned_at || $account->sync_error !== null) return null;
+            if (! $account || ($account->purpose ?? 'backup') !== 'backup' || ! $account->is_active || ! $account->provisioned_at || $account->sync_error !== null || $account->deletion_mode) {
+                return ['status' => 'rejected', 'error_code' => 'invalid_account', 'ftp_account_id' => $account?->id];
+            }
             $device = Device::query()->find($deviceId);
-            if (! $device || ! $device->is_active || $device->platform !== 'olt' || mb_strtolower(trim($device->vendor)) !== 'huawei') return null;
-            $association = $device->deviceBackupPolicies()->with('backupPolicy')
-                ->where('is_active', true)->orderBy('id')->get()->first(fn ($item) =>
-                    $item->backupPolicy->is_active && $item->backupPolicy->method === 'ftp_push' &&
-                    $item->backupPolicy->artifact_mode === 'config' && $item->backupPolicy->schedule_type === 'manual' &&
-                    $item->credential_id === null);
-            if (! $association) return null;
+            if (! $device || ! $device->is_active || $device->platform !== 'olt' || mb_strtolower(trim($device->vendor)) !== 'huawei') {
+                return ['status' => 'rejected', 'error_code' => 'unsupported_device', 'ftp_account_id' => $account->id];
+            }
+            $policyService = app(HuaweiFtpBackupPolicy::class);
+            $association = $policyService->active($device);
+            if (! $association) {
+                $hasFtpPolicy = $device->deviceBackupPolicies()->whereHas('backupPolicy',
+                    fn ($query) => $query->where('method', 'ftp_push'))->exists();
+                return ['status' => 'rejected', 'error_code' => $hasFtpPolicy ? 'invalid_backup_policy' : 'missing_backup_policy',
+                    'ftp_account_id' => $account->id];
+            }
             $now = now();
             $job = BackupExecution::create([
                 'device_backup_policy_id' => $association->id, 'backup_policy_id' => $association->backup_policy_id,
@@ -101,6 +107,7 @@ class EngineJobService
             'port' => $job->credential?->port ?: 22, 'username' => $job->credential?->username,
             'relative_path' => $this->relativePath($job),
             'ftp_username' => $hasFtp ? $job->device->ftpAccount?->username : null,
+            'ftp_home' => $hasFtp ? $job->device->ftpAccount?->homePath() : null,
             'ftp_account_available' => $hasFtp && (bool) ($job->device->ftpAccount?->is_active && $job->device->ftpAccount?->provisioned_at && $job->device->ftpAccount?->sync_error === null),
             'ftp_host' => app(FtpServerSettings::class)->get()['host'],
             'ftp_filename' => 'bm-exec-'.$job->id.'.cfg',
@@ -210,6 +217,11 @@ class EngineJobService
         }
         $root = realpath(config('backup.storage_root'));
         if (! $root || $root === '/') throw new \RuntimeException('Raiz de armazenamento indisponível.');
+        $cursor = $root;
+        foreach (explode('/', $relative) as $part) {
+            $cursor .= '/'.$part;
+            if (is_link($cursor)) throw new \RuntimeException('Link simbólico no caminho.');
+        }
         $file = realpath($root.'/'.$relative);
         if (! $file || ! str_starts_with($file, $root.'/') || ! is_file($file) || is_link($root.'/'.$relative)) {
             throw new \RuntimeException('Arquivo fora da raiz ou ausente.');
@@ -219,7 +231,10 @@ class EngineJobService
 
     public function complete(int $id, string $relative, ?string $workerId = null): BackupArtifact
     {
-        return DB::transaction(function () use ($id, $relative, $workerId) {
+        $analysisData = null;
+        $analysisVendor = null;
+        $analysisPlatform = null;
+        $artifact = DB::transaction(function () use ($id, $relative, $workerId, &$analysisData, &$analysisVendor, &$analysisPlatform) {
             $job = BackupExecution::query()->lockForUpdate()->findOrFail($id);
             if ($job->status !== 'running' || ($workerId !== null && $job->worker_id !== $workerId) ||
                 ! $this->matchesFinalPath($job, $relative) || $job->artifact()->exists()) {
@@ -233,56 +248,68 @@ class EngineJobService
                 throw ValidationException::withMessages(['status' => 'Job não é elegível para conclusão.']);
             }
             $path = $this->resolvePath($relative);
-            $size = filesize($path);
+            $before = lstat($path);
+            $size = $before['size'] ?? 0;
             $limit = $payload['method'] === 'ftp_push' ? min(64 * 1024 * 1024, max(1, (int) config('backup.ftp_max_bytes'))) : config('backup.max_artifact_bytes');
-            if (! $size || $size > $limit) {
+            if (! $size || $size > $limit || ! is_file($path) || is_link($path) || ($before['nlink'] ?? 0) !== 1) {
                 throw ValidationException::withMessages(['artifact' => 'Tamanho inválido.']);
             }
             $contents = file_get_contents($path);
-            $preview = substr($contents ?: '', 0, 4096);
-            $validContent = $vendor === 'mikrotik'
-                ? (bool) preg_match('/^\/[a-z]/mi', $preview)
-                : ($payload['method'] === 'ftp_push'
-                    ? $this->validHuaweiOltConfig($contents ?: '')
-                    : strlen($contents ?: '') >= 32 && preg_match('/^#\s*$/m', $preview) &&
-                    preg_match('/^(?:sysname|interface|vlan(?: batch)?|ip route-static|aaa|user-interface|stelnet server|snmp-agent)\b/mi', $preview) &&
-                    ! preg_match('/^\s*(?:Error:|%\s*(?:Error|Unrecognized|Unknown)|Unrecognized command|Unknown command|Incomplete command)/mi', $contents) &&
-                    ! preg_match('/(?:-{3,}\s*more\s*-{3,}|\bmore\s*:\s*|press\s+(?:any key|space))/i', $contents));
-            if ($contents === false || ! mb_check_encoding($contents, 'UTF-8') ||
-                str_contains($contents, "\0") || ! $validContent) {
-                throw ValidationException::withMessages(['artifact' => 'Export de configuração inválido.']);
+            clearstatcache(true, $path);
+            $after = lstat($path);
+            foreach (['dev', 'ino', 'size', 'mtime', 'nlink', 'mode'] as $field) {
+                if (($before[$field] ?? null) !== ($after[$field] ?? null)) {
+                    throw ValidationException::withMessages(['artifact' => 'Arquivo mudou durante a leitura.']);
+                }
+            }
+            if ($contents === false || strlen($contents) !== $size) {
+                throw ValidationException::withMessages(['artifact' => 'Leitura incompleta.']);
+            }
+            if ($payload['method'] === 'ssh_pull' && (str_contains($contents, "\0") || preg_match('/^\s*(?:error:|%\s*(?:error|unrecognized|unknown)|authentication failed|unrecognized command|unknown command|incomplete command|<!doctype html\b|<html\b)/mi', $contents) ||
+                preg_match('/(?:-{3,}\s*more\s*-{3,}|\bmore\s*:\s*|press\s+(?:any key|space))/i', $contents))) {
+                throw ValidationException::withMessages(['artifact' => 'Comando SSH falhou.']);
             }
             $artifact = BackupArtifact::create([
                 'backup_execution_id' => $job->id, 'device_id' => $job->device_id,
                 'backup_policy_id' => $job->backup_policy_id, 'type' => 'config', 'storage' => 'local',
                 'relative_path' => $relative, 'original_filename' => $job->origin === 'ftp_received' ? $job->received_filename : basename($relative),
-                'size_bytes' => $size, 'sha256' => hash_file('sha256', $path), 'validated_at' => now(),
+                'size_bytes' => $size, 'sha256' => hash('sha256', $contents), 'validated_at' => now(),
             ]);
+            if ($payload['method'] === 'ftp_push') {
+                $analysisData = $contents;
+                $analysisVendor = $vendor;
+                $analysisPlatform = $payload['platform'];
+            }
             $job->status = 'succeeded';
             $job->finished_at = now();
             $job->worker_id = null;
             $job->save();
             return $artifact;
         });
+        if ($analysisData !== null) {
+            try {
+                $analysis = $this->analyzeContent($analysisData, $analysisVendor, $analysisPlatform);
+                if (Schema::hasTable('audit_events')) {
+                    app(AuditEvents::class)->record('backup.content_analyzed', 'backup_execution', (string) $id,
+                        null, $analysis['status'], $analysis);
+                }
+            } catch (\Throwable $error) {
+                // Analysis is informational; a parser or audit failure cannot undo a stored backup.
+            }
+        }
+        return $artifact;
     }
 
-    private function validHuaweiOltConfig(string $contents): bool
+    private function analyzeContent(string $contents, string $vendor, string $platform): array
     {
-        if (strlen($contents) < 32 || ! str_ends_with($contents, "\n") ||
-            preg_match('/^\s*(?:error:|%\s*error|authentication failed|backing up files is fail|<!doctype html\b|<html\b)/mi', $contents) ||
-            ! preg_match('/^#[ \t]*\r?$/m', $contents)) return false;
-
-        $preview = substr($contents, 0, 4096);
-        if (! preg_match('/^\[!Software Version MA5800[^\]\r\n]*\]\r?$/m', $preview, $header, PREG_OFFSET_CAPTURE) ||
-            ! preg_match('/^\[Saving time: [^\]\r\n]+\]\r?$/m', $preview, $savingTime, PREG_OFFSET_CAPTURE) ||
-            ! preg_match('/^\[global-config\][ \t]*\r?$/m', $contents, $section, PREG_OFFSET_CAPTURE) ||
-            ! preg_match('/^[ \t]*<global-config>[ \t]*\r?$/m', $contents, $block, PREG_OFFSET_CAPTURE) ||
-            ! preg_match('/^[ \t]*sysname[ \t]+\S[^\r\n]*\r?$/mi', $contents, $sysname, PREG_OFFSET_CAPTURE)) return false;
-
-        if (! preg_match('/^#[ \t]*\r?$/m', $contents, offset: $sysname[0][1] + strlen($sysname[0][0]))) return false;
-
-        return $header[0][1] < $savingTime[0][1] && $savingTime[0][1] < $section[0][1] &&
-            $section[0][1] < $block[0][1] && $block[0][1] < $sysname[0][1];
+        if ($vendor === 'huawei' && $platform === 'olt' && mb_check_encoding($contents, 'UTF-8') &&
+            str_contains($contents, '[!Software Version MA5800') && str_contains($contents, '[Saving time:') &&
+            str_contains($contents, '[global-config]') && str_contains($contents, '<global-config>')) {
+            $hasSysname = (bool) preg_match('/^\s*sysname\s+\S+/mi', $contents);
+            return ['status' => $hasSysname ? 'recognized' : 'warning',
+                'message' => $hasSysname ? 'ma5800_config' : 'ma5800_without_sysname'];
+        }
+        return ['status' => 'unknown', 'message' => 'unrecognized_format'];
     }
 
     public function fail(int $id, string $code, ?string $workerId = null): void

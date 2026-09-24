@@ -1,4 +1,5 @@
 import json
+import hashlib
 import os
 import tempfile
 import time
@@ -68,13 +69,14 @@ class SpontaneousTests(unittest.TestCase):
         self.assertEqual(2, len(list(Path(self.storage.name).rglob('*.cfg'))))
         self.assertEqual([], self.sidecars())
 
-    def test_invalid_file_and_missing_account_are_quarantined(self):
+    def test_unknown_content_is_stored_and_missing_account_is_quarantined(self):
         (self.home / 'broken.cfg').write_bytes(b'<html>error</html>')
         (self.home / 'no-account.cfg').write_bytes(FIXTURE.read_bytes())
         self.settle()
-        self.assertEqual([(1, 'FTP_FILE_INVALID')], self.failed)
-        self.assertEqual({'invalid_file', 'invalid_account'}, {item['reason'] for item in self.sidecars()})
-        self.assertEqual([], self.completed)
+        self.assertEqual([], self.failed)
+        self.assertEqual({'invalid_account'}, {item['reason'] for item in self.sidecars()})
+        self.assertEqual(1, len(self.completed))
+        self.assertEqual(b'<html>error</html>', next(Path(self.storage.name).rglob('*.cfg')).read_bytes())
 
     def test_symlink_hardlink_empty_and_oversize(self):
         source = self.home / 'source.cfg'
@@ -100,10 +102,11 @@ class SpontaneousTests(unittest.TestCase):
         self.scan()
         for key, (identity, seen) in self.observed.items():
             self.observed[key] = (identity, seen - 2)
-        with self.assertRaises(RuntimeError):
-            scan(self.ftp.name, self.storage.name, 1, self.observed, [], self.receive,
-                 lambda *_: (_ for _ in ()).throw(RuntimeError('db offline')),
-                 lambda *args: self.failed.append(args))
+        scan(self.ftp.name, self.storage.name, 1, self.observed, [], self.receive,
+             lambda *_: (_ for _ in ()).throw(RuntimeError('db offline')),
+             lambda *args: self.failed.append(args))
+        metadata = next(Path(self.ftp.name, 'processing').glob('*.json'))
+        self.assertEqual(1, json.loads(metadata.read_text())['retry_count'])
         self.assertEqual(1, len(self.receipts))
         self.scan()  # New process starts with an empty observation cache.
         self.assertEqual(1, len(self.receipts))
@@ -128,6 +131,137 @@ class SpontaneousTests(unittest.TestCase):
         scan_orphans(self.ftp.name, [{'device_id': 7, 'filename': first.name}], 1, observed)
         self.assertTrue(first.exists())
         self.assertFalse(second.exists())
+
+    def test_file_server_receives_without_backup_execution(self):
+        account_uuid = '4a923771-0d3d-4cd2-b3af-bcdbf2036d20'
+        home = Path(self.ftp.name, 'accounts', account_uuid, 'incoming')
+        home.mkdir(parents=True)
+        (home / 'firmware.bin').write_bytes(b'generic data')
+        events = []
+        account = {'id': 11, 'device_id': None, 'account_uuid': account_uuid, 'home_layout': 'account',
+                   'home': str(home), 'purpose': 'file_server', 'is_active': True, 'ready_for_receive': True}
+        def receive(*args):
+            self.fail('standalone account must not create a backup execution')
+        def scan_once():
+            scan(self.ftp.name, self.storage.name, 1, self.observed, [], receive,
+                 self.complete, lambda *args: self.failed.append(args), [account],
+                 lambda *args: events.append(args))
+        scan_once()
+        for key, (identity, seen) in self.observed.items():
+            self.observed[key] = (identity, seen - 2)
+        os.utime(home / 'firmware.bin', (time.time() - 3, time.time() - 3))
+        scan_once()
+        for key, (identity, seen) in self.observed.items():
+            self.observed[key] = (identity, seen - 2)
+        scan_once()
+        self.assertEqual(['processing', 'stored'], [item[4] for item in events])
+        self.assertEqual(11, events[0][0])
+        self.assertEqual(b'generic data', (Path(self.storage.name) / events[-1][7]).read_bytes())
+        self.assertEqual([], self.completed)
+
+    def test_new_backup_home_keeps_huawei_processing(self):
+        account_uuid = '4a923771-0d3d-4cd2-b3af-bcdbf2036d20'
+        home = Path(self.ftp.name, 'accounts', account_uuid, 'incoming')
+        home.mkdir(parents=True)
+        (home / 'olt.cfg').write_bytes(FIXTURE.read_bytes())
+        account = {'id': 12, 'device_id': 7, 'account_uuid': account_uuid,
+                   'home_layout': 'account', 'home': str(home), 'purpose': 'backup', 'is_active': True}
+        events = []
+        def scan_once():
+            def receive(*args):
+                return {**self.receive(*args), 'ftp_account_id': 12}
+            scan(self.ftp.name, self.storage.name, 1, self.observed, [], receive,
+                 self.complete, lambda *args: self.failed.append(args), [account], lambda *args: events.append(args))
+        scan_once()
+        for key, (identity, seen) in self.observed.items():
+            self.observed[key] = (identity, seen - 2)
+        os.utime(home / 'olt.cfg', (time.time() - 3, time.time() - 3))
+        scan_once()
+        for key, (identity, seen) in self.observed.items():
+            self.observed[key] = (identity, seen - 2)
+        scan_once()
+        self.assertEqual(1, len(self.completed))
+        self.assertEqual('stored', events[0][4])
+        self.assertEqual(12, events[0][0])
+        self.assertEqual(hashlib.sha256(FIXTURE.read_bytes()).hexdigest(), events[0][6])
+        self.assertEqual(len(FIXTURE.read_bytes()), events[0][5])
+        self.assertEqual('-', events[0][8])
+
+    def test_r19_without_sysname_is_stored(self):
+        data = FIXTURE.read_bytes().replace(b'R021C10B066', b'R019C11B072').replace(b' sysname OLT-LAB', b' no-sysname OLT-LAB')
+        (self.home / 'r19.cfg').write_bytes(data)
+        self.settle()
+        self.assertEqual([], self.failed)
+        self.assertEqual(1, len(self.completed))
+        self.assertEqual(data, next(Path(self.storage.name).rglob('*.cfg')).read_bytes())
+        self.assertEqual([], self.sidecars())
+
+    def test_missing_policy_quarantines_with_account_and_physical_size(self):
+        account_uuid = '7312a362-0b55-44bc-b639-cfae6766ff7c'
+        home = Path(self.ftp.name, 'accounts', account_uuid, 'incoming')
+        home.mkdir(parents=True)
+        payload = FIXTURE.read_bytes()
+        (home / 'dados6.zip').write_bytes(payload)
+        account = {'id': 12, 'device_id': 7, 'account_uuid': account_uuid,
+                   'home_layout': 'account', 'home': str(home), 'purpose': 'backup', 'is_active': True}
+        events = []
+        def scan_once():
+            scan(self.ftp.name, self.storage.name, 1, self.observed, [],
+                 lambda *_: {'status': 'rejected', 'error_code': 'missing_backup_policy', 'ftp_account_id': 12},
+                 self.complete, lambda *args: self.failed.append(args), [account],
+                 lambda *args: events.append(args))
+        scan_once()
+        for key, (identity, seen) in self.observed.items():
+            self.observed[key] = (identity, seen - 2)
+        os.utime(home / 'dados6.zip', (time.time() - 3, time.time() - 3))
+        scan_once()
+        for key, (identity, seen) in self.observed.items():
+            self.observed[key] = (identity, seen - 2)
+        scan_once()
+        self.assertEqual(12, self.sidecars()[0]['ftp_account_id'])
+        self.assertEqual('missing_backup_policy', self.sidecars()[0]['reason'])
+        self.assertEqual(len(payload), events[0][5])
+        self.assertEqual('missing_backup_policy', events[0][8])
+
+    def test_file_server_waits_for_readiness_and_retries_claim_with_context(self):
+        account_uuid = '4a923771-0d3d-4cd2-b3af-bcdbf2036d20'
+        home = Path(self.ftp.name, 'accounts', account_uuid, 'incoming')
+        home.mkdir(parents=True)
+        (home / 'pending.bin').write_bytes(b'preserve this upload')
+        account = {'id': 11, 'device_id': None, 'account_uuid': account_uuid, 'home_layout': 'account',
+                   'home': str(home), 'purpose': 'file_server', 'is_active': True, 'ready_for_receive': False}
+        online = False
+        events = []
+        def receipt(*args):
+            if not online:
+                raise OSError('database unavailable')
+            events.append(args)
+        def scan_once():
+            scan(self.ftp.name, self.storage.name, 1, self.observed, [],
+                 lambda *_: self.fail('no backup execution'), self.complete,
+                 lambda *args: self.failed.append(args), [account], receipt)
+        scan_once()
+        self.assertTrue((home / 'pending.bin').exists())
+        self.assertEqual({}, self.observed)
+        account['ready_for_receive'] = True
+        scan_once()
+        for key, (identity, seen) in self.observed.items():
+            self.observed[key] = (identity, seen - 2)
+        os.utime(home / 'pending.bin', (time.time() - 3, time.time() - 3))
+        scan_once()
+        for key, (identity, seen) in self.observed.items():
+            self.observed[key] = (identity, seen - 2)
+        scan_once()
+        sidecars = list(Path(self.ftp.name, 'processing').glob('*.json'))
+        self.assertEqual(1, len(sidecars))
+        self.assertEqual(1, json.loads(sidecars[0].read_text())['retry_count'])
+        self.assertFalse((home / 'pending.bin').exists())
+        account['is_active'] = False  # A claim already accepted must still finish after a state change.
+        online = True
+        scan_once()
+        self.assertEqual(['processing', 'stored'], [item[4] for item in events])
+        self.assertEqual([], list(Path(self.ftp.name, 'processing').glob('*.json')))
+        self.assertEqual(b'preserve this upload', (Path(self.storage.name) / events[-1][7]).read_bytes())
 
 
 if __name__ == '__main__':

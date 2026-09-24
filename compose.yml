@@ -22,6 +22,7 @@ services:
     working_dir: /var/www/html
     environment:
       BACKUP_STORAGE_ROOT: /data/backups
+      BACKUP_FTP_ROOT: /data/ftp
       BACKUP_FTP_HOST: ${BACKUP_FTP_HOST:-}
       BACKUP_FTP_PASSIVE_ADDRESS: ${BACKUP_FTP_PASSIVE_ADDRESS:-}
       BACKUP_FTP_PUBLIC_IP: ${BACKUP_FTP_PUBLIC_IP:-}
@@ -30,6 +31,7 @@ services:
     volumes:
       - ./app:/var/www/html
       - backups:/data/backups
+      - ftp-data:/data/ftp:ro
     networks:
       - backup-manager-v2
     depends_on:
@@ -140,9 +142,12 @@ services:
     command: ["python3", "/ftp/admin.py"]
     environment:
       LOG_CHANNEL: stderr
+      BACKUP_STORAGE_ROOT: /data/backups
+      BACKUP_FTP_ROOT: /data/ftp
     volumes:
       - ./app:/var/www/html:ro
       - ftp-data:/data/ftp
+      - backups:/data/backups
       - ftp-db:/etc/backup-ftp
     networks:
       - backup-manager-v2

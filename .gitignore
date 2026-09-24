@@ -45,3 +45,5 @@ Thumbs.db
 # Python engine
 __pycache__/
 *.pyc
+
+database/backups/

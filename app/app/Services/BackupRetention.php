@@ -86,7 +86,7 @@ class BackupRetention
         return $totals;
     }
 
-    private function verify(BackupArtifact $artifact): array
+    public function verify(BackupArtifact $artifact): array
     {
         $job = $artifact->backupExecution;
         $relative = $artifact->relative_path;

@@ -1,8 +1,11 @@
 """Local fixed-command reconciler for virtual PureDB accounts."""
 
 import json
+import base64
+import deletion
 import os
 import re
+import uuid
 import subprocess
 import tempfile
 import time
@@ -17,9 +20,19 @@ USER = re.compile(r'[a-z][a-z0-9_-]{2,31}\Z')
 
 
 def account_home(row):
-    device_id = int(row['device_id'])
     username = row['username']
-    if device_id < 1 or not isinstance(username, str) or not USER.fullmatch(username):
+    if not isinstance(username, str) or not USER.fullmatch(username):
+        raise RuntimeError('account_invalid')
+    layout = row.get('home_layout', 'legacy')
+    if layout == 'account':
+        account_uuid = str(uuid.UUID(row['account_uuid']))
+        if account_uuid != row['account_uuid']:
+            raise RuntimeError('account_invalid')
+        return ROOT / 'accounts' / account_uuid / 'incoming'
+    if layout != 'legacy':
+        raise RuntimeError('account_invalid')
+    device_id = int(row['device_id'])
+    if device_id < 1:
         raise RuntimeError('account_invalid')
     return ROOT / str(device_id) / 'incoming'
 
@@ -69,6 +82,14 @@ def sync_once():
     os.chown(processing, 65534, 65534)
     os.chmod(processing, 0o700)
     rows = json.loads(artisan('ftp:accounts'))
+    revoked = [row for row in rows if row.get('deletion_mode') and not row['is_active']]
+    requested = set(json.loads(artisan('ftp:inspection-requests')))
+    for row in rows:
+        if row['id'] not in requested:
+            continue
+        report = deletion.inspect(row, root)
+        encoded = base64.urlsafe_b64encode(json.dumps(report, separators=(',', ':')).encode()).decode()
+        artisan('ftp:physical-report', str(int(row['id'])), row['updated_at'], encoded)
     provisioned = []
     fd, temporary_passwd = tempfile.mkstemp(prefix='.pureftpd-passwd-', dir=Path(PASSWD).parent)
     os.close(fd)
@@ -78,8 +99,13 @@ def sync_once():
             username = row['username']
             home = account_home(row)
             device_root = home.parent
-            if device_root.is_symlink() or home.is_symlink():
+            if any(part.is_symlink() for part in (home, device_root, device_root.parent)):
                 raise RuntimeError('home_invalid')
+            if row.get('home_layout') == 'account':
+                accounts_root = root / 'accounts'
+                accounts_root.mkdir(mode=0o755, exist_ok=True)
+                os.chown(accounts_root, 0, 0)
+                os.chmod(accounts_root, 0o755)
             device_root.mkdir(mode=0o755, exist_ok=True)
             if device_root.is_symlink():
                 raise RuntimeError('home_invalid')
@@ -112,6 +138,19 @@ def sync_once():
             os.unlink(temporary_passwd)
     for account_id, version in provisioned:
         artisan('ftp:provisioned', account_id, version)
+    for row in revoked:
+        account_id = str(int(row['id']))
+        try:
+            # The published passwd file is the source used to build this PureDB.
+            with open(PASSWD, encoding='utf-8') as passwd_file:
+                if any(line.split(':', 1)[0] == row['username'] for line in passwd_file):
+                    raise deletion.PhysicalError('puredb_revoke_failed')
+            artisan('ftp:puredb-revoked', account_id)
+            result = deletion.cleanup(row, root, row['deletion_mode'])
+            encoded = base64.urlsafe_b64encode(json.dumps(result, separators=(',', ':')).encode()).decode()
+            artisan('ftp:finalize-deletions', account_id, encoded)
+        except deletion.PhysicalError as error:
+            artisan('ftp:physical-failed', account_id, error.code)
 
 
 if __name__ == '__main__':

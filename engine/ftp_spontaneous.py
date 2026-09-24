@@ -11,7 +11,7 @@ from pathlib import Path
 
 from drivers.mikrotik_ssh import BackupError
 from ftp_incoming import RESERVED, directory, quarantine
-from storage import ftp_max_bytes, store, validate
+from storage import analyze_content, store, validate_received_file_integrity
 
 
 TOKEN = re.compile(r'[a-f0-9]{32}\.json\Z')
@@ -48,12 +48,39 @@ def sync_directory(path):
         os.close(fd)
 
 
-def claim(root_name, path, info, device_id):
+def remember_failure(metadata, record, error, receipt):
+    code = error.code if isinstance(error, BackupError) else 'FTP_PROCESSING_RETRY'
+    record['retry_count'] = int(record.get('retry_count', 0)) + 1
+    record['last_error'] = code
+    record['last_attempt_at'] = int(time.time())
+    temporary = metadata.with_name('.' + metadata.name + '.' + uuid.uuid4().hex)
+    fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    try:
+        with os.fdopen(fd, 'w', encoding='utf-8') as handle:
+            json.dump(record, handle)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, metadata)
+        sync_directory(metadata.parent)
+    finally:
+        temporary.unlink(missing_ok=True)
+    if receipt and record.get('purpose') == 'file_server' and record.get('account_id'):
+        try:
+            receipt(record['account_id'], metadata.stem, record['original_filename'], record['received_at'],
+                    'processing', record['identity'][2], '-', '-', code)
+        except Exception:
+            pass  # The durable sidecar remains the retry record while the database is unavailable.
+    logging.error(json.dumps({'event': 'ftp_processing_retry', 'claim_token': metadata.stem,
+                              'account_id': record.get('account_id'), 'attempt': record['retry_count'], 'code': code}))
+
+
+def claim(root_name, path, info, device_id, account_id=None, purpose='backup', account_uuid=None):
     stage = stage_directory(root_name)
     token = uuid.uuid4().hex
     staged = stage / token
     metadata = stage / (token + '.json')
-    record = {'device_id': device_id, 'original_filename': path.name,
+    record = {'device_id': device_id, 'account_id': account_id, 'purpose': purpose, 'account_uuid': account_uuid,
+              'original_filename': path.name,
               'received_at': int(info.st_mtime), 'identity': identity(info)}
     # Metadata precedes the rename, so a restart can recover every claimed file.
     with metadata.open('x', encoding='utf-8') as handle:
@@ -66,65 +93,125 @@ def claim(root_name, path, info, device_id):
     sync_directory(stage)
     sync_directory(path.parent)
     if identity(staged.lstat()) != identity(info):
-        quarantine(root_name, staged, 'changed_during_claim', device_id=device_id,
+        quarantine(root_name, staged, 'changed_during_claim', device_id=device_id, ftp_account_id=account_id,
                    original_filename=path.name)
         metadata.unlink()
         return None
     return staged, metadata, record
 
 
-def process(root_name, storage_root, staged, metadata, record, receive, complete, fail):
+def process(root_name, storage_root, staged, metadata, record, receive, complete, fail, receipt=None):
     token = staged.name
     device_id = record['device_id']
     filename = record['original_filename']
+    account_id = record.get('account_id')
+    if record.get('purpose') == 'file_server':
+        process_file_server(root_name, storage_root, staged, metadata, record, receipt)
+        return
     response = receive(device_id, token, filename, record['received_at'])
-    if response is None:
-        quarantine(root_name, staged, 'invalid_account', device_id=device_id, original_filename=filename)
+    if response is None or response.get('status') == 'rejected':
+        reason = (response or {}).get('error_code', 'invalid_account')
+        account_id = (response or {}).get('ftp_account_id') or account_id
+        size = record['identity'][2] if identity(staged.lstat()) == tuple(record['identity']) else 0
+        quarantine(root_name, staged, reason, device_id=device_id, ftp_account_id=account_id, original_filename=filename)
+        if receipt and account_id:
+            receipt(account_id, token, filename, record['received_at'], 'quarantined', size, '-', '-', reason)
         metadata.unlink()
         return
     job_id = response['id']
-    account_id = response.get('ftp_account_id')
+    account_id = response.get('ftp_account_id') or account_id
     if response['status'] == 'succeeded':
+        if receipt and account_id:
+            data, digest = validate_received_file_integrity(staged, record['identity'])
+            receipt(account_id, token, filename, record['received_at'], 'stored', len(data), digest, response['relative_path'], '-')
         staged.unlink()
         metadata.unlink()
         return
     if response['status'] != 'running':
         quarantine(root_name, staged, 'processing_failed', device_id=device_id,
                    ftp_account_id=account_id, original_filename=filename)
+        if receipt and account_id:
+            receipt(account_id, token, filename, record['received_at'], 'quarantined', record['identity'][2], '-', '-', 'processing_failed')
         metadata.unlink()
         return
     try:
-        info = staged.lstat()
-        if identity(info) != tuple(record['identity']) or not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or not 0 < info.st_size <= ftp_max_bytes():
-            raise BackupError('FTP_FILE_INVALID')
-        fd = os.open(staged, os.O_RDONLY | os.O_NOFOLLOW)
-        try:
-            opened = os.fstat(fd)
-            if identity(opened) != identity(info):
-                raise BackupError('FTP_FILE_INVALID')
-            with os.fdopen(fd, 'rb', closefd=False) as handle:
-                data = handle.read(ftp_max_bytes() + 1)
-            if identity(os.fstat(fd)) != identity(info):
-                raise BackupError('FTP_FILE_INVALID')
-        finally:
-            os.close(fd)
-        validate(data, 'huawei_olt')
-        relative = store(storage_root, response['relative_path'], data, 'huawei_olt', job_id)
+        data, digest = validate_received_file_integrity(staged, record['identity'])
+        relative = store(storage_root, response['relative_path'], data, 'ftp', job_id)
         complete(job_id, relative)
+        if receipt and account_id:
+            receipt(account_id, token, filename, record['received_at'], 'stored', len(data), digest, relative, '-')
     except BackupError as error:
         reason = 'invalid_file' if error.code in ('FTP_FILE_INVALID', 'ARTIFACT_INVALID') else 'processing_failed'
         quarantine(root_name, staged, reason, device_id=device_id,
                    ftp_account_id=account_id, original_filename=filename)
         metadata.unlink()
         fail(job_id, 'FTP_FILE_INVALID' if reason == 'invalid_file' else 'FTP_STORAGE_FAILED')
+        if receipt and account_id:
+            receipt(account_id, token, filename, record['received_at'], 'quarantined', info.st_size if 'info' in locals() else 0, '-', '-', reason)
         return
     # If DB completion fails, leave the stage and claim token for restart/retry.
     staged.unlink()
     metadata.unlink()
-    logging.info(json.dumps({'event': 'ftp_received', 'execution_id': job_id, 'device_id': device_id}))
+    try:
+        analysis = analyze_content(data, 'huawei_olt')
+        logging.info(json.dumps({'event': 'ftp_received', 'execution_id': job_id, 'device_id': device_id,
+                                 'content_analysis_status': analysis['status'], 'content_analysis_message': analysis['message']}))
+    except Exception:
+        logging.warning(json.dumps({'event': 'ftp_content_analysis_unavailable', 'execution_id': job_id}))
 
 
-def scan(root_name, storage_root, stable_seconds, observed, expected, receive, complete, fail):
+def process_file_server(root_name, storage_root, staged, metadata, record, receipt):
+    if receipt is None or record.get('account_id') is None:
+        raise BackupError('FTP_STORAGE_FAILED')
+    token = staged.name
+    account_id = record['account_id']
+    filename = record['original_filename']
+    if not re.fullmatch(r'[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}', str(record.get('account_uuid'))):
+        raise BackupError('FTP_STORAGE_FAILED')
+    receipt(account_id, token, filename, record['received_at'], 'processing', record['identity'][2], '-', '-', '-')
+    try:
+        data, digest = validate_received_file_integrity(staged, record['identity'])
+        root = Path(storage_root).resolve(strict=True)
+        target_dir = root / 'ftp-files' / record['account_uuid']
+        if target_dir.parent.is_symlink() or target_dir.is_symlink():
+            raise BackupError('FTP_STORAGE_FAILED')
+        target_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        if not target_dir.resolve().is_relative_to(root):
+            raise BackupError('FTP_STORAGE_FAILED')
+        relative = 'ftp-files/' + record['account_uuid'] + '/' + token
+        target = root / relative
+        temporary = target_dir / ('.' + token + '.tmp')
+        if target.exists() or target.is_symlink():
+            previous = target.lstat()
+            if not stat.S_ISREG(previous.st_mode) or previous.st_nlink != 1 or previous.st_size != len(data):
+                raise BackupError('FTP_STORAGE_FAILED')
+            existing_fd = os.open(target, os.O_RDONLY | os.O_NOFOLLOW)
+            try:
+                if identity(os.fstat(existing_fd)) != identity(previous) or os.read(existing_fd, len(data) + 1) != data:
+                    raise BackupError('FTP_STORAGE_FAILED')
+            finally:
+                os.close(existing_fd)
+        else:
+            out = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+            try:
+                with os.fdopen(out, 'wb') as handle:
+                    handle.write(data)
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                os.link(temporary, target, follow_symlinks=False)
+            finally:
+                temporary.unlink(missing_ok=True)
+        receipt(account_id, token, filename, record['received_at'], 'stored', len(data), digest, relative, '-')
+    except BackupError as error:
+        receipt(account_id, token, filename, record['received_at'], 'quarantined', 0, '-', '-', error.code)
+        quarantine(root_name, staged, 'invalid_file' if error.code == 'FTP_FILE_INVALID' else 'processing_failed', ftp_account_id=account_id, original_filename=filename)
+        metadata.unlink()
+        return
+    staged.unlink()
+    metadata.unlink()
+
+
+def scan(root_name, storage_root, stable_seconds, observed, expected, receive, complete, fail, accounts=None, receipt=None):
     root = Path(root_name).resolve(strict=True)
     stage = stage_directory(root_name)
     for metadata in stage.iterdir():
@@ -134,19 +221,40 @@ def scan(root_name, storage_root, stable_seconds, observed, expected, receive, c
         if not staged.exists() and not staged.is_symlink():
             metadata.unlink()  # Crash before the rename; the source is still in incoming.
             continue
-        record = json.loads(metadata.read_text(encoding='utf-8'))
-        process(root_name, storage_root, staged, metadata, record, receive, complete, fail)
+        try:
+            record = json.loads(metadata.read_text(encoding='utf-8'))
+            process(root_name, storage_root, staged, metadata, record, receive, complete, fail, receipt)
+        except Exception as error:
+            if 'record' in locals() and isinstance(record, dict):
+                remember_failure(metadata, record, error, receipt)
+            else:
+                logging.error(json.dumps({'event': 'ftp_metadata_invalid', 'claim_token': metadata.stem}))
+        finally:
+            record = None
     now = time.monotonic()
-    for device_root in root.iterdir():
-        if not device_root.name.isdecimal() or device_root.is_symlink() or not device_root.is_dir():
+    sources = accounts if accounts is not None else [
+        {'device_id': int(item.name), 'home_layout': 'legacy', 'home': str(item / 'incoming'), 'purpose': 'backup'}
+        for item in root.iterdir() if item.name.isdecimal() and item.is_dir() and not item.is_symlink()]
+    for account in sources:
+        if not account.get('is_active', True):
             continue
-        device_id = int(device_root.name)
-        home = directory(root_name, device_id)
+        if account.get('purpose') == 'file_server' and not account.get('ready_for_receive', False):
+            continue
+        device_id = account.get('device_id')
+        home = Path(account['home']) if accounts is not None else directory(root_name, device_id)
+        if not home.is_relative_to(root) or home.is_symlink() or home.parent.is_symlink():
+            continue
+        if account.get('home_layout') == 'account' and (
+            not re.fullmatch(r'[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}', str(account.get('account_uuid'))) or
+            home != root / 'accounts' / account['account_uuid'] / 'incoming' or (root / 'accounts').is_symlink()):
+            continue
+        if account.get('home_layout') == 'legacy' and home != root / str(device_id) / 'incoming':
+            continue
         if not home.is_dir():
             continue
         for path in home.iterdir():
-            key = (device_root.name, path.name)
-            if RESERVED.fullmatch(path.name):
+            key = (str(home), path.name)
+            if account.get('purpose') == 'backup' and RESERVED.fullmatch(path.name):
                 continue  # Reserved for the manual diagnostic receiver.
             try:
                 info = path.lstat()
@@ -161,11 +269,15 @@ def scan(root_name, storage_root, stable_seconds, observed, expected, receive, c
                 continue
             observed.pop(key, None)
             if not safe_name(path.name):
-                quarantine(root_name, path, 'invalid_name', device_id=device_id)
+                quarantine(root_name, path, 'invalid_name', device_id=device_id,
+                           ftp_account_id=account.get('id'))
                 continue
             try:
-                claimed = claim(root_name, path, info, device_id)
+                claimed = claim(root_name, path, info, device_id, account.get('id'), account.get('purpose', 'backup'), account.get('account_uuid'))
             except FileNotFoundError:
                 continue
             if claimed:
-                process(root_name, storage_root, *claimed, receive, complete, fail)
+                try:
+                    process(root_name, storage_root, *claimed, receive, complete, fail, receipt)
+                except Exception as error:
+                    remember_failure(claimed[1], claimed[2], error, receipt)

@@ -11,6 +11,7 @@ import tempfile
 import threading
 import time
 import unittest
+from types import SimpleNamespace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -22,7 +23,7 @@ import backup_engine
 from drivers.mikrotik_ssh import BackupError, VerifiedHostKeyPolicy, _mikrotik_transport, export_config
 from drivers.huawei_vrp_ssh import export_config as export_huawei_config
 from drivers.huawei_vrp_ssh import _read_prompt
-from storage import store, validate
+from storage import store, validate, analyze_content, validate_received_file_integrity
 from ftp_incoming import receive, directory, existing_files, scan_orphans
 
 
@@ -110,42 +111,42 @@ class EngineTests(unittest.TestCase):
         valid = b'#\nsysname Lab\n#\ninterface GigabitEthernet0/0/0\n description test\n#\n'
         validate(valid, 'huawei')
         for invalid in [b'', b'Error: command not found\n' + valid,
-                        valid + b'---- More ----', b'#\nsysname Lab\n',
-                        b'#\nsysname Lab\n#\n\xff']:
+                        valid + b'---- More ----']:
             with self.subTest(invalid=invalid[:20]), self.assertRaises(BackupError):
                 validate(invalid, 'huawei')
 
     def test_olt_ftp_ma5800_content_validation(self):
         valid = (Path(__file__).parent / 'fixtures/ma5800_ftp.cfg').read_bytes()
-        validate(valid, 'huawei_olt')
-        validate(valid.replace(b' sysname OLT-LAB', b'    sysname OLT-LAB'), 'huawei_olt')
-        validate(valid.replace(b'\n', b'\r\n'), 'huawei_olt')
+        self.assertEqual('recognized', analyze_content(valid, 'huawei_olt')['status'])
+        self.assertEqual('warning', analyze_content(valid.replace(b' sysname OLT-LAB', b' no-sysname OLT-LAB'), 'huawei_olt')['status'])
+        self.assertEqual('unknown', analyze_content(b'opaque backup\x00', 'huawei_olt')['status'])
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root, 'backup.cfg')
+            path.write_bytes(valid)
+            self.assertEqual(hashlib.sha256(valid).hexdigest(), validate_received_file_integrity(path)[1])
+            with patch.dict(os.environ, {'BACKUP_FTP_MAX_BYTES': str(len(valid) - 1)}):
+                with self.assertRaises(BackupError):
+                    validate_received_file_integrity(path)
 
-        # The global configuration may follow a long pre-config section.
-        long_pre_config = valid.replace(b'[global-config]',
-                                        b' board add 0/2 H901X\n' * 300 + b'[global-config]')
-        self.assertGreater(long_pre_config.index(b'[global-config]'), 4096)
-        validate(long_pre_config, 'huawei_olt')
-
-        for invalid in [
-            b'',
-            valid[:valid.index(b'#\n') + 2],
-            valid[:valid.index(b'[pre-config]')],
-            valid[:valid.index(b'[global-config]')],
-            valid[:valid.index(b' vlan 100 smart')],
-            valid[:-3],
-            valid[:valid.index(b'[global-config]')] + b'[global-config]\n',
-            b'<html>error</html>\n' + valid,
-            b'Error: backup failed\n' + valid,
-            valid + b'authentication failed\n',
-            valid + b'\xff',
-            valid + b'\x00',
-        ]:
-            with self.subTest(invalid=invalid[:40]), self.assertRaises(BackupError):
-                validate(invalid, 'huawei_olt')
-        with patch.dict(os.environ, {'BACKUP_FTP_MAX_BYTES': str(len(valid) - 1)}):
-            with self.assertRaises(BackupError):
-                validate(valid, 'huawei_olt')
+    def test_received_file_rejects_inode_change_during_read(self):
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root, 'backup.cfg')
+            path.write_bytes(b'complete backup')
+            real_fstat = os.fstat
+            calls = 0
+            def changing_inode(fd):
+                nonlocal calls
+                calls += 1
+                info = real_fstat(fd)
+                if calls == 2:
+                    return SimpleNamespace(st_dev=info.st_dev, st_ino=info.st_ino + 1,
+                        st_size=info.st_size, st_mtime_ns=info.st_mtime_ns,
+                        st_nlink=info.st_nlink, st_mode=info.st_mode)
+                return info
+            with patch('storage.os.fstat', side_effect=changing_inode):
+                with self.assertRaises(BackupError) as failure:
+                    validate_received_file_integrity(path)
+            self.assertEqual('FTP_FILE_INVALID', failure.exception.code)
 
     def test_olt_ftp_waits_for_stable_file_and_never_opens_ssh(self):
         content = (Path(__file__).parent / 'fixtures/ma5800_ftp.cfg').read_bytes()
@@ -344,7 +345,7 @@ class EngineTests(unittest.TestCase):
             wrong_device.mkdir(parents=True)
             (wrong_device / 'bm-exec-1.cfg').write_bytes(b'other-device')
             path = home / 'bm-exec-1.cfg'
-            path.write_bytes(b'<html>error</html>')
+            path.write_bytes(b'')
             with self.assertRaises(BackupError) as failure:
                 receive(root, 2, path.name, storage_root, self.job['relative_path'],
                         3, 1, lambda final: self.fail('invalid complete'), poll=0.1)

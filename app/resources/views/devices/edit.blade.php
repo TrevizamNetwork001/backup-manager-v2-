@@ -75,23 +75,16 @@
             @endif
             <form method="POST" action="{{ $wizard['account'] ? route('devices.ftp-account.replace', $device) : route('devices.ftp-account.store', $device) }}" data-account-form @if ($wizard['account'] && ! $errors->has('mode') && ! $errors->has('username') && ! $errors->has('password')) hidden @endif>
                 @csrf
-                <fieldset class="olt-account-mode"><legend>Como deseja criar a conta FTP?</legend>
-                    <label><input type="radio" name="mode" value="automatic" @checked(old('mode', 'automatic') === 'automatic')> Gerar automaticamente</label>
-                    <label><input type="radio" name="mode" value="manual" @checked(old('mode') === 'manual')> Definir manualmente</label>
-                </fieldset>
-                <p data-automatic-account>Usuário sugerido: <code>bmdev{{ $device->id }}</code>. Uma senha forte será gerada.</p>
-                <div data-manual-account>
-                    <div class="field"><label for="ftp_username">Usuário FTP</label><input id="ftp_username" name="username" value="{{ old('username') }}" minlength="3" maxlength="32" pattern="[a-z][a-z0-9_-]*" autocomplete="off">@error('username') <span class="field-error">{{ $message }}</span> @enderror</div>
-                    <div class="field"><label for="ftp_password">Senha FTP</label><input id="ftp_password" name="password" type="password" minlength="12" maxlength="40" autocomplete="new-password">@error('password') <span class="field-error">{{ $message }}</span> @enderror</div>
-                    <div class="field"><label for="ftp_password_confirmation">Confirmar senha</label><input id="ftp_password_confirmation" name="password_confirmation" type="password" minlength="12" maxlength="40" autocomplete="new-password"></div>
-                </div>
+                <div class="field"><label for="ftp_username">Usuário FTP</label><input id="ftp_username" name="username" value="{{ old('username') }}" minlength="3" maxlength="32" pattern="[a-z][a-z0-9_-]*" autocomplete="off" required>@error('username') <span class="field-error">{{ $message }}</span> @enderror</div>
+                <div class="field"><label for="ftp_password">Senha FTP</label><input id="ftp_password" name="password" type="password" minlength="12" maxlength="40" autocomplete="new-password" required><button type="button" data-generate-olt-password>Gerar</button>@error('password') <span class="field-error">{{ $message }}</span> @enderror</div>
+                <div class="field"><label for="ftp_password_confirmation">Confirmar senha</label><input id="ftp_password_confirmation" name="password_confirmation" type="password" minlength="12" maxlength="40" autocomplete="new-password" required></div>
                 <button type="submit">{{ $wizard['account'] ? 'Confirmar substituição' : 'Criar conta FTP' }}</button>
             </form>
         </section>
         <section class="olt-wizard-panel" data-wizard-panel="2" aria-label="Sincronização PureDB" @if ($wizardStep !== 2) hidden @endif>
             <h3>Sincronização PureDB</h3>
             @if ($ftpSecret ?? false)
-                <div class="alert-warning"><strong>Senha FTP gerada.</strong> Copie agora e guarde em local seguro; ela não será exibida novamente.</div>
+                <div class="alert-warning"><strong>Senha FTP.</strong> Copie agora e guarde em local seguro; ela não será exibida novamente.</div>
                 <p><code>{{ $ftpSecret }}</code></p>
             @endif
             @if ($wizard['synced'])
@@ -228,18 +221,12 @@
             document.getElementById('finish-olt-wizard')?.addEventListener('click', () => dialog.close());
             showStep(selectedStep);
             if (new URLSearchParams(location.search).has('olt_wizard') || {{ ($ftpSecret ?? false) || $errors->has('wizard') || $errors->has('olt_configured') || $errors->has('ftp_host') || $errors->has('ftp_passive_address') || $errors->has('ftp_port') || $errors->has('username') || $errors->has('password') ? 'true' : 'false' }}) dialog.showModal();
-            const modeInputs = [...dialog.querySelectorAll('input[name="mode"]')];
-            const manual = dialog.querySelector('[data-manual-account]');
-            const automatic = dialog.querySelector('[data-automatic-account]');
-            const updateMode = () => {
-                if (! manual) return;
-                const isManual = modeInputs.find((input) => input.checked)?.value === 'manual';
-                manual.hidden = ! isManual;
-                automatic.hidden = isManual;
-                manual.querySelectorAll('input').forEach((input) => input.disabled = ! isManual);
-            };
-            modeInputs.forEach((input) => input.addEventListener('change', updateMode));
-            updateMode();
+            dialog.querySelector('[data-generate-olt-password]')?.addEventListener('click', () => {
+                const bytes = new Uint8Array(16); crypto.getRandomValues(bytes);
+                const value = Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
+                dialog.querySelector('#ftp_password').value = value;
+                dialog.querySelector('#ftp_password_confirmation').value = value;
+            });
             document.getElementById('keep-ftp-account')?.addEventListener('click', () => showStep(2));
             document.getElementById('replace-ftp-account')?.addEventListener('click', () => {
                 dialog.querySelector('[data-account-form]').hidden = false;
