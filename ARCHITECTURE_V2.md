@@ -715,3 +715,34 @@ separam "operar" (papel Operador) de "excluir permanentemente" (só
 Administrador) — Site também ganhou o bloqueio por equipamentos vinculados
 que não existia antes. Detalhes completos, matriz e o que ainda não foi
 implementado em [docs/DESTRUCTIVE_ACTIONS.md](docs/DESTRUCTIVE_ACTIONS.md).
+
+## ENGINE-1: Contrato único de drivers do engine
+
+O dispatch de driver do engine Python (`engine/backup_engine.py`), antes um
+`dict` fixo por vendor mais um `if olt:` separado, virou um contrato comum
+(`engine/driver_base.py::BackupDriver`, com `probe()`/`backup()`/`analyze()`
+e `capabilities` declaradas por driver) resolvido por um registry central
+(`engine/registry.py` + `engine/registry_setup.py`,
+`registry.resolve(vendor, platform, method)`) — sem `if/elif` de vendor
+espalhado, mantendo exatamente os mesmos códigos de erro
+(`UNSUPPORTED_VENDOR`/`UNSUPPORTED_POLICY`) para combinações desconhecidas.
+`BackupError` e todos os códigos de erro já em uso (SSH, Huawei CLI, FTP,
+storage) foram centralizados em `engine/errors.py`, sem renomear nenhum —
+o mapa de mensagens PT-BR do Laravel (`EngineJobService::fail()`) não
+precisou mudar. Resultados passaram a ser objetos estruturados
+(`ProbeResult`/`BackupResult`/`AnalysisResult`, `engine/results.py`) em vez
+de bytes/exception crus cruzando módulos, e cada código de erro agora tem
+uma classificação `retryable`/não-retryable (`is_retryable()`), preparando
+— sem implementar — a política de retry automático do ENGINE-2.
+
+MikroTik e Huawei VRP ganharam `probe()` (conectar/autenticar, sem executar
+comando) e um `analyze()` best-effort novo; nenhum comando SSH real mudou.
+Huawei OLT FTP (`HuaweiOltFtpReceivedDriver`) não tem `probe`/`backup` —
+o engine nunca abre sessão com a OLT — e seu `analyze()` delega para a
+mesma implementação `storage.analyze_content()` de sempre, preservando
+"backup first, parser later" (`docs/HUAWEI_OLT_FTP.md`) sem duplicar a
+lógica MA5800. `file_server` continua sem driver (nunca teve parser de
+vendor). O canal Laravel↔Python não mudou — continua `subprocess` chamando
+`php artisan engine:*`/`ftp:*`, nunca HTTP nem acesso direto ao Postgres
+pelo Python. Detalhes completos, catálogo de erros e como adicionar um novo
+driver em [docs/ENGINE_DRIVERS.md](docs/ENGINE_DRIVERS.md).

@@ -8,8 +8,10 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 
-from drivers.mikrotik_ssh import BackupError, export_config
-from drivers.huawei_vrp_ssh import export_config as export_huawei_config
+from errors import BackupError
+from contexts import BackupContext
+from driver_base import RECEIVED_PAYLOAD
+from registry_setup import registry
 from drivers.huawei_olt_ftp import collect_config as collect_huawei_olt_config
 from ftp_incoming import existing_files, scan_orphans
 from ftp_spontaneous import scan as scan_spontaneous
@@ -62,33 +64,41 @@ def execute(job):
     monitor = threading.Thread(target=heartbeat, daemon=True)
     monitor.start()
     try:
-        drivers = {'mikrotik': export_config, 'huawei': export_huawei_config}
         vendor = job['vendor'].strip().casefold()
-        driver = drivers.get(vendor)
-        if driver is None:
-            raise BackupError('UNSUPPORTED_VENDOR')
-        olt = (vendor == 'huawei' and job['platform'] == 'olt' and job['method'] == 'ftp_push'
-               and job.get('schedule_type') == 'manual' and job.get('origin') == 'manual')
-        pull = job['platform'] == 'network' and job['method'] == 'ssh_pull'
-        if not (olt or pull) or job['artifact_mode'] != 'config':
+        driver = registry.resolve(vendor, job['platform'], job['method'])
+        received = RECEIVED_PAYLOAD in driver.capabilities
+        if received:
+            # OLT FTP Push is claimed for the manual diagnostic path only —
+            # the real spontaneous auto-backup bypasses engine:claim entirely
+            # (see ftp_spontaneous.scan, driven straight from main()).
+            if not (job.get('schedule_type') == 'manual' and job.get('origin') == 'manual') \
+                    or job['artifact_mode'] != 'config':
+                raise BackupError('UNSUPPORTED_POLICY')
+            if not job['ftp_account_available'] or not job['ftp_host']:
+                raise BackupError('FTP_ACCOUNT_UNAVAILABLE')
+        elif job['artifact_mode'] != 'config':
             raise BackupError('UNSUPPORTED_POLICY')
-        if olt and (not job['ftp_account_available'] or not job['ftp_host']):
-            raise BackupError('FTP_ACCOUNT_UNAVAILABLE')
         if not job['eligible']:
             raise BackupError('CREDENTIAL_INVALID')
-        if olt:
+        if received:
             collect_huawei_olt_config(job,
                                       lambda relative: command('engine:complete', job_id, relative, WORKER_ID))
         else:
             password = secret_for(job_id)
             observe = lambda algorithm, fingerprint: command('engine:observe-host-key', job_id,
                                                              WORKER_ID, job['host'], algorithm, fingerprint)
-            data = driver(job['host'], job['port'], job['username'], password,
-                          job.get('ssh_host_key_algorithm'), job.get('ssh_host_key_fingerprint'), observe)
+            context = BackupContext(execution_id=job_id, device_id=job['device_id'], host=job['host'],
+                                    port=job['port'], username=job['username'], vendor=vendor,
+                                    platform=job['platform'], method=job['method'], policy_id=job['policy_id'],
+                                    ssh_host_key_algorithm=job.get('ssh_host_key_algorithm'),
+                                    ssh_host_key_fingerprint=job.get('ssh_host_key_fingerprint'))
+            result = driver.backup(context, secret=password, observe=observe)
             del password
-            validate_ssh_command_output(data, vendor)
+            if not result.success:
+                raise BackupError(result.code)
+            validate_ssh_command_output(result.payload, vendor)
             relative = job['relative_path']
-            relative = store(os.environ['BACKUP_STORAGE_ROOT'], relative, data, vendor, job_id)
+            relative = store(os.environ['BACKUP_STORAGE_ROOT'], relative, result.payload, vendor, job_id)
             command('engine:complete', job_id, relative, WORKER_ID)
         status = 'succeeded'
     except BackupError as error:

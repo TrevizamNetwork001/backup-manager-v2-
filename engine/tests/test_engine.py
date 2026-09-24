@@ -20,6 +20,8 @@ import paramiko
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import backup_engine
+import drivers.mikrotik_ssh as mikrotik_ssh
+import drivers.huawei_vrp_ssh as huawei_vrp_ssh
 from drivers.mikrotik_ssh import BackupError, VerifiedHostKeyPolicy, _mikrotik_transport, export_config
 from drivers.huawei_vrp_ssh import export_config as export_huawei_config
 from drivers.huawei_vrp_ssh import _read_prompt
@@ -77,7 +79,7 @@ class EngineTests(unittest.TestCase):
         for error in ['SSH_CONNECT_FAILED', 'SSH_CONNECTION_REFUSED',
                       'SSH_NEGOTIATION_FAILED', 'SSH_AUTH_FAILED', 'SSH_TIMEOUT']:
             with self.subTest(error=error), patch.object(backup_engine, 'secret_for', return_value='private'), \
-                 patch.object(backup_engine, 'export_config', side_effect=BackupError(error)), \
+                 patch.object(mikrotik_ssh, 'export_config', side_effect=BackupError(error)), \
                  patch.object(backup_engine, 'command') as command:
                 backup_engine.execute(self.job)
                 command.assert_called_once_with('engine:fail', 1, error, backup_engine.WORKER_ID)
@@ -87,8 +89,8 @@ class EngineTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root, \
              patch.dict(os.environ, {'BACKUP_STORAGE_ROOT': root}), \
              patch.object(backup_engine, 'secret_for', return_value='private-secret') as secret, \
-             patch.object(backup_engine, 'export_huawei_config', return_value=data) as huawei, \
-             patch.object(backup_engine, 'export_config') as mikrotik, \
+             patch.object(huawei_vrp_ssh, 'export_config', return_value=data) as huawei, \
+             patch.object(mikrotik_ssh, 'export_config') as mikrotik, \
              patch.object(backup_engine, 'command') as command:
             job = {**self.job, 'vendor': ' hUaWeI ', 'relative_path': 'Backup Manager/POP-CENTRO/MK/22-09-2026/MK_20260922121530.cfg'}
             backup_engine.execute(job)
@@ -318,7 +320,7 @@ class EngineTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root, \
              patch.dict(os.environ, {'BACKUP_FTP_ROOT': root, 'BACKUP_STORAGE_ROOT': root}), \
              patch.object(backup_engine, 'secret_for') as secret, \
-             patch.object(backup_engine, 'export_huawei_config') as vrp, \
+             patch.object(huawei_vrp_ssh, 'export_config') as vrp, \
              patch.object(backup_engine, 'collect_huawei_olt_config') as receive_file, \
              patch.object(backup_engine, 'command') as command:
             receive_file.side_effect = lambda *args: args[-1](olt['relative_path'])
