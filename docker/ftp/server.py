@@ -20,7 +20,7 @@ def passive_address(environment=None):
 
 def arguments(passive_ip=''):
     args = ['/usr/sbin/pure-ftpd', '-l', 'puredb:/etc/backup-ftp/pureftpd.pdb',
-            '-E', '-A', '-R', '-K', '-G', '-u', '1', '-p', '30000:30009',
+            '-E', '-A', '-R', '-K', '-G', '-r', '-u', '1', '-p', '30000:30009',
             '-U', '177:077', '-c', '20', '-C', '5']
     if passive_ip:
         args += ['-P', str(ipaddress.ip_address(passive_ip))]

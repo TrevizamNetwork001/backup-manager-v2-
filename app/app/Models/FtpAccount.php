@@ -12,7 +12,7 @@ class FtpAccount extends Model
 
     protected function casts(): array
     {
-        return ['secret' => 'encrypted', 'is_active' => 'boolean', 'provisioned_at' => 'datetime'];
+        return ['secret' => 'encrypted', 'is_active' => 'boolean', 'provisioned_at' => 'datetime', 'credential_changed_at' => 'datetime'];
     }
 
     public function device(): BelongsTo

@@ -24,6 +24,65 @@ class HuaweiOltFtpTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_spontaneous_receipt_creates_execution_after_claim_and_preserves_remote_name(): void
+    {
+        [$device, $policy] = $this->fixture();
+        $association = DeviceBackupPolicy::create(['device_id' => $device->id, 'backup_policy_id' => $policy->id,
+            'credential_id' => null, 'is_active' => true]);
+        $engine = app(EngineJobService::class);
+        $this->assertDatabaseCount('backup_executions', 0);
+        $token = bin2hex(random_bytes(16));
+        $worker = bin2hex(random_bytes(16));
+        $receipt = $engine->receiveFtp($device->id, $token, 'OLT-auto.cfg', time(), $worker);
+        $this->assertNotNull($receipt);
+        $job = BackupExecution::findOrFail($receipt['id']);
+        $this->assertSame($engine->relativePath($job), $receipt['relative_path']);
+        $this->assertSame('ftp_received', $job->origin);
+        $this->assertSame($association->id, $job->device_backup_policy_id);
+        $this->assertSame($device->ftpAccount->id, $job->ftp_account_id);
+        $this->assertNotNull($job->received_at);
+        $this->assertNotNull($job->processing_at);
+        $this->actingAs(User::factory()->create())->get(route('backup-executions.show', $job))
+            ->assertOk()->assertSee('FTP recebido')->assertSee('OLT-auto.cfg');
+        $newWorker = bin2hex(random_bytes(16));
+        $this->assertSame($receipt['id'], $engine->receiveFtp($device->id, $token, 'OLT-auto.cfg', time(), $newWorker)['id']);
+        $this->assertSame($newWorker, $job->fresh()->worker_id);
+        $root = sys_get_temp_dir().'/olt-receipt-test-'.bin2hex(random_bytes(8));
+        mkdir($root, 0700);
+        config()->set('backup.storage_root', $root);
+        $path = $root.'/'.$receipt['relative_path'];
+        mkdir(dirname($path), 0700, true);
+        try {
+            file_put_contents($path, file_get_contents(dirname(__DIR__, 3).'/engine/tests/fixtures/ma5800_ftp.cfg'));
+            $artifact = $engine->complete($job->id, $receipt['relative_path'], $newWorker);
+            $this->assertSame('OLT-auto.cfg', $artifact->original_filename);
+            $this->assertSame(hash_file('sha256', $path), $artifact->sha256);
+            $this->assertSame('succeeded', $job->fresh()->status);
+        } finally {
+            unlink($path);
+            $dir = dirname($path);
+            while ($dir !== $root) { rmdir($dir); $dir = dirname($dir); }
+            rmdir($root);
+        }
+    }
+
+    public function test_spontaneous_receipt_requires_valid_account_and_device(): void
+    {
+        [$device, $policy] = $this->fixture(false);
+        DeviceBackupPolicy::create(['device_id' => $device->id, 'backup_policy_id' => $policy->id,
+            'credential_id' => null, 'is_active' => true]);
+        $engine = app(EngineJobService::class);
+        $this->assertNull($engine->receiveFtp($device->id, bin2hex(random_bytes(16)), 'auto.cfg', time(), bin2hex(random_bytes(16))));
+        $this->assertDatabaseCount('backup_executions', 0);
+        $account = new FtpAccount(['device_id' => $device->id, 'username' => 'bmdev'.$device->id, 'is_active' => true]);
+        $account->secret = 'synthetic-only-secret';
+        $account->save();
+        DB::table('ftp_accounts')->where('id', $account->id)->update(['provisioned_at' => now()]);
+        $device->update(['is_active' => false]);
+        $this->assertNull($engine->receiveFtp($device->id, bin2hex(random_bytes(16)), 'auto.cfg', time(), bin2hex(random_bytes(16))));
+        $this->assertDatabaseCount('backup_executions', 0);
+    }
+
     private function fixture(bool $account = true): array
     {
         $site = Site::create(['name' => 'Lab', 'is_active' => true]);
@@ -522,7 +581,7 @@ class HuaweiOltFtpTest extends TestCase
         $payload = ['name' => 'OLT manual', 'method' => 'ftp_push', 'artifact_mode' => 'config',
             'schedule_type' => 'manual', 'retention_count' => 2, 'is_active' => 1];
         $this->get(route('backup-policies.create'))->assertOk()
-            ->assertSee('Nesta fase, Huawei OLT via FTP Push suporta somente execução manual.');
+            ->assertSee('O agendamento do auto-backup fica na OLT. O teste do wizard usa execução manual.');
         $this->post(route('backup-policies.store'), $payload)->assertSessionHasNoErrors();
         $policy = BackupPolicy::firstOrFail();
         $this->assertSame('manual', $policy->schedule_type);

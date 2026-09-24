@@ -20,7 +20,7 @@
         <option value="daily" @selected(old('schedule_type', $backupPolicy->schedule_type ?? '') === 'daily')>Diário</option>
         <option value="weekly" @selected(old('schedule_type', $backupPolicy->schedule_type ?? '') === 'weekly')>Semanal</option>
     </select>@error('schedule_type') <span class="field-error">{{ $message }}</span> @enderror</div>
-    <div id="ftp-manual-note" class="field form-span-2" @if(old('method', $backupPolicy->method ?? 'ssh_pull') !== 'ftp_push') hidden @endif><small>Nesta fase, Huawei OLT via FTP Push suporta somente execução manual.</small></div>
+    <div id="ftp-manual-note" class="field form-span-2" @if(old('method', $backupPolicy->method ?? 'ssh_pull') !== 'ftp_push') hidden @endif><small>O agendamento do auto-backup fica na OLT. O teste do wizard usa execução manual.</small></div>
     <div class="field"><label for="schedule_time">Horário (diário/semanal)</label><input id="schedule_time" name="schedule_time" type="time" value="{{ old('schedule_time', isset($backupPolicy) ? substr($backupPolicy->schedule_time ?? '', 0, 5) : '') }}">@error('schedule_time') <span class="field-error">{{ $message }}</span> @enderror</div>
     <div class="field"><label for="schedule_weekday">Dia da semana (semanal)</label><select id="schedule_weekday" name="schedule_weekday">
         <option value="">Selecione...</option>

@@ -82,8 +82,8 @@
                 <p data-automatic-account>Usuário sugerido: <code>bmdev{{ $device->id }}</code>. Uma senha forte será gerada.</p>
                 <div data-manual-account>
                     <div class="field"><label for="ftp_username">Usuário FTP</label><input id="ftp_username" name="username" value="{{ old('username') }}" minlength="3" maxlength="32" pattern="[a-z][a-z0-9_-]*" autocomplete="off">@error('username') <span class="field-error">{{ $message }}</span> @enderror</div>
-                    <div class="field"><label for="ftp_password">Senha FTP</label><input id="ftp_password" name="password" type="password" minlength="12" maxlength="128" autocomplete="new-password">@error('password') <span class="field-error">{{ $message }}</span> @enderror</div>
-                    <div class="field"><label for="ftp_password_confirmation">Confirmar senha</label><input id="ftp_password_confirmation" name="password_confirmation" type="password" minlength="12" maxlength="128" autocomplete="new-password"></div>
+                    <div class="field"><label for="ftp_password">Senha FTP</label><input id="ftp_password" name="password" type="password" minlength="12" maxlength="40" autocomplete="new-password">@error('password') <span class="field-error">{{ $message }}</span> @enderror</div>
+                    <div class="field"><label for="ftp_password_confirmation">Confirmar senha</label><input id="ftp_password_confirmation" name="password_confirmation" type="password" minlength="12" maxlength="40" autocomplete="new-password"></div>
                 </div>
                 <button type="submit">{{ $wizard['account'] ? 'Confirmar substituição' : 'Criar conta FTP' }}</button>
             </form>

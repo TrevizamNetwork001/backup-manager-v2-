@@ -47,7 +47,7 @@ with tempfile.TemporaryDirectory(prefix='bm-puredb-test-') as name:
              '-f', passwd, secret=secret + b'\n' + secret + b'\n')
     call('mkdb', db, '-f', passwd)
     assert Path(db).is_file() and Path(db).stat().st_size > 0
-    server = subprocess.Popen(['/usr/sbin/pure-ftpd', '-l', f'puredb:{db}', '-E', '-A', '-R',
+    server = subprocess.Popen(['/usr/sbin/pure-ftpd', '-l', f'puredb:{db}', '-E', '-A', '-R', '-K', '-G', '-r',
                                '-u', '1', '-S', '127.0.0.1,2121', '-p', '30000:30009'],
                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                               preexec_fn=lambda: resource.setrlimit(resource.RLIMIT_FSIZE, (1048576, 1048576)))
@@ -65,6 +65,7 @@ with tempfile.TemporaryDirectory(prefix='bm-puredb-test-') as name:
         with login('bmdev12', secrets[12]) as client:
             assert client.pwd() == '/'
             client.storbinary('STOR bm-exec-1.cfg', io.BytesIO(b'config'))
+            client.storbinary('STOR bm-exec-1.cfg', io.BytesIO(b'config-2'))
             assert 'bm-exec-1.cfg' in client.nlst()
             try:
                 client.cwd('/13/incoming')
@@ -73,6 +74,7 @@ with tempfile.TemporaryDirectory(prefix='bm-puredb-test-') as name:
             else:
                 raise AssertionError('cross_device_navigation')
         assert (homes[12] / 'bm-exec-1.cfg').read_bytes() == b'config'
+        assert (homes[12] / 'bm-exec-1.cfg.1').read_bytes() == b'config-2'
         assert (homes[12] / 'bm-exec-1.cfg').stat().st_uid == 65534
         assert not (homes[13] / 'bm-exec-1.cfg').exists()
         client = login('bmdev12', secrets[12])

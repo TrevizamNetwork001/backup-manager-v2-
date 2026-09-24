@@ -12,7 +12,7 @@ use Illuminate\Validation\ValidationException;
 class BackupExecution extends Model
 {
     public const STATUSES = ['pending', 'queued', 'running', 'succeeded', 'failed', 'cancelled'];
-    public const ORIGINS = ['manual', 'scheduler'];
+    public const ORIGINS = ['manual', 'scheduler', 'ftp_received'];
     private const TRANSITIONS = [
         'pending' => ['queued', 'cancelled'],
         'queued' => ['running', 'cancelled'],
@@ -22,12 +22,15 @@ class BackupExecution extends Model
     protected $fillable = [
         'device_backup_policy_id', 'backup_policy_id', 'device_id', 'credential_id',
         'origin', 'status', 'attempt', 'started_at', 'finished_at', 'scheduled_for',
+        'ftp_account_id', 'ftp_claim_token', 'received_filename', 'received_at', 'processing_at',
+        'claimed_at', 'heartbeat_at', 'worker_id',
     ];
 
     protected function casts(): array
     {
         return ['attempt' => 'integer', 'started_at' => 'datetime', 'finished_at' => 'datetime',
-            'claimed_at' => 'datetime', 'heartbeat_at' => 'datetime', 'scheduled_for' => 'datetime'];
+            'claimed_at' => 'datetime', 'heartbeat_at' => 'datetime', 'scheduled_for' => 'datetime',
+            'received_at' => 'datetime', 'processing_at' => 'datetime'];
     }
 
     public function association(): BelongsTo

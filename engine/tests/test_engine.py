@@ -33,12 +33,12 @@ class EngineTests(unittest.TestCase):
                         vendor='MiKroTik', platform='network', eligible=True,
                         relative_path='Backup Manager/POP-CENTRO/MK/22-09-2026/MK_20260922121530.rsc')
 
-    def test_storage_uses_atomic_replace_and_rejects_traversal_and_invalid_data(self):
+    def test_storage_uses_exclusive_publish_and_rejects_traversal_and_invalid_data(self):
         with tempfile.TemporaryDirectory() as root:
             data = b'# RouterOS\n/interface bridge\nadd name=br1\n'
-            with patch('storage.os.replace', wraps=os.replace) as rename:
+            with patch('storage.os.link', wraps=os.link) as publish:
                 store(root, self.job['relative_path'], data)
-                rename.assert_called_once()
+                publish.assert_called_once()
             target = Path(root, self.job['relative_path'])
             self.assertEqual(data, target.read_bytes())
             self.assertEqual(0o600, target.stat().st_mode & 0o777)
@@ -266,8 +266,8 @@ class EngineTests(unittest.TestCase):
                     patch('ftp_incoming.time.time_ns', return_value=orphan.stat().st_mtime_ns + 3_000_000_000):
                 scan_orphans(root, [], 1, observed, preserved)
             self.assertFalse(orphan.exists())
-            self.assertEqual([{'reason': 'uncorrelated'}],
-                             [json.loads(path.read_text()) for path in Path(root, 'quarantine').glob('*.json')])
+            self.assertEqual(['uncorrelated'],
+                             [json.loads(path.read_text())['reason'] for path in Path(root, 'quarantine').glob('*.json')])
             self.assertEqual(1, len(list(Path(root, 'quarantine').glob('*.quarantine'))))
 
     def test_recent_startup_upload_is_not_quarantined_immediately(self):

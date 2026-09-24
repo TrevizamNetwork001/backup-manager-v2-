@@ -293,6 +293,8 @@ inicial.
 ## UX
 
 A interface deve priorizar estado e ação principal.
+As diretrizes de identidade própria e modernização visual estão em
+[docs/UI_MODERNIZATION.md](docs/UI_MODERNIZATION.md).
 
 Exemplo conceitual de equipamento:
 
@@ -595,13 +597,12 @@ associar política `ssh_pull`/`config`, enfileirar execução manual, conferir
 artefato e SHA256, e depois confirmar execução via scheduler. Não executar
 esses passos nos testes automatizados.
 
-Huawei OLT por FTP Push foi adicionada em fase posterior. A V2 não configura nem
-dispara a OLT automaticamente nesta fase. `ftp_push/config` aceita somente
+Huawei OLT por FTP Push recebe auto-backup espontâneo de conta vinculada ao
+equipamento e cria a execução `ftp_received` somente após claim estável. A V2
+não configura nem dispara a OLT. `ftp_push/config` permanece com
 `schedule_type=manual`; o scheduler ignora políticas FTP Push, inclusive linhas
-legadas inconsistentes. O operador executa na OLT já preparada o comando com
-`bm-exec-<execution-id>.cfg` mostrado na execução. Um futuro disparo pontual
-sob demanda poderá liberar agendamento automático sem mudar a configuração
-permanente da OLT. O fluxo, limites e roteiro de
+legadas inconsistentes. O comando `bm-exec-<execution-id>.cfg` mostrado na
+execução continua apenas para diagnóstico manual. O fluxo, limites e roteiro de
 homologação estão em [docs/HUAWEI_OLT_FTP.md](docs/HUAWEI_OLT_FTP.md).
 
 `BACKUP_FTP_HOST` é o endereço ou hostname usado pela OLT para alcançar o FTP e

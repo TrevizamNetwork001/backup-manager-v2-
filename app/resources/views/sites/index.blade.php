@@ -4,47 +4,52 @@
 @section('page-title', 'Sites / POPs')
 @section('page-description', 'Organize os locais onde os equipamentos estão instalados.')
 
+@section('page-header')
+<header class="page-header">
+    <div class="page-header__content">
+        <h1 class="page-header__title">Sites / POPs</h1>
+        <p class="page-header__description">Organize os locais onde os equipamentos estão instalados.</p>
+    </div>
+    <div class="page-header__actions">
+        <a href="{{ route('sites.create') }}" class="btn btn--primary"><x-icon name="add" size="sm" /> Novo Site / POP</a>
+    </div>
+</header>
+@endsection
+
 @section('content')
 
+<div class="sites-list stack">
+
 @if(session('success'))
-    <div class="alert-success">
+    <div class="alert alert--success" role="status">
         {{ session('success') }}
     </div>
 @endif
 
-<div class="page-toolbar">
-    <div>
-        <strong>{{ $sites->total() }}</strong>
-        <span>{{ $sites->total() === 1 ? 'local cadastrado' : 'locais cadastrados' }}</span>
+<div class="toolbar">
+    <div class="toolbar__primary">
+        <span class="toolbar__count"><strong>{{ $sites->total() }}</strong> {{ $sites->total() === 1 ? 'local cadastrado' : 'locais cadastrados' }}</span>
     </div>
-
-    <a href="{{ route('sites.create') }}" class="primary-button inline-button">
-        + Novo Site / POP
-    </a>
 </div>
-
-<article class="panel table-panel">
 
     @if($sites->isEmpty())
 
         <div class="empty-state">
-            <div class="empty-icon">◎</div>
+            <div class="empty-state__icon" aria-hidden="true"><x-icon name="device" /></div>
 
-            <h3>Nenhum Site / POP cadastrado</h3>
+            <h2 class="empty-state__title">Nenhum Site / POP cadastrado</h2>
 
-            <p>
+            <p class="empty-state__description">
                 Cadastre a primeira localização para começar a organizar
                 os equipamentos da infraestrutura.
             </p>
 
-            <a href="{{ route('sites.create') }}" class="primary-button empty-action">
-                Cadastrar primeiro Site / POP
-            </a>
+            <div class="empty-state__actions"><a href="{{ route('sites.create') }}" class="btn btn--secondary">Cadastrar primeiro Site / POP</a></div>
         </div>
 
     @else
 
-        <div class="table-responsive">
+        <div class="table-shell" role="region" aria-label="Lista de Sites e POPs" tabindex="0">
 
             <table class="data-table">
                 <thead>
@@ -61,15 +66,16 @@
                     @foreach($sites as $site)
                         <tr>
                             <td>
-                                <strong>{{ $site->name }}</strong>
-
-                                @if($site->description)
-                                    <small>{{ \Illuminate\Support\Str::limit($site->description, 70) }}</small>
-                                @endif
+                                <div class="entity-cell">
+                                    <span class="entity-cell__title">{{ $site->name }}</span>
+                                    @if($site->description)
+                                        <span class="entity-cell__meta">{{ \Illuminate\Support\Str::limit($site->description, 70) }}</span>
+                                    @endif
+                                </div>
                             </td>
 
                             <td>
-                                {{ $site->code ?: '—' }}
+                                @if($site->code)<span class="tech-value">{{ $site->code }}</span>@else<span class="table-muted">—</span>@endif
                             </td>
 
                             <td>
@@ -78,32 +84,27 @@
 
                             <td>
                                 @if($site->is_active)
-                                    <span class="badge success">Ativo</span>
+                                    <span class="badge badge--success">Ativo</span>
                                 @else
-                                    <span class="badge neutral">Inativo</span>
+                                    <span class="badge badge--neutral">Inativo</span>
                                 @endif
                             </td>
 
-                            <td class="table-actions">
-                                <a
-                                    href="{{ route('sites.edit', $site) }}"
-                                    class="table-action"
-                                >
-                                    Editar
-                                </a>
+                            <td>
+                                <div class="table-actions">
+                                    <a href="{{ route('sites.edit', $site) }}" class="btn btn--ghost btn--sm">Editar</a>
 
-                                <form
-                                    method="POST"
-                                    action="{{ route('sites.destroy', $site) }}"
-                                    onsubmit="return confirm('Remover este Site / POP?');"
-                                >
-                                    @csrf
-                                    @method('DELETE')
+                                    <form
+                                        method="POST"
+                                        action="{{ route('sites.destroy', $site) }}"
+                                        onsubmit="return confirm('Remover este Site / POP?');"
+                                    >
+                                        @csrf
+                                        @method('DELETE')
 
-                                    <button type="submit" class="table-action danger-text">
-                                        Remover
-                                    </button>
-                                </form>
+                                        <button type="submit" class="btn btn--ghost btn--sm table-actions__danger">Remover</button>
+                                    </form>
+                                </div>
                             </td>
                         </tr>
                     @endforeach
@@ -120,6 +121,6 @@
 
     @endif
 
-</article>
+</div>
 
 @endsection

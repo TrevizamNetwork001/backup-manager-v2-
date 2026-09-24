@@ -1,4 +1,5 @@
 import json
+import base64
 import logging
 import os
 import secrets
@@ -11,6 +12,7 @@ from drivers.mikrotik_ssh import BackupError, export_config
 from drivers.huawei_vrp_ssh import export_config as export_huawei_config
 from drivers.huawei_olt_ftp import collect_config as collect_huawei_olt_config
 from ftp_incoming import existing_files, scan_orphans
+from ftp_spontaneous import scan as scan_spontaneous
 from storage import store
 
 
@@ -109,6 +111,7 @@ def main():
     with ThreadPoolExecutor(max_workers=4) as pool:
         active = set()
         orphan_observed = {}
+        spontaneous_observed = {}
         ftp_root = os.environ.get('BACKUP_FTP_ROOT')
         preserved_uploads = existing_files(ftp_root) if ftp_root else {}
         last_orphan_scan = 0
@@ -117,6 +120,15 @@ def main():
                 last_orphan_scan = time.monotonic()
                 try:
                     expected = json.loads(command('ftp:expected'))
+                    scan_spontaneous(os.environ['BACKUP_FTP_ROOT'], os.environ['BACKUP_STORAGE_ROOT'],
+                                     int(os.environ.get('BACKUP_FTP_STABLE_SECONDS', '5')),
+                                     spontaneous_observed, expected,
+                                     lambda device, token, filename, received: json.loads(command(
+                                         'ftp:receive', device, token,
+                                         'n' + base64.urlsafe_b64encode(filename.encode('utf-8')).decode('ascii'),
+                                         received, WORKER_ID)),
+                                     lambda job_id, relative: command('engine:complete', job_id, relative, WORKER_ID),
+                                     lambda job_id, code: command('engine:fail', job_id, code, WORKER_ID))
                     scan_orphans(os.environ['BACKUP_FTP_ROOT'], expected,
                                  int(os.environ.get('BACKUP_FTP_STABLE_SECONDS', '5')), orphan_observed,
                                  preserved_uploads)

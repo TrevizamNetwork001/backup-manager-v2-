@@ -56,12 +56,6 @@ def store(root_name, relative, data, vendor='mikrotik', execution_id=None):
     target = root / relative
     if not target.resolve(strict=False).is_relative_to(root) or target.is_symlink():
         raise BackupError('STORAGE_FAILED')
-    if target.exists():
-        if not isinstance(execution_id, int) or execution_id < 1:
-            raise BackupError('STORAGE_FAILED')
-        target = target.with_name(f'{target.stem}-exec-{execution_id}{target.suffix}')
-        if target.exists() or target.is_symlink():
-            raise BackupError('STORAGE_FAILED')
     target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     if not target.parent.resolve(strict=True).is_relative_to(root):
         raise BackupError('STORAGE_FAILED')
@@ -73,9 +67,23 @@ def store(root_name, relative, data, vendor='mikrotik', execution_id=None):
             file.write(data)
             file.flush()
             os.fsync(file.fileno())
-        os.replace(temporary, target)
-        os.chmod(target, 0o600)
-        return str(target.relative_to(root))
+        candidates = [target]
+        if isinstance(execution_id, int) and execution_id > 0:
+            candidates.append(target.with_name(f'{target.stem}-exec-{execution_id}{target.suffix}'))
+        for candidate in candidates:
+            try:
+                # link(2) publishes exclusively. replace(2) could overwrite a concurrent upload.
+                os.link(temporary, candidate, follow_symlinks=False)
+            except FileExistsError:
+                continue
+            temporary.unlink()
+            directory_fd = os.open(candidate.parent, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
+            return str(candidate.relative_to(root))
+        raise BackupError('STORAGE_FAILED')
     except OSError:
         raise BackupError('STORAGE_FAILED') from None
     finally:

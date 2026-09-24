@@ -27,6 +27,41 @@ class SiteTest extends TestCase
             ->assertSee('Sites / POPs');
     }
 
+    public function test_sites_index_shows_empty_state_and_create_action(): void
+    {
+        $this->actingAs(User::factory()->create())
+            ->get('/sites')
+            ->assertOk()
+            ->assertSee('class="page-header"', false)
+            ->assertSeeText('0 locais cadastrados')
+            ->assertSee('class="empty-state__title"', false)
+            ->assertSee('Cadastrar primeiro Site / POP');
+    }
+
+    public function test_sites_index_shows_entity_details_and_compact_actions(): void
+    {
+        $site = Site::create([
+            'name' => 'POP Batistini',
+            'code' => 'SBC-01',
+            'location' => 'São Bernardo do Campo',
+            'description' => 'Parque Imigrantes SEDE',
+            'is_active' => true,
+        ]);
+
+        $this->actingAs(User::factory()->create())
+            ->get('/sites')
+            ->assertOk()
+            ->assertSeeText('1 local cadastrado')
+            ->assertSee('class="table-shell"', false)
+            ->assertSee('class="entity-cell__title"', false)
+            ->assertSee('POP Batistini')
+            ->assertSee('Parque Imigrantes SEDE')
+            ->assertSee('SBC-01')
+            ->assertSee('São Bernardo do Campo')
+            ->assertSee(route('sites.edit', $site))
+            ->assertSee(route('sites.destroy', $site));
+    }
+
     public function test_authenticated_user_can_create_site(): void
     {
         $user = User::factory()->create();

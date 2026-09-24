@@ -62,6 +62,12 @@ def sync_once():
     quarantine.mkdir(mode=0o700, exist_ok=True)
     os.chown(quarantine, 65534, 65534)
     os.chmod(quarantine, 0o700)
+    processing = root / 'processing'
+    if processing.is_symlink():
+        raise RuntimeError('ftp_root_invalid')
+    processing.mkdir(mode=0o700, exist_ok=True)
+    os.chown(processing, 65534, 65534)
+    os.chmod(processing, 0o700)
     rows = json.loads(artisan('ftp:accounts'))
     provisioned = []
     fd, temporary_passwd = tempfile.mkstemp(prefix='.pureftpd-passwd-', dir=Path(PASSWD).parent)
@@ -75,6 +81,8 @@ def sync_once():
             if device_root.is_symlink() or home.is_symlink():
                 raise RuntimeError('home_invalid')
             device_root.mkdir(mode=0o755, exist_ok=True)
+            if device_root.is_symlink():
+                raise RuntimeError('home_invalid')
             os.chown(device_root, 0, 0)
             os.chmod(device_root, 0o755)
             home.mkdir(mode=0o700, exist_ok=True)

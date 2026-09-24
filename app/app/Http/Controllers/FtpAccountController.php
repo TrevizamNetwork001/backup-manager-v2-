@@ -18,7 +18,7 @@ class FtpAccountController extends Controller
         abort_unless(mb_strtolower(trim($device->vendor)) === 'huawei' && $device->platform === 'olt', 422);
         abort_if($device->ftpAccount()->exists(), 409);
         $validated = $this->credentials($request, $device);
-        $secret = $validated['mode'] === 'manual' ? $validated['password'] : bin2hex(random_bytes(24));
+        $secret = $validated['mode'] === 'manual' ? $validated['password'] : bin2hex(random_bytes(16));
         $account = new FtpAccount(['device_id' => $device->id, 'username' => $validated['username'], 'is_active' => true]);
         $account->secret = $secret;
         $account->save();
@@ -40,7 +40,7 @@ class FtpAccountController extends Controller
     {
         abort_unless(Schema::hasTable('ftp_accounts'), 503);
         $account = $device->ftpAccount()->firstOrFail();
-        $secret = bin2hex(random_bytes(24));
+        $secret = bin2hex(random_bytes(16));
         $account->secret = $secret;
         $account->provisioned_at = null;
         $account->save();
@@ -54,7 +54,7 @@ class FtpAccountController extends Controller
         abort_unless(mb_strtolower(trim($device->vendor)) === 'huawei' && $device->platform === 'olt', 422);
         $account = $device->ftpAccount()->firstOrFail();
         $validated = $this->credentials($request, $device, $account);
-        $secret = $validated['mode'] === 'manual' ? $validated['password'] : bin2hex(random_bytes(24));
+        $secret = $validated['mode'] === 'manual' ? $validated['password'] : bin2hex(random_bytes(16));
         $credentialsChanged = $account->username !== $validated['username'] || $account->secret !== $secret;
         $account->username = $validated['username'];
         if ($credentialsChanged) {
@@ -85,7 +85,7 @@ class FtpAccountController extends Controller
         return $request->validate([
             'mode' => ['required', Rule::in(['automatic', 'manual'])],
             'username' => ['required', 'string', 'min:3', 'max:32', 'regex:/\A[a-z][a-z0-9_-]*\z/D', Rule::unique('ftp_accounts', 'username')->ignore($account?->id)],
-            'password' => ['required_if:mode,manual', 'nullable', 'string', 'min:12', 'max:128', 'regex:/\A[\x21-\x7e]+\z/D', 'confirmed'],
+            'password' => ['required_if:mode,manual', 'nullable', 'string', 'min:12', 'max:40', 'regex:/\A[\x21-\x7e]+\z/D', 'confirmed'],
         ]);
     }
 

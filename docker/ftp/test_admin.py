@@ -53,6 +53,20 @@ class FtpAdminTests(unittest.TestCase):
             with self.assertRaises((ValueError, RuntimeError)):
                 ftp_admin.account_home(row)
 
+    def test_reconciler_rejects_symlinked_device_directory(self):
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name)
+            (root / '12').symlink_to(root, target_is_directory=True)
+            row = {'id': 1, 'device_id': 12, 'username': 'bmdev12',
+                   'is_active': True, 'updated_at': '2026-09-22T00:00:00Z'}
+            with patch.object(ftp_admin, 'ROOT', root), \
+                 patch.object(ftp_admin, 'PASSWD', str(root / 'pureftpd.passwd')), \
+                 patch.object(ftp_admin, 'PUREDB', str(root / 'pureftpd.pdb')), \
+                 patch.object(ftp_admin, 'artisan', return_value=json.dumps([row]).encode()), \
+                 patch.object(ftp_admin.os, 'chown'):
+                with self.assertRaisesRegex(RuntimeError, 'home_invalid'):
+                    ftp_admin.sync_once()
+
     def test_pure_pw_uses_fixed_binary_argv_and_pipe(self):
         with patch.object(ftp_admin.subprocess, 'run') as run:
             run.return_value.returncode = 0
@@ -71,6 +85,7 @@ class FtpAdminTests(unittest.TestCase):
             runpy.run_path(str(Path(__file__).resolve().parent / 'server.py'), run_name='__main__')
         self.assertEqual('/usr/sbin/pure-ftpd', execute.call_args.args[0])
         self.assertEqual('/usr/sbin/pure-ftpd', execute.call_args.args[1][0])
+        self.assertIn('-r', execute.call_args.args[1])
         self.assertEqual(['-P', '10.23.45.67'], execute.call_args.args[1][-2:])
         limit.assert_called_once()
 

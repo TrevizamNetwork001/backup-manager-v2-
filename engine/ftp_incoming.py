@@ -14,6 +14,7 @@ from storage import store, validate, ftp_max_bytes
 
 
 NAME = re.compile(r'bm-exec-[1-9][0-9]*\.cfg\Z')
+RESERVED = re.compile(r'bm-exec-[1-9][0-9]*\.cfg(?:\.[1-9][0-9]*)?\Z')
 STARTUP_GRACE_SECONDS = 30
 
 
@@ -28,8 +29,8 @@ def directory(root_name, device_id):
     return home
 
 
-def quarantine(root_name, path, reason):
-    if reason not in {'invalid_name', 'uncorrelated', 'invalid_file', 'duplicate'}:
+def quarantine(root_name, path, reason, *, device_id=None, ftp_account_id=None, original_filename=None):
+    if reason not in {'invalid_name', 'uncorrelated', 'invalid_file', 'duplicate', 'invalid_account', 'changed_during_claim', 'processing_failed'}:
         raise ValueError('invalid reason')
     root = Path(root_name).resolve(strict=True)
     target_dir = root / 'quarantine'
@@ -41,10 +42,12 @@ def quarantine(root_name, path, reason):
     sidecar = target.with_suffix('.json')
     with sidecar.open('x', encoding='utf-8') as file:
         os.chmod(sidecar, 0o600)
-        json.dump({'reason': reason}, file)
+        json.dump({'reason': reason, 'device_id': device_id, 'ftp_account_id': ftp_account_id,
+                   'original_filename': original_filename or path.name, 'quarantined_at': time.time()}, file)
         file.flush()
         os.fsync(file.fileno())
-    logging.info(json.dumps({'event': 'ftp_quarantine', 'reason': reason}))
+    logging.info(json.dumps({'event': 'ftp_quarantine', 'reason': reason, 'device_id': device_id,
+                             'ftp_account_id': ftp_account_id, 'original_filename': original_filename or path.name}))
     return reason
 
 
@@ -79,6 +82,8 @@ def scan_orphans(root_name, expected, stable_seconds, observed, preserved=None):
             continue
         for path in home.iterdir():
             key = (device_root.name, path.name)
+            if not RESERVED.fullmatch(path.name):
+                continue  # The spontaneous receiver owns all other names.
             if key in allowed:
                 observed.pop(key, None)
                 continue
@@ -94,7 +99,8 @@ def scan_orphans(root_name, expected, stable_seconds, observed, preserved=None):
                 observed[key] = (identity, now)
                 continue
             if now - previous[1] >= stable_seconds and time.time_ns() - info.st_mtime_ns >= stable_seconds * 1_000_000_000:
-                quarantine(root_name, path, 'uncorrelated' if NAME.fullmatch(path.name) else 'invalid_name')
+                quarantine(root_name, path, 'uncorrelated' if NAME.fullmatch(path.name) else 'invalid_name',
+                           device_id=int(device_root.name))
                 observed.pop(key, None)
 
 
@@ -119,12 +125,13 @@ def receive(root_name, device_id, expected, storage_root, relative, timeout, sta
             if now - previous[1] < stable_seconds or time.time_ns() - info.st_mtime_ns < stable_seconds * 1_000_000_000:
                 continue
             if path.name != expected:
-                quarantine(root_name, path, 'uncorrelated' if NAME.fullmatch(path.name) else 'invalid_name')
+                quarantine(root_name, path, 'uncorrelated' if NAME.fullmatch(path.name) else 'invalid_name',
+                           device_id=device_id)
                 observed.pop(path.name, None)
                 continue
             limit = ftp_max_bytes()
             if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or not 0 < info.st_size <= limit:
-                quarantine(root_name, path, 'invalid_file')
+                quarantine(root_name, path, 'invalid_file', device_id=device_id)
                 raise BackupError('FTP_FILE_INVALID')
             try:
                 with path.open('rb') as handle:
@@ -146,11 +153,11 @@ def receive(root_name, device_id, expected, storage_root, relative, timeout, sta
                     logging.error(json.dumps({'event': 'ftp_incoming_cleanup_failed'}))
                 return
             except BackupError as error:
-                quarantine(root_name, path, 'invalid_file')
+                quarantine(root_name, path, 'invalid_file', device_id=device_id)
                 code = 'FTP_FILE_INVALID' if error.code in {'FTP_FILE_INVALID', 'ARTIFACT_INVALID'} else 'FTP_STORAGE_FAILED'
                 raise BackupError(code) from None
             except Exception:
-                quarantine(root_name, path, 'invalid_file')
+                quarantine(root_name, path, 'invalid_file', device_id=device_id)
                 raise BackupError('FTP_STORAGE_FAILED') from None
         time.sleep(min(poll, max(0, deadline - time.monotonic())))
     raise BackupError('FTP_RECEIVE_TIMEOUT')

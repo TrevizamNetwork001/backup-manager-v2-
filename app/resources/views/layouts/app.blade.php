@@ -48,6 +48,13 @@
                 Credenciais
             </a>
 
+            @if(auth()->user()->is_admin)
+                <a href="{{ route('ftp.index') }}" class="nav-link {{ request()->routeIs('ftp.*') ? 'active' : '' }}">
+                    <span class="nav-icon">⇅</span>
+                    FTP
+                </a>
+            @endif
+
             <div class="nav-section">Backup</div>
 
             <a href="{{ route('backup-policies.index') }}" class="nav-link {{ request()->routeIs('backup-policies.*') ? 'active' : '' }}">
@@ -93,6 +100,9 @@
     </aside>
 
     <main class="main-content">
+        @hasSection('page-header')
+            @yield('page-header')
+        @else
         <header class="topbar">
             <div>
                 <h1>@yield('page-title')</h1>
@@ -104,6 +114,7 @@
                 Sistema operacional
             </div>
         </header>
+        @endif
 
         <section class="content">
             @yield('content')

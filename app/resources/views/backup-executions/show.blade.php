@@ -16,8 +16,12 @@
         <p>Na OLT previamente configurada, execute manualmente: <code>backup configuration ftp {{ app(\App\Services\FtpServerSettings::class)->get()['host'] ?: 'IP_DO_SERVIDOR_FTP' }} bm-exec-{{ $backupExecution->id }}.cfg</code></p>
         <p>O arquivo deve chegar durante a execução. O envio da OLT não é iniciado pela V2.</p>
     @endif
+    @if($backupExecution->origin === 'ftp_received')
+        <p><strong>Conta FTP:</strong> #{{ $backupExecution->ftp_account_id }} · <strong>Arquivo recebido:</strong> {{ $backupExecution->received_filename }}</p>
+        <p><strong>Recebido em:</strong> {{ app(\App\Services\InstanceTimezone::class)->format($backupExecution->received_at) }} · <strong>Processado em:</strong> {{ app(\App\Services\InstanceTimezone::class)->format($backupExecution->processing_at) }}</p>
+    @endif
     <p><strong>Associação:</strong> #{{ $backupExecution->device_backup_policy_id }}</p>
-    <p><strong>Origem:</strong> {{ ucfirst($backupExecution->origin) }} · <strong>Tentativa:</strong> {{ $backupExecution->attempt }}</p>
+    <p><strong>Origem:</strong> {{ $backupExecution->origin === 'ftp_received' ? 'FTP recebido' : ucfirst($backupExecution->origin) }} · <strong>Tentativa:</strong> {{ $backupExecution->attempt }}</p>
     @if($backupExecution->origin === 'scheduler')<p><strong>Agendado para:</strong> {{ app(\App\Services\InstanceTimezone::class)->format($backupExecution->scheduled_for) }}</p>@endif
     <p><strong>Criado em:</strong> {{ app(\App\Services\InstanceTimezone::class)->format($backupExecution->created_at) }}</p>
     <p><strong>Iniciado em:</strong> {{ app(\App\Services\InstanceTimezone::class)->format($backupExecution->started_at) ?? '—' }}</p>

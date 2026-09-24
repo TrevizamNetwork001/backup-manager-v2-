@@ -46,6 +46,15 @@ Artisan::command('ftp:expected', function () {
         ->values()->toJson());
 });
 
+Artisan::command('ftp:receive {device} {token} {filename} {received} {worker}', function (EngineJobService $engine) {
+    $encoded = $this->argument('filename');
+    $filename = is_string($encoded) && str_starts_with($encoded, 'n')
+        ? base64_decode(strtr(substr($encoded, 1), '-_', '+/'), true) : false;
+    if ($filename === false) throw new InvalidArgumentException('Nome FTP inválido.');
+    $this->line(json_encode($engine->receiveFtp((int) $this->argument('device'), $this->argument('token'),
+        $filename, (int) $this->argument('received'), $this->argument('worker'))));
+});
+
 Artisan::command('ftp:secret {id}', function () {
     $fd = getenv('ENGINE_SECRET_FD');
     if (! ctype_digit((string) $fd) || (int) $fd < 3) throw new RuntimeException('Pipe de segredo ausente.');

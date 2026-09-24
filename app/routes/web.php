@@ -9,6 +9,7 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\CredentialController;
 use App\Http\Controllers\DeviceController;
 use App\Http\Controllers\FtpAccountController;
+use App\Http\Controllers\FtpAdminController;
 use App\Http\Controllers\SiteController;
 use App\Http\Controllers\InstanceSettingsController;
 use App\Http\Controllers\OltFtpWizardController;
@@ -21,6 +22,11 @@ Route::middleware('guest')->group(function () {
 
 Route::middleware('auth')->group(function () {
     Route::get('/', DashboardController::class)->name('dashboard');
+    Route::get('ftp', [FtpAdminController::class, 'index'])->name('ftp.index');
+    Route::post('ftp/accounts', [FtpAdminController::class, 'store'])->name('ftp.store');
+    Route::get('ftp/accounts/{ftpAccount}', [FtpAdminController::class, 'show'])->name('ftp.show');
+    Route::post('ftp/accounts/{ftpAccount}/rotate', [FtpAdminController::class, 'rotate'])->name('ftp.rotate');
+    Route::patch('ftp/accounts/{ftpAccount}/status', [FtpAdminController::class, 'status'])->name('ftp.status');
     Route::get('settings', [InstanceSettingsController::class, 'edit'])->name('settings.edit');
     Route::put('settings', [InstanceSettingsController::class, 'update'])->name('settings.update');
 

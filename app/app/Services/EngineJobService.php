@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\BackupArtifact;
 use App\Models\BackupExecution;
 use App\Models\Device;
+use App\Models\FtpAccount;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
@@ -12,6 +13,53 @@ use Illuminate\Validation\ValidationException;
 
 class EngineJobService
 {
+    public function receiveFtp(int $deviceId, string $token, string $filename, int $receivedAt, string $workerId): ?array
+    {
+        if (! preg_match('/\A[a-f0-9]{32}\z/D', $token) ||
+            ! preg_match('/\A[a-f0-9]{32}\z/D', $workerId) ||
+            strlen($filename) > 255 || ! preg_match('/\A[^\/\\\\\x00-\x1f\x7f]+\z/D', $filename) ||
+            in_array($filename, ['.', '..'], true) || $receivedAt < 1) {
+            throw new \InvalidArgumentException('Identidade FTP inválida.');
+        }
+        return DB::transaction(function () use ($deviceId, $token, $filename, $receivedAt, $workerId) {
+            $existing = BackupExecution::query()->where('ftp_claim_token', $token)->lockForUpdate()->first();
+            if ($existing) {
+                if ($existing->device_id !== $deviceId || $existing->received_filename !== $filename) {
+                    throw new \RuntimeException('Claim FTP inconsistente.');
+                }
+                if ($existing->status === 'running') {
+                    $existing->worker_id = $workerId;
+                    $existing->heartbeat_at = now();
+                    $existing->save();
+                }
+                return ['id' => $existing->id, 'status' => $existing->status,
+                    'relative_path' => $this->relativePath($existing), 'ftp_account_id' => $existing->ftp_account_id];
+            }
+            $account = FtpAccount::query()->where('device_id', $deviceId)->lockForUpdate()->first();
+            if (! $account || ! $account->is_active || ! $account->provisioned_at || $account->sync_error !== null) return null;
+            $device = Device::query()->find($deviceId);
+            if (! $device || ! $device->is_active || $device->platform !== 'olt' || mb_strtolower(trim($device->vendor)) !== 'huawei') return null;
+            $association = $device->deviceBackupPolicies()->with('backupPolicy')
+                ->where('is_active', true)->orderBy('id')->get()->first(fn ($item) =>
+                    $item->backupPolicy->is_active && $item->backupPolicy->method === 'ftp_push' &&
+                    $item->backupPolicy->artifact_mode === 'config' && $item->backupPolicy->schedule_type === 'manual' &&
+                    $item->credential_id === null);
+            if (! $association) return null;
+            $now = now();
+            $job = BackupExecution::create([
+                'device_backup_policy_id' => $association->id, 'backup_policy_id' => $association->backup_policy_id,
+                'device_id' => $deviceId, 'credential_id' => null, 'ftp_account_id' => $account->id,
+                'ftp_claim_token' => $token, 'received_filename' => $filename,
+                'received_at' => \Carbon\CarbonImmutable::createFromTimestamp($receivedAt, 'UTC'),
+                'processing_at' => $now, 'started_at' => $now, 'claimed_at' => $now,
+                'heartbeat_at' => $now, 'worker_id' => $workerId,
+                'origin' => 'ftp_received', 'status' => 'running', 'attempt' => 1,
+            ]);
+            return ['id' => $job->id, 'status' => $job->status, 'relative_path' => $this->relativePath($job),
+                'ftp_account_id' => $account->id];
+        });
+    }
+
     public function claim(?string $workerId = null): ?BackupExecution
     {
         $workerId ??= bin2hex(random_bytes(16));
@@ -62,7 +110,7 @@ class EngineJobService
                 $job->association->device_id === $job->device_id &&
                 $job->association->backup_policy_id === $job->backup_policy_id &&
                 ($job->backupPolicy->method === 'ftp_push'
-                    ? $hasFtp && $job->origin === 'manual' && $job->backupPolicy->schedule_type === 'manual' && $job->credential_id === null && $job->device->platform === 'olt' && mb_strtolower(trim($job->device->vendor)) === 'huawei' && (bool) $job->device->ftpAccount?->is_active
+                    ? $hasFtp && in_array($job->origin, ['manual', 'ftp_received'], true) && $job->backupPolicy->schedule_type === 'manual' && $job->credential_id === null && $job->device->platform === 'olt' && mb_strtolower(trim($job->device->vendor)) === 'huawei' && (bool) $job->device->ftpAccount?->is_active
                     : $job->credential?->is_active && $job->credential?->device_id === $job->device_id && $job->credential?->type === 'ssh'),
         ];
     }
@@ -207,7 +255,7 @@ class EngineJobService
             $artifact = BackupArtifact::create([
                 'backup_execution_id' => $job->id, 'device_id' => $job->device_id,
                 'backup_policy_id' => $job->backup_policy_id, 'type' => 'config', 'storage' => 'local',
-                'relative_path' => $relative, 'original_filename' => basename($relative),
+                'relative_path' => $relative, 'original_filename' => $job->origin === 'ftp_received' ? $job->received_filename : basename($relative),
                 'size_bytes' => $size, 'sha256' => hash_file('sha256', $path), 'validated_at' => now(),
             ]);
             $job->status = 'succeeded';
