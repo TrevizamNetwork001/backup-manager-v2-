@@ -67,6 +67,25 @@
             </dl>
         </section>
     </div>
+    <section class="reference-panel backup-health-panel">
+        <div class="reference-panel__heading">
+            <div><h2>Saúde dos backups</h2><p>Equipamentos ativos classificados pelo histórico e pela frequência dos backups.</p></div>
+            <a href="{{ route('backup-health.index') }}">Ver equipamentos →</a>
+        </div>
+        <div class="backup-health-counts">
+            @foreach (['healthy' => ['Em dia', 'healthy'], 'warning' => ['Atenção', 'warning'], 'critical' => ['Crítico', 'critical'], 'unknown' => ['Sem histórico', 'unknown']] as $status => [$label, $class])
+                <div class="backup-health-count backup-health-count--{{ $class }}"><span>{{ $label }}</span><strong>{{ $backupHealth['counts'][$status] }}</strong></div>
+            @endforeach
+        </div>
+        @if ($backupHealth['problem_devices_total'] > 0)
+            <div class="backup-health-preview">
+                <strong>Precisam de acompanhamento</strong>
+                @foreach (array_slice($backupHealth['problem_devices'], 0, 3) as $device)
+                    <span>{{ $device['name'] }} <small>{{ ['warning' => 'Atenção', 'critical' => 'Crítico', 'unknown' => 'Sem histórico'][$device['status']] ?? $device['status'] }}</small></span>
+                @endforeach
+            </div>
+        @endif
+    </section>
     <div class="dashboard-bottom">
         <section class="reference-panel">
             <div class="reference-panel__heading"><h2>Últimas execuções</h2><a href="{{ route('backup-executions.index') }}">Ver todas →</a></div>

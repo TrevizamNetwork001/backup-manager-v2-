@@ -8,6 +8,7 @@ use App\Models\BackupPolicy;
 use App\Models\Device;
 use App\Models\FtpAccount;
 use App\Models\Site;
+use App\Services\DeviceBackupHealth;
 use App\Services\InstanceTimezone;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
@@ -19,7 +20,7 @@ use Illuminate\View\View;
 
 class DashboardController extends Controller
 {
-    public function __invoke(Request $request, InstanceTimezone $timezone): View
+    public function __invoke(Request $request, InstanceTimezone $timezone, DeviceBackupHealth $deviceBackupHealth): View
     {
         $this->authorize('dashboard.view');
 
@@ -84,6 +85,7 @@ class DashboardController extends Controller
             'inactiveDevicePercent' => $activeDevices + $inactiveDevices > 0
                 ? 100 - (int) round($activeDevices / ($activeDevices + $inactiveDevices) * 100)
                 : 0,
+            'backupHealth' => $deviceBackupHealth->summary(),
             'days' => $days,
             'period' => $period,
             'chartStart' => $chartStart,

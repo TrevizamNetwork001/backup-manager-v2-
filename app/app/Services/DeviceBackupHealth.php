@@ -21,7 +21,7 @@ use Illuminate\Support\Facades\DB;
  */
 class DeviceBackupHealth
 {
-    public function summary(): array
+    public function summary(?int $limit = 20): array
     {
         $devices = Device::query()->where('is_active', true)
             ->with(['deviceBackupPolicies' => fn ($q) => $q->where('is_active', true)
@@ -29,7 +29,7 @@ class DeviceBackupHealth
             ->get(['id', 'name']);
 
         if ($devices->isEmpty()) {
-            return ['counts' => ['healthy' => 0, 'warning' => 0, 'critical' => 0, 'unknown' => 0], 'problem_devices' => []];
+            return ['counts' => ['healthy' => 0, 'warning' => 0, 'critical' => 0, 'unknown' => 0], 'problem_devices' => [], 'problem_devices_total' => 0];
         }
 
         $latestSuccess = DB::table('backup_executions')->select('device_id', DB::raw('MAX(created_at) as last_success_at'))
@@ -61,7 +61,7 @@ class DeviceBackupHealth
 
         usort($problems, fn ($a, $b) => HealthStatus::from($b['status'])->severity() <=> HealthStatus::from($a['status'])->severity());
 
-        return ['counts' => $counts, 'problem_devices' => array_slice($problems, 0, 20), 'problem_devices_total' => count($problems)];
+        return ['counts' => $counts, 'problem_devices' => $limit === null ? $problems : array_slice($problems, 0, $limit), 'problem_devices_total' => count($problems)];
     }
 
     private function dominantCadence($associations): ?string

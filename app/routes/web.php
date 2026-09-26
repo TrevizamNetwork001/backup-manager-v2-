@@ -6,6 +6,7 @@ use App\Http\Controllers\BackupExecutionController;
 use App\Http\Controllers\BackupArtifactController;
 use App\Http\Controllers\BackupPolicyController;
 use App\Http\Controllers\DeviceBackupPolicyController;
+use App\Http\Controllers\DeviceBackupHealthController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\CredentialController;
 use App\Http\Controllers\DeviceController;
@@ -25,6 +26,7 @@ Route::middleware('guest')->group(function () {
 
 Route::middleware(['auth', 'active'])->group(function () {
     Route::get('/', DashboardController::class)->name('dashboard');
+    Route::get('backup-health', [DeviceBackupHealthController::class, 'index'])->name('backup-health.index');
     Route::get('ftp', [FtpAdminController::class, 'index'])->name('ftp.index');
     Route::post('ftp/accounts', [FtpAdminController::class, 'store'])->name('ftp.store');
     Route::get('ftp/accounts/{ftpAccount}', [FtpAdminController::class, 'show'])->name('ftp.show');

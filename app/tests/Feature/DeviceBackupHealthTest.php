@@ -8,6 +8,7 @@ use App\Models\Credential;
 use App\Models\Device;
 use App\Models\DeviceBackupPolicy;
 use App\Models\Site;
+use App\Models\User;
 use App\Services\DeviceBackupHealth;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -140,5 +141,46 @@ class DeviceBackupHealthTest extends TestCase
         $summary = app(DeviceBackupHealth::class)->summary();
         $this->assertSame(['healthy' => 0, 'warning' => 0, 'critical' => 0, 'unknown' => 0], $summary['counts']);
         $this->assertSame([], $summary['problem_devices']);
+    }
+
+    public function test_dashboard_and_detail_list_distinguish_backup_health_from_device_activation(): void
+    {
+        $scheduled = $this->deviceWithPolicy('1', 'daily');
+        $manual = $this->deviceWithPolicy('2', 'manual');
+        $healthy = $this->deviceWithPolicy('3', 'manual');
+        $this->succeed($healthy, now()->subDay());
+        $inactive = $this->deviceWithPolicy('4', 'daily');
+        $inactive->update(['is_active' => false]);
+
+        $this->actingAs(User::factory()->viewer()->create());
+        $this->get(route('dashboard'))->assertOk()
+            ->assertSee('Saúde dos backups')
+            ->assertSee('Ver equipamentos')
+            ->assertViewHas('backupHealth', function (array $health) use ($scheduled, $manual) {
+                return $health['counts'] === ['healthy' => 1, 'warning' => 0, 'critical' => 1, 'unknown' => 1]
+                    && $health['problem_devices_total'] === 2
+                    && collect($health['problem_devices'])->pluck('device_id')->sort()->values()->all() === [$scheduled->id, $manual->id];
+            });
+
+        $this->get(route('backup-health.index'))->assertOk()
+            ->assertSee($scheduled->name)
+            ->assertSee('Backup agendado nunca concluído')
+            ->assertSee($manual->name)
+            ->assertSee('Sem histórico')
+            ->assertDontSee($healthy->name)
+            ->assertDontSee($inactive->name);
+    }
+
+    public function test_affected_device_list_includes_devices_beyond_first_page(): void
+    {
+        foreach (range(1, 21) as $number) {
+            $this->deviceWithPolicy((string) $number, 'daily');
+        }
+
+        $this->actingAs(User::factory()->viewer()->create());
+        $this->get(route('backup-health.index'))->assertOk()
+            ->assertViewHas('devices', fn ($devices) => $devices->total() === 21 && $devices->count() === 20);
+        $this->get(route('backup-health.index', ['page' => 2]))->assertOk()
+            ->assertViewHas('devices', fn ($devices) => $devices->total() === 21 && $devices->count() === 1);
     }
 }
