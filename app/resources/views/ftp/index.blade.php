@@ -1,7 +1,7 @@
 @extends('layouts.app')
 @section('title', 'FTP — Backup Manager')
 @section('page-header')
-<header class="page-header reference-page-header"><div class="page-header__content"><h1 class="page-header__title">FTP</h1><p class="page-header__description">Serviço de transferência de arquivos da infraestrutura.</p></div>@can('ftp.manage')<button type="button" class="btn btn--primary" data-open-ftp-create @disabled(! $ftpCoreReady)><x-icon name="add" /> Nova conta FTP</button>@endcan</header>
+<header class="page-header reference-page-header ftp-index-header"><div class="page-header__content"><h1 class="page-header__title">FTP</h1><p class="page-header__description">Serviço de transferência de arquivos da infraestrutura.</p></div>@can('ftp.manage')<button type="button" class="btn btn--primary" data-open-ftp-create @disabled(! $ftpCoreReady)><x-icon name="add" /> Nova conta FTP</button>@endcan</header>
 @endsection
 @section('content')
 <div class="ftp-page ftp-reference">
