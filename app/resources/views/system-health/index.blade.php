@@ -15,6 +15,13 @@
     $statusOf = fn (string $status) => \App\Support\HealthStatus::from($status);
     $checksByName = collect($report['checks'])->keyBy('check');
     $statusCounts = collect($report['checks'])->countBy('status');
+    $storage = $checksByName['storage']['metadata'] ?? [];
+    $queue = $checksByName['queue']['metadata'] ?? [];
+    $failures = $checksByName['failure']['metadata'] ?? [];
+    $devices = $checksByName['devices']['metadata']['counts'] ?? [];
+    $formatBytes = fn (float|int $bytes) => $bytes >= 1073741824
+        ? number_format($bytes / 1073741824, 1, ',', '.').' GB'
+        : number_format($bytes / 1048576, 1, ',', '.').' MB';
     $labels = [
         'database' => 'Banco de dados', 'redis' => 'Redis', 'engine' => 'Engine',
         'driver_registry' => 'Drivers', 'worker' => 'Worker', 'scheduler' => 'Scheduler',
@@ -48,10 +55,97 @@
         </div>
     </section>
 
+    <div class="grid grid--3 system-health-metrics" aria-label="Indicadores operacionais">
+        <article class="card">
+            <div class="card__body">
+                <span>CPU do host</span>
+                <strong>{{ $hostResources['cpu_count'] ?? '—' }}</strong>
+                <small>{{ $hostResources['cpu_count'] === 1 ? 'núcleo visível' : 'núcleos visíveis' }} · Carga em 1 min: {{ isset($hostResources['load_1m']) ? number_format($hostResources['load_1m'], 2, ',', '.') : '—' }}</small>
+            </div>
+        </article>
+        <article class="card">
+            <div class="card__body">
+                <span>Memória do host</span>
+                <strong>{{ isset($hostResources['memory_used_bytes']) ? $formatBytes($hostResources['memory_used_bytes']) : '—' }}</strong>
+                <small>{{ isset($hostResources['memory_total_bytes']) ? 'Em uso de '.$formatBytes($hostResources['memory_total_bytes']) : 'Capacidade indisponível' }}</small>
+            </div>
+        </article>
+        <article class="card">
+            <div class="card__body">
+                <span>Taxa de sucesso</span>
+                <strong>{{ isset($failures['success_rate_percent']) ? number_format($failures['success_rate_percent'], 1, ',', '.').'%' : '—' }}</strong>
+                <small>Execuções concluídas na janela recente</small>
+            </div>
+        </article>
+        <article class="card">
+            <div class="card__body">
+                <span>Na fila</span>
+                <strong>{{ $queue['backlog'] ?? '—' }}</strong>
+                <small>Execuções pendentes ou em espera</small>
+            </div>
+        </article>
+        <article class="card">
+            <div class="card__body">
+                <span>Equipamentos em atenção</span>
+                <strong>{{ isset($devices['warning'], $devices['critical']) ? $devices['warning'] + $devices['critical'] : '—' }}</strong>
+                <small>Com falhas ou backup atrasado</small>
+            </div>
+        </article>
+        <article class="card">
+            <div class="card__body">
+                <span>Uso do armazenamento</span>
+                <strong>{{ isset($storage['used_percent']) ? number_format($storage['used_percent'], 1, ',', '.').'%' : '—' }}</strong>
+                <small>Ocupação do volume de backups</small>
+            </div>
+        </article>
+    </div>
+
+    <div class="grid grid--2 system-health-overviews">
+        <section class="card" aria-labelledby="services-health-title">
+            <div class="card__header">
+                <div>
+                    <h2 class="card__title" id="services-health-title">Saúde dos serviços</h2>
+                    <p class="card__description">Estado dos componentes principais do Backup Manager.</p>
+                </div>
+            </div>
+            <ul class="system-health-services">
+                @foreach ($report['checks'] as $check)
+                    <li>
+                        <span>{{ $labels[$check['check']] ?? $check['check'] }}</span>
+                        <span class="badge badge--{{ $statusOf($check['status'])->badgeVariant() }}">{{ $statusOf($check['status'])->label() }}</span>
+                    </li>
+                @endforeach
+            </ul>
+        </section>
+        <section class="card" aria-labelledby="storage-health-title">
+            <div class="card__header">
+                <div>
+                    <h2 class="card__title" id="storage-health-title">Armazenamento</h2>
+                    <p class="card__description">Capacidade do volume usado para os backups.</p>
+                </div>
+            </div>
+            <div class="card__body">
+                @if(isset($storage['used_percent'], $storage['free_bytes'], $storage['total_bytes']))
+                    <div class="system-health-storage__value"><strong>{{ number_format($storage['used_percent'], 1, ',', '.') }}%</strong><span>utilizado</span></div>
+                    <div class="system-health-storage__track" role="progressbar" aria-label="Uso do armazenamento" aria-valuenow="{{ $storage['used_percent'] }}" aria-valuemin="0" aria-valuemax="100">
+                        <span style="width: {{ min(100, max(0, $storage['used_percent'])) }}%"></span>
+                    </div>
+                    <dl class="system-health-storage__facts">
+                        <div><dt>Capacidade total</dt><dd>{{ $formatBytes($storage['total_bytes']) }}</dd></div>
+                        <div><dt>Espaço utilizado</dt><dd>{{ $formatBytes($storage['total_bytes'] - $storage['free_bytes']) }}</dd></div>
+                        <div><dt>Espaço disponível</dt><dd>{{ $formatBytes($storage['free_bytes']) }}</dd></div>
+                    </dl>
+                @else
+                    <p class="card__description">Os dados de capacidade não estão disponíveis nesta verificação.</p>
+                @endif
+            </div>
+        </section>
+    </div>
+
     <div class="section-header">
         <div class="section-header__content">
-            <h2 class="section-header__title">Verificações</h2>
-            <p class="section-header__description">Acompanhamento dos serviços e recursos da instância.</p>
+            <h2 class="section-header__title">Detalhes das verificações</h2>
+            <p class="section-header__description">Mensagens individuais e diagnóstico de cada componente.</p>
         </div>
     </div>
     <div class="grid grid--3 system-health-checks">

@@ -20,7 +20,14 @@ class SystemHealthTest extends TestCase
         foreach (['admin', 'operator', 'viewer', 'auditor'] as $role) {
             $user = User::factory()->{$role}()->create();
             $this->actingAs($user)->get(route('system-health.index'))
-                ->assertOk()->assertSee('Saúde do sistema')->assertSee('Status geral');
+                ->assertOk()
+                ->assertSee('Saúde do sistema')
+                ->assertSee('Status geral')
+                ->assertSee('CPU do host')
+                ->assertSee('Memória do host')
+                ->assertSee('Saúde dos serviços')
+                ->assertSee('Armazenamento')
+                ->assertSee('Detalhes das verificações');
         }
     }
 
@@ -46,6 +53,10 @@ class SystemHealthTest extends TestCase
     {
         config()->set('backup.storage_root', '/nonexistent/path/for/sure');
         $this->actingAs(User::factory()->admin()->create());
-        $this->get(route('system-health.index'))->assertOk()->assertSee('badge--danger', false)->assertSee('Crítico');
+        $this->get(route('system-health.index'))
+            ->assertOk()
+            ->assertSee('badge--danger', false)
+            ->assertSee('Crítico')
+            ->assertSee('Os dados de capacidade não estão disponíveis nesta verificação.');
     }
 }
