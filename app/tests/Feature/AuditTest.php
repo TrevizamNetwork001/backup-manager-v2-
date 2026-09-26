@@ -67,13 +67,14 @@ class AuditTest extends TestCase
             'action' => 'auth.login', 'actor_user_id' => $admin->id, 'result' => 'success',
         ]);
 
-        $this->get(route('audit.index'))
+        $response = $this->get(route('audit.index'))
             ->assertOk()
             ->assertSeeText('Central de segurança')
             ->assertSeeText('IPs com mais tentativas')
             ->assertSeeText('Contas mais visadas')
             ->assertSeeText('Tentativa inválida')
             ->assertSeeText($admin->email);
+        $this->assertSame(1, $response->viewData('security')['distinct_ips']);
     }
 
     public function test_non_admin_is_blocked_from_audit_index(): void

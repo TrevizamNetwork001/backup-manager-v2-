@@ -56,7 +56,7 @@ class AuditController extends Controller
             'failed_10m' => (clone $failedAuth)->where('created_at', '>=', CarbonImmutable::now('UTC')->subMinutes(10))->count(),
             'failed_24h' => (clone $failedAuth)->where('created_at', '>=', $since24h)->count(),
             'distinct_ips' => (clone $failedAuth)->where('created_at', '>=', $since24h)
-                ->whereNotNull('ip_address')->where('ip_address', '!=', '')->distinct()->count('ip_address'),
+                ->whereNotNull('ip_address')->distinct()->count('ip_address'),
             'top_ips' => (clone $failedAuth)->where('created_at', '>=', $since24h)
                 ->select('ip_address')->selectRaw('COUNT(*) as attempts, MAX(created_at) as last_at')
                 ->groupBy('ip_address')->orderByDesc('attempts')->limit(5)->get(),
