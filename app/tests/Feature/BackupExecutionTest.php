@@ -9,6 +9,7 @@ use App\Models\Device;
 use App\Models\DeviceBackupPolicy;
 use App\Models\Site;
 use App\Models\User;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -59,6 +60,55 @@ class BackupExecutionTest extends TestCase
         $this->assertNull($execution->started_at);
         $this->assertNull($execution->finished_at);
         $this->assertArrayNotHasKey('secret', $execution->getAttributes());
+    }
+
+    public function test_dashboard_shows_execution_duration_and_pending_placeholder(): void
+    {
+        $this->actingAs(User::factory()->admin()->create());
+        $association = $this->association();
+        $finished = BackupExecution::createManual($association);
+        $finished->update([
+            'status' => 'succeeded',
+            'started_at' => '2026-09-26 01:00:00',
+            'finished_at' => '2026-09-26 01:02:14',
+        ]);
+        BackupExecution::createManual($association);
+
+        $this->get(route('dashboard'))->assertOk()
+            ->assertSee('Duração')
+            ->assertSee('2m 14s')
+            ->assertSee('—');
+    }
+
+    public function test_dashboard_chart_accepts_presets_and_historical_dates(): void
+    {
+        CarbonImmutable::setTestNow(CarbonImmutable::parse('2026-09-26 12:00:00', 'UTC'));
+
+        try {
+            $this->actingAs(User::factory()->admin()->create());
+            $association = $this->association();
+            $execution = BackupExecution::createManual($association);
+            $execution->update(['status' => 'succeeded']);
+            $execution->created_at = CarbonImmutable::parse('2026-08-10 12:00:00', 'UTC');
+            $execution->save();
+
+            $this->get(route('dashboard'))->assertOk()
+                ->assertSee('Últimos 7 dias')
+                ->assertDontSee('10/08: 1 concluídas');
+            $this->get(route('dashboard', ['period' => '14d']))->assertOk()
+                ->assertSee('Últimos 14 dias');
+            $this->get(route('dashboard', [
+                'period' => 'custom', 'start_date' => '2026-08-09', 'end_date' => '2026-08-11',
+            ]))->assertOk()
+                ->assertSee('09/08/2026 a 11/08/2026')
+                ->assertSee('10/08: 1 concluídas');
+
+            $this->get(route('dashboard', [
+                'period' => 'custom', 'start_date' => '2026-08-01', 'end_date' => '2026-09-02',
+            ]))->assertSessionHasErrors('end_date');
+        } finally {
+            CarbonImmutable::setTestNow();
+        }
     }
 
     public function test_inactive_parts_reject_manual_creation(): void

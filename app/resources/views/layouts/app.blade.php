@@ -6,7 +6,7 @@
     <title>@yield('title', 'Backup Manager')</title>
     <link rel="stylesheet" href="{{ asset('assets/app.css') }}">
 </head>
-<body class="app-body">
+<body class="app-body {{ request()->routeIs('dashboard') ? 'dashboard-body' : '' }}">
 <div class="app-shell">
 
     <aside class="sidebar">
@@ -21,7 +21,7 @@
 
         <nav class="sidebar-nav">
             <a href="{{ route('dashboard') }}" class="nav-link {{ request()->routeIs('dashboard') ? 'active' : '' }}">
-                <span class="nav-icon">⌂</span>
+                <span class="nav-icon"><x-icon name="home" /></span>
                 Dashboard
             </a>
 
@@ -32,7 +32,7 @@
                     href="{{ route('sites.index') }}"
                     class="nav-link {{ request()->routeIs('sites.*') ? 'active' : '' }}"
                 >
-                    <span class="nav-icon">◎</span>
+                    <span class="nav-icon"><x-icon name="site" /></span>
                     Sites / POPs
                 </a>
             @endcan
@@ -42,21 +42,21 @@
                     href="{{ route('devices.index') }}"
                     class="nav-link {{ request()->routeIs('devices.*') ? 'active' : '' }}"
                 >
-                    <span class="nav-icon">▣</span>
+                    <span class="nav-icon"><x-icon name="server" /></span>
                     Equipamentos
                 </a>
             @endcan
 
             @can('credentials.view')
                 <a href="{{ route('credentials.index') }}" class="nav-link {{ request()->routeIs('credentials.*') ? 'active' : '' }}">
-                    <span class="nav-icon">◆</span>
+                    <span class="nav-icon"><x-icon name="layers" /></span>
                     Credenciais
                 </a>
             @endcan
 
             @can('ftp.view')
                 <a href="{{ route('ftp.index') }}" class="nav-link {{ request()->routeIs('ftp.*') ? 'active' : '' }}">
-                    <span class="nav-icon">⇅</span>
+                    <span class="nav-icon"><x-icon name="ftp" /></span>
                     FTP
                 </a>
             @endcan
@@ -65,21 +65,21 @@
 
             @can('backup_policies.view')
                 <a href="{{ route('backup-policies.index') }}" class="nav-link {{ request()->routeIs('backup-policies.*') ? 'active' : '' }}">
-                    <span class="nav-icon">◷</span>
+                    <span class="nav-icon"><x-icon name="clock" /></span>
                     Políticas
                 </a>
             @endcan
 
             @can('backup_executions.view')
                 <a href="{{ route('backup-executions.index') }}" class="nav-link {{ request()->routeIs('backup-executions.*') ? 'active' : '' }}">
-                    <span class="nav-icon">↻</span>
+                    <span class="nav-icon"><x-icon name="refresh" /></span>
                     Execuções
                 </a>
             @endcan
 
             @can('backup_artifacts.view')
                 <a href="{{ route('backup-artifacts.index') }}" class="nav-link {{ request()->routeIs('backup-artifacts.*') ? 'active' : '' }}">
-                    <span class="nav-icon">▤</span>
+                    <span class="nav-icon"><x-icon name="archive" /></span>
                     Artefatos
                 </a>
             @endcan
@@ -88,25 +88,25 @@
                 <div class="nav-section">Administração</div>
                 @can('system_health.view')
                     <a href="{{ route('system-health.index') }}" class="nav-link {{ request()->routeIs('system-health.*') ? 'active' : '' }}">
-                        <span class="nav-icon">♥</span>
+                        <span class="nav-icon"><x-icon name="check" /></span>
                         Saúde do sistema
                     </a>
                 @endcan
                 @can('settings.view')
                     <a href="{{ route('settings.edit') }}" class="nav-link {{ request()->routeIs('settings.*') ? 'active' : '' }}">
-                        <span class="nav-icon">⚙</span>
+                        <span class="nav-icon"><x-icon name="settings" /></span>
                         Configurações
                     </a>
                 @endcan
                 @can('audit.view')
                     <a href="{{ route('audit.index') }}" class="nav-link {{ request()->routeIs('audit.*') ? 'active' : '' }}">
-                        <span class="nav-icon">☰</span>
+                        <span class="nav-icon"><x-icon name="file" /></span>
                         Auditoria
                     </a>
                 @endcan
                 @can('users.view')
                     <a href="{{ route('users.index') }}" class="nav-link {{ request()->routeIs('users.*') ? 'active' : '' }}">
-                        <span class="nav-icon">☺</span>
+                        <span class="nav-icon"><x-icon name="site" /></span>
                         Usuários
                     </a>
                 @endcan
