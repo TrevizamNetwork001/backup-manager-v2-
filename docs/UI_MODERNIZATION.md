@@ -1,5 +1,7 @@
 # Modernização da UI — identidade do Backup Manager
 
+O estado implementado em 26/09/2026 está registrado em [CHANGES_2026-09-26.md](CHANGES_2026-09-26.md), incluindo Dashboard, FTP, listas, Configurações, Saúde do sistema, paginação e Auditoria. As seções abaixo registram a direção visual e a fundação original do design system.
+
 ## Direção do produto
 
 **Backup Manager — infraestrutura técnica, confiável, precisa e operacional.**

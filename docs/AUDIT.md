@@ -1,5 +1,7 @@
 # Auditoria administrativa (ADMIN-1)
 
+> Este documento registra a implementação inicial de ADMIN-1. O fluxo atual, incluindo Central de segurança, eventos de autenticação, RBAC e a correção para PostgreSQL, está descrito em [CHANGES_2026-09-26.md](CHANGES_2026-09-26.md). As referências abaixo a `is_admin` e à ausência de `audit.view` são históricas; atualmente o acesso usa a permissão `audit.view`.
+
 ## Propósito
 
 `audit_events` é a fonte central de auditoria do Backup Manager. Esta fase
