@@ -1808,11 +1808,11 @@ body { background: radial-gradient(circle at 75% 12%, #0b1a35 0, #07111e 45%, #0
 .ftp-index-header .btn--primary { min-height: 42px; padding-inline: 16px; font-size: 13px; }
 .ftp-reference { gap: 18px; }
 .ftp-reference .ftp-stats { gap: 15px; }
-.ftp-reference .ftp-stat { min-height: 100px; gap: 12px; padding: 12px 14px; }
-.ftp-reference .ftp-stat .reference-stat__icon { width: 48px; height: 48px; border-radius: 10px; }
+.ftp-reference .ftp-stat { display: grid; grid-template-columns: 48px minmax(0, 1fr); grid-template-rows: auto 48px; align-content: center; column-gap: 12px; row-gap: 0; min-height: 100px; padding: 12px 14px; }
+.ftp-reference .ftp-stat .reference-stat__icon { grid-column: 1; grid-row: 2; width: 48px; height: 48px; border-radius: 10px; }
 .ftp-reference .ftp-stat .reference-stat__icon .icon { width: 24px; height: 24px; }
-.ftp-reference .ftp-stat small { font-size: 13px; }
-.ftp-reference .ftp-stat strong { font-size: 30px; }
+.ftp-reference .ftp-stat small { grid-column: 2; grid-row: 1; align-self: end; font-size: 13px; }
+.ftp-reference .ftp-stat strong { grid-column: 2; grid-row: 2; align-self: center; margin: 0; font-size: 30px; line-height: 1; }
 .ftp-reference .ftp-filters { gap: 12px; }
 .ftp-reference .ftp-filters .form-control { min-height: 42px !important; padding-inline: 12px !important; border-radius: 8px !important; font-size: 12px; }
 .ftp-reference .ftp-search { min-height: 42px; gap: 10px; padding-inline: 12px; border-radius: 8px; }

@@ -14,7 +14,7 @@
             ['Servidores de arquivos', $accounts->where('purpose', 'file_server')->count(), 'folder', 'amber'],
             ['Contas ativas', $accounts->where('is_active', true)->count(), 'check-circle', 'green']
         ] as [$label, $value, $icon, $color])
-            <div class="ftp-stat"><span class="reference-stat__icon {{ $color }}"><x-icon :name="$icon" /></span><span><small>{{ $label }}</small><strong>{{ $value }}</strong></span></div>
+            <div class="ftp-stat"><span class="reference-stat__icon {{ $color }}"><x-icon :name="$icon" /></span><small>{{ $label }}</small><strong>{{ $value }}</strong></div>
         @endforeach
     </div>
     <div class="ftp-filters">
