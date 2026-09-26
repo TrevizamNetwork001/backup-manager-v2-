@@ -1808,9 +1808,11 @@ body { background: radial-gradient(circle at 75% 12%, #0b1a35 0, #07111e 45%, #0
 .ftp-index-header .btn--primary { min-height: 42px; padding-inline: 16px; font-size: 13px; }
 .ftp-reference { gap: 18px; }
 .ftp-reference .ftp-stats { gap: 15px; }
-.ftp-reference .ftp-stat { min-height: 132px; gap: 15px; padding: 15px; }
-.ftp-reference .ftp-stat small { font-size: 12px; }
-.ftp-reference .ftp-stat strong { font-size: 29px; }
+.ftp-reference .ftp-stat { min-height: 100px; gap: 12px; padding: 12px 14px; }
+.ftp-reference .ftp-stat .reference-stat__icon { width: 48px; height: 48px; border-radius: 10px; }
+.ftp-reference .ftp-stat .reference-stat__icon .icon { width: 24px; height: 24px; }
+.ftp-reference .ftp-stat small { font-size: 13px; }
+.ftp-reference .ftp-stat strong { font-size: 30px; }
 .ftp-reference .ftp-filters { gap: 12px; }
 .ftp-reference .ftp-filters .form-control { min-height: 42px !important; padding-inline: 12px !important; border-radius: 8px !important; font-size: 12px; }
 .ftp-reference .ftp-search { min-height: 42px; gap: 10px; padding-inline: 12px; border-radius: 8px; }
