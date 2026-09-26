@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\AuditEvents;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -14,7 +15,7 @@ class AuthController extends Controller
         return view('auth.login');
     }
 
-    public function store(Request $request): RedirectResponse
+    public function store(Request $request, AuditEvents $audit): RedirectResponse
     {
         $credentials = $request->validate([
             'email' => ['required', 'email'],
@@ -28,6 +29,7 @@ class AuthController extends Controller
             ->onlyInput('email');
 
         if (! Auth::attempt($credentials, $request->boolean('remember'))) {
+            $audit->record('auth.login_failed', 'user', null, $credentials['email'], 'failed', [], null, $request->ip());
             return $genericFailure();
         }
 
@@ -36,16 +38,19 @@ class AuthController extends Controller
             $request->session()->invalidate();
             $request->session()->regenerateToken();
 
+            $audit->record('auth.login_failed', 'user', null, $credentials['email'], 'failed', [], null, $request->ip());
             return $genericFailure();
         }
 
         $request->session()->regenerate();
+        $audit->record('auth.login', 'user', (string) Auth::id(), Auth::user()->email, 'success', [], Auth::id(), $request->ip());
 
         return redirect()->intended(route('dashboard'));
     }
 
-    public function destroy(Request $request): RedirectResponse
+    public function destroy(Request $request, AuditEvents $audit): RedirectResponse
     {
+        $audit->record('auth.logout', 'user', (string) Auth::id(), Auth::user()->email, 'success', [], Auth::id(), $request->ip());
         Auth::logout();
 
         $request->session()->invalidate();

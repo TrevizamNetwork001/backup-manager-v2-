@@ -155,5 +155,26 @@
     </main>
 
 </div>
+<script>
+    document.querySelectorAll('.alert--success[role="status"], .alert-success').forEach((notice) => {
+        const dismiss = document.createElement('button');
+        dismiss.type = 'button';
+        dismiss.className = 'alert__dismiss';
+        dismiss.setAttribute('aria-label', 'Fechar mensagem');
+        dismiss.textContent = '×';
+        dismiss.addEventListener('click', () => notice.remove());
+        notice.appendChild(dismiss);
+
+        let timer = window.setTimeout(() => notice.remove(), 6000);
+        notice.addEventListener('mouseenter', () => window.clearTimeout(timer));
+        notice.addEventListener('mouseleave', () => {
+            timer = window.setTimeout(() => notice.remove(), 6000);
+        });
+        notice.addEventListener('focusin', () => window.clearTimeout(timer));
+        notice.addEventListener('focusout', () => {
+            timer = window.setTimeout(() => notice.remove(), 6000);
+        });
+    });
+</script>
 </body>
 </html>

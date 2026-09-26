@@ -14,6 +14,7 @@
 @php
     $statusOf = fn (string $status) => \App\Support\HealthStatus::from($status);
     $checksByName = collect($report['checks'])->keyBy('check');
+    $statusCounts = collect($report['checks'])->countBy('status');
     $labels = [
         'database' => 'Banco de dados', 'redis' => 'Redis', 'engine' => 'Engine',
         'driver_registry' => 'Drivers', 'worker' => 'Worker', 'scheduler' => 'Scheduler',
@@ -24,26 +25,38 @@
 @endphp
 
 @section('content')
-<div class="stack">
+<div class="system-health-page stack">
 
-    <div class="card card--elevated">
+    <section class="card system-health-overview" aria-labelledby="overall-health-title">
         <div class="card__header">
             <div>
-                <h2 class="card__title">Status geral</h2>
+                <h2 class="card__title" id="overall-health-title">Status geral</h2>
                 <p class="card__description">Verificado em {{ \Illuminate\Support\Carbon::parse($report['checked_at'])->format('d/m/Y H:i:s') }}</p>
             </div>
             <span class="badge badge--{{ $statusOf($report['overall_status'])->badgeVariant() }}">{{ $statusOf($report['overall_status'])->label() }}</span>
         </div>
-        @if ($report['alerts'] !== [])
-            <div class="card__body">
-                <p class="card__description">Condições ativas: {{ implode(', ', $report['alerts']) }}</p>
+        <div class="card__body">
+            <div class="system-health-overview__counts" aria-label="Resumo das verificações">
+                <span><strong>{{ $statusCounts['healthy'] ?? 0 }}</strong> saudáveis</span>
+                <span><strong>{{ $statusCounts['warning'] ?? 0 }}</strong> em atenção</span>
+                <span><strong>{{ $statusCounts['critical'] ?? 0 }}</strong> críticas</span>
+                <span><strong>{{ $statusCounts['unknown'] ?? 0 }}</strong> desconhecidas</span>
             </div>
-        @endif
-    </div>
+            @if ($report['alerts'] !== [])
+                <p class="system-health-overview__alerts"><strong>Condições ativas:</strong> {{ implode(', ', $report['alerts']) }}</p>
+            @endif
+        </div>
+    </section>
 
-    <div class="grid grid--4">
+    <div class="section-header">
+        <div class="section-header__content">
+            <h2 class="section-header__title">Verificações</h2>
+            <p class="section-header__description">Acompanhamento dos serviços e recursos da instância.</p>
+        </div>
+    </div>
+    <div class="grid grid--3 system-health-checks">
         @foreach ($report['checks'] as $check)
-            <article class="card">
+            <article class="card system-health-check">
                 <div class="card__header">
                     <h3 class="card__title">{{ $labels[$check['check']] ?? $check['check'] }}</h3>
                     <span class="badge badge--{{ $statusOf($check['status'])->badgeVariant() }}">{{ $statusOf($check['status'])->label() }}</span>

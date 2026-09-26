@@ -62,10 +62,16 @@ class BackupSchedulerTest extends TestCase
         $this->put(route('settings.update'), ['timezone' => 'UTC'])->assertForbidden();
 
         $this->actingAs(User::factory()->create(['is_admin' => true]));
-        $this->get(route('settings.edit'))->assertOk()->assertSee('America/Sao_Paulo')->assertSee('Hora atual');
+        $this->get(route('settings.edit'))
+            ->assertOk()
+            ->assertSee('value="America/Sao_Paulo"', false)
+            ->assertSee('Brasília, Goiás, Sudeste e Sul')
+            ->assertSee('Hora atual');
         $this->put(route('settings.update'), ['timezone' => 'America/Manaus'])->assertRedirect(route('settings.edit'));
         $this->assertSame('America/Manaus', $timezone->get());
-        $this->get(route('settings.edit'))->assertOk()->assertSee('America/Manaus');
+        $this->get(route('settings.edit'))->assertOk()->assertSee('Amazonas (AM) — Manaus');
+        $this->put(route('settings.update'), ['timezone' => 'UTC'])->assertRedirect(route('settings.edit'));
+        $this->get(route('settings.edit'))->assertOk()->assertSee('Fuso atual — UTC');
     }
 
     public function test_invalid_timezone_is_rejected(): void

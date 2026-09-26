@@ -48,6 +48,34 @@ class AuditTest extends TestCase
         $this->get(route('audit.index'))->assertOk()->assertSeeText('Auditoria');
     }
 
+    public function test_security_center_records_and_summarizes_login_attempts(): void
+    {
+        $admin = User::factory()->admin()->create();
+
+        $this->withServerVariables(['REMOTE_ADDR' => '192.0.2.10'])
+            ->post(route('login.store'), ['email' => $admin->email, 'password' => 'wrong'])
+            ->assertSessionHasErrors('email');
+        $this->withServerVariables(['REMOTE_ADDR' => '192.0.2.10'])
+            ->post(route('login.store'), ['email' => $admin->email, 'password' => 'password'])
+            ->assertRedirect();
+
+        $this->assertDatabaseHas('audit_events', [
+            'action' => 'auth.login_failed', 'resource_label' => $admin->email,
+            'result' => 'failed', 'ip_address' => '192.0.2.10',
+        ]);
+        $this->assertDatabaseHas('audit_events', [
+            'action' => 'auth.login', 'actor_user_id' => $admin->id, 'result' => 'success',
+        ]);
+
+        $this->get(route('audit.index'))
+            ->assertOk()
+            ->assertSeeText('Central de segurança')
+            ->assertSeeText('IPs com mais tentativas')
+            ->assertSeeText('Contas mais visadas')
+            ->assertSeeText('Tentativa inválida')
+            ->assertSeeText($admin->email);
+    }
+
     public function test_non_admin_is_blocked_from_audit_index(): void
     {
         $this->actingAs(User::factory()->create(['is_admin' => false]));

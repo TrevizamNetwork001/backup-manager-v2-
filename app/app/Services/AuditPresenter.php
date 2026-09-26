@@ -14,6 +14,9 @@ class AuditPresenter
     ];
 
     private const ACTION_LABELS = [
+        'auth.login' => 'Acesso realizado',
+        'auth.login_failed' => 'Tentativa de acesso inválida',
+        'auth.logout' => 'Sessão encerrada',
         'ftp.account.create' => 'Criação de conta FTP',
         'ftp.account.delete' => 'Excluir conta FTP',
         'ftp.account.delete_with_data' => 'Excluir conta FTP + dados',

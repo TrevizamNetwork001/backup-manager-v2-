@@ -14,6 +14,87 @@
 @section('content')
 <div class="audit-page stack">
 
+    <section class="card audit-security" aria-labelledby="audit-security-title">
+        <div class="card__header">
+            <div>
+                <h2 class="card__title" id="audit-security-title">Central de segurança</h2>
+                <p class="card__description">Tentativas de acesso por IP, conta e período.</p>
+            </div>
+            <span class="badge badge--{{ $security['failed_10m'] > 0 ? 'warning' : 'success' }}">{{ $security['failed_10m'] > 0 ? 'Atenção' : 'Normal' }}</span>
+        </div>
+        <div class="card__body">
+            <div class="audit-security__metrics">
+                <div><strong>{{ $security['failed_10m'] }}</strong><span>Falhas em 10 minutos</span></div>
+                <div><strong>{{ $security['failed_24h'] }}</strong><span>Falhas nas últimas 24h</span></div>
+                <div><strong>{{ $security['distinct_ips'] }}</strong><span>Endereços IP distintos</span></div>
+            </div>
+        </div>
+    </section>
+
+    <div class="audit-security__rankings">
+        <section class="card" aria-labelledby="audit-top-ips-title">
+            <div class="card__header"><div><h2 class="card__title" id="audit-top-ips-title">IPs com mais tentativas</h2><p class="card__description">Últimas 24 horas</p></div></div>
+            <div class="table-shell">
+                <table class="data-table audit-compact-table">
+                    <thead><tr><th>Endereço IP</th><th>Tentativas</th><th>Última atividade</th></tr></thead>
+                    <tbody>
+                        @forelse($security['top_ips'] as $ip)
+                            <tr><td data-label="Endereço IP"><span class="tech-value">{{ $ip->ip_address ?: 'Não informado' }}</span></td><td data-label="Tentativas">{{ $ip->attempts }}</td><td data-label="Última atividade">{{ app(\App\Services\InstanceTimezone::class)->format(\Carbon\CarbonImmutable::parse($ip->last_at, 'UTC'), 'd/m/Y H:i') }}</td></tr>
+                        @empty
+                            <tr><td colspan="3">Nenhuma tentativa registrada.</td></tr>
+                        @endforelse
+                    </tbody>
+                </table>
+            </div>
+        </section>
+        <section class="card" aria-labelledby="audit-top-accounts-title">
+            <div class="card__header"><div><h2 class="card__title" id="audit-top-accounts-title">Contas mais visadas</h2><p class="card__description">Últimas 24 horas</p></div></div>
+            <div class="table-shell">
+                <table class="data-table audit-compact-table">
+                    <thead><tr><th>Conta</th><th>Tentativas</th><th>IPs</th></tr></thead>
+                    <tbody>
+                        @forelse($security['top_accounts'] as $account)
+                            <tr><td data-label="Conta">{{ $account->resource_label ?: 'Não informado' }}</td><td data-label="Tentativas">{{ $account->attempts }}</td><td data-label="IPs">{{ $account->ips }}</td></tr>
+                        @empty
+                            <tr><td colspan="3">Nenhuma conta visada.</td></tr>
+                        @endforelse
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+
+    <section class="card" aria-labelledby="audit-auth-title">
+        <div class="card__header">
+            <div><h2 class="card__title" id="audit-auth-title">Eventos recentes de autenticação</h2><p class="card__description">As 20 ocorrências mais recentes de acesso.</p></div>
+            <a class="btn btn--ghost btn--sm" href="#audit-history">Ver histórico completo</a>
+        </div>
+        <div class="table-shell">
+            <table class="data-table audit-compact-table">
+                <thead><tr><th>Data e hora</th><th>Evento</th><th>Conta</th><th>IP de origem</th></tr></thead>
+                <tbody>
+                    @forelse($security['recent'] as $authEvent)
+                        <tr>
+                            <td data-label="Data e hora">{{ app(\App\Services\InstanceTimezone::class)->format($authEvent->created_at, 'd/m/Y H:i') }}</td>
+                            <td data-label="Evento"><span class="badge badge--{{ $authEvent->action === 'auth.login' ? 'success' : 'danger' }}">{{ $authEvent->action === 'auth.login' ? 'Login válido' : 'Tentativa inválida' }}</span></td>
+                            <td data-label="Conta">{{ $authEvent->resource_label ?: 'Não informado' }}</td>
+                            <td data-label="IP de origem"><span class="tech-value">{{ $authEvent->ip_address ?: '—' }}</span></td>
+                        </tr>
+                    @empty
+                        <tr><td colspan="4">Nenhum evento de autenticação.</td></tr>
+                    @endforelse
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <div class="section-header" id="audit-history">
+        <div class="section-header__content">
+            <h2 class="section-header__title">Histórico completo</h2>
+            <p class="section-header__description">Consulte os eventos registrados e filtre os resultados.</p>
+        </div>
+    </div>
+
     <form method="GET" action="{{ route('audit.index') }}" class="toolbar audit-filters" id="audit-filters-form">
         <div class="form-field">
             <label class="form-label" for="filter-period">Período</label>
@@ -117,13 +198,13 @@
                             $badge = $presenter->resultBadge($event->result);
                         @endphp
                         <tr>
-                            <td>{{ app(\App\Services\InstanceTimezone::class)->format($event->created_at, 'd/m/Y H:i') }}</td>
-                            <td>{{ $presenter->actorLabel($event->actor) }}</td>
-                            <td>{{ $presenter->actionLabel($event->action) }}</td>
-                            <td>{{ $presenter->resourceTypeLabel($event->resource_type) }} @if($event->resource_label)· <code class="tech-value">{{ $event->resource_label }}</code>@endif</td>
-                            <td><span class="badge badge--{{ $badge['variant'] }}">{{ $badge['label'] }}</span></td>
-                            <td>{{ $event->ip_address ?? '—' }}</td>
-                            <td><a class="btn btn--ghost btn--sm" href="{{ route('audit.show', $event) }}">ver</a></td>
+                            <td data-label="Data/hora">{{ app(\App\Services\InstanceTimezone::class)->format($event->created_at, 'd/m/Y H:i') }}</td>
+                            <td data-label="Usuário">{{ $presenter->actorLabel($event->actor) }}</td>
+                            <td data-label="Ação">{{ $presenter->actionLabel($event->action) }}</td>
+                            <td data-label="Recurso">{{ $presenter->resourceTypeLabel($event->resource_type) }} @if($event->resource_label)· <code class="tech-value">{{ $event->resource_label }}</code>@endif</td>
+                            <td data-label="Resultado"><span class="badge badge--{{ $badge['variant'] }}">{{ $badge['label'] }}</span></td>
+                            <td data-label="IP">{{ $event->ip_address ?? '—' }}</td>
+                            <td data-label="Detalhes"><a class="btn btn--ghost btn--sm" href="{{ route('audit.show', $event) }}">Ver</a></td>
                         </tr>
                     @endforeach
                 </tbody>

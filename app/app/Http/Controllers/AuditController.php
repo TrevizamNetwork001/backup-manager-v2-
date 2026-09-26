@@ -50,7 +50,24 @@ class AuditController extends Controller
         $results = AuditEvent::query()->select('result')->distinct()->orderBy('result')->pluck('result');
         $users = User::query()->orderBy('name')->get(['id', 'name']);
 
-        return view('audit.index', compact('events', 'filters', 'actions', 'resourceTypes', 'results', 'users'));
+        $since24h = CarbonImmutable::now('UTC')->subDay();
+        $failedAuth = AuditEvent::query()->where('action', 'auth.login_failed');
+        $security = [
+            'failed_10m' => (clone $failedAuth)->where('created_at', '>=', CarbonImmutable::now('UTC')->subMinutes(10))->count(),
+            'failed_24h' => (clone $failedAuth)->where('created_at', '>=', $since24h)->count(),
+            'distinct_ips' => (clone $failedAuth)->where('created_at', '>=', $since24h)
+                ->whereNotNull('ip_address')->where('ip_address', '!=', '')->distinct()->count('ip_address'),
+            'top_ips' => (clone $failedAuth)->where('created_at', '>=', $since24h)
+                ->select('ip_address')->selectRaw('COUNT(*) as attempts, MAX(created_at) as last_at')
+                ->groupBy('ip_address')->orderByDesc('attempts')->limit(5)->get(),
+            'top_accounts' => (clone $failedAuth)->where('created_at', '>=', $since24h)
+                ->select('resource_label')->selectRaw('COUNT(*) as attempts, COUNT(DISTINCT ip_address) as ips, MAX(created_at) as last_at')
+                ->groupBy('resource_label')->orderByDesc('attempts')->limit(5)->get(),
+            'recent' => AuditEvent::query()->whereIn('action', ['auth.login', 'auth.login_failed'])
+                ->orderByDesc('id')->limit(20)->get(),
+        ];
+
+        return view('audit.index', compact('events', 'filters', 'actions', 'resourceTypes', 'results', 'users', 'security'));
     }
 
     public function show(AuditEvent $auditEvent): View
