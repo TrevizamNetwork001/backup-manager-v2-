@@ -69,22 +69,28 @@
     </div>
     <section class="reference-panel backup-health-panel">
         <div class="reference-panel__heading">
-            <div><h2>Saúde dos backups</h2><p>Equipamentos ativos classificados pelo histórico e pela frequência dos backups.</p></div>
+            <h2>Saúde dos backups</h2>
             <a href="{{ route('backup-health.index') }}">Ver equipamentos →</a>
         </div>
-        <div class="backup-health-counts">
-            @foreach (['healthy' => ['Em dia', 'healthy'], 'warning' => ['Atenção', 'warning'], 'critical' => ['Crítico', 'critical'], 'unknown' => ['Sem histórico', 'unknown']] as $status => [$label, $class])
-                <div class="backup-health-count backup-health-count--{{ $class }}"><span>{{ $label }}</span><strong>{{ $backupHealth['counts'][$status] }}</strong></div>
-            @endforeach
-        </div>
-        @if ($backupHealth['problem_devices_total'] > 0)
-            <div class="backup-health-preview">
-                <strong>Precisam de acompanhamento</strong>
-                @foreach (array_slice($backupHealth['problem_devices'], 0, 3) as $device)
-                    <span>{{ $device['name'] }} <small>{{ ['warning' => 'Atenção', 'critical' => 'Crítico', 'unknown' => 'Sem histórico'][$device['status']] ?? $device['status'] }}</small></span>
+        <div class="backup-health-summary">
+            <dl class="backup-health-statuses">
+                @foreach (['healthy' => 'Em dia', 'warning' => 'Atenção', 'critical' => 'Crítico', 'unknown' => 'Sem histórico'] as $status => $label)
+                    <div><dt><i class="backup-health-dot backup-health-dot--{{ $status }}"></i>{{ $label }}</dt><dd>{{ $backupHealth['counts'][$status] }}</dd></div>
                 @endforeach
+            </dl>
+            <div class="backup-health-affected">
+                <h3>Precisam de acompanhamento</h3>
+                @if ($backupHealth['problem_devices_total'] > 0)
+                    <ul>
+                        @foreach (array_slice($backupHealth['problem_devices'], 0, 3) as $device)
+                            <li><span>{{ $device['name'] }}</span><small>{{ ['warning' => 'Atenção', 'critical' => 'Crítico', 'unknown' => 'Sem histórico'][$device['status']] ?? $device['status'] }}</small></li>
+                        @endforeach
+                    </ul>
+                @else
+                    <p>Nenhum equipamento precisa de acompanhamento.</p>
+                @endif
             </div>
-        @endif
+        </div>
     </section>
     <div class="dashboard-bottom">
         <section class="reference-panel">
