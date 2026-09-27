@@ -122,6 +122,19 @@ class SpontaneousTests(unittest.TestCase):
         self.assertEqual({'processing_retry_exhausted'}, {item['reason'] for item in self.sidecars()})
         self.assertEqual([], self.completed)
 
+    def test_in_progress_suffix_is_never_claimed_even_once_stable(self):
+        # STABILIZATION-1 (P1, V1 lesson): a well-known "still transferring"
+        # suffix must be skipped at discovery, independent of the stability
+        # window — otherwise a stalled transfer could go stable mid-upload.
+        for suffix in ('.part', '.tmp', '.partial', '.filepart', '.upload'):
+            (self.home / ('stuck' + suffix)).write_bytes(FIXTURE.read_bytes())
+        self.settle()
+        self.assertEqual([], self.completed)
+        self.assertEqual([], self.failed)
+        self.assertEqual({}, self.receipts)
+        self.assertEqual(5, len(list(self.home.iterdir())))
+        self.assertEqual([], list(Path(self.ftp.name, 'processing').iterdir()))
+
     def test_restart_recovers_claim_after_completion_failure(self):
         (self.home / 'restart.cfg').write_bytes(FIXTURE.read_bytes())
         self.scan()

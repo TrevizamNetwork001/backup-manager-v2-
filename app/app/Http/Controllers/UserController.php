@@ -7,6 +7,7 @@ use App\Services\AuditEvents;
 use App\Support\Rbac;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
 use Illuminate\Validation\ValidationException;
@@ -78,18 +79,21 @@ class UserController extends Controller
             'role' => ['required', Rule::in(Rbac::ROLES)],
         ]);
 
-        if ($validated['role'] !== $user->role && $user->isLastActiveAdmin()) {
-            throw ValidationException::withMessages([
-                'role' => 'Não é possível rebaixar o último administrador ativo.',
-            ]);
-        }
+        $oldRole = DB::transaction(function () use ($user, $validated) {
+            // STABILIZATION-1 (P1): lock every active-admin row before checking,
+            // for the same reason as status() below — two concurrent requests
+            // demoting/disabling different admins must serialize here, not both
+            // see "someone else is still admin" and both proceed.
+            $this->assertNotLastActiveAdminDemotion($user, $validated['role']);
+            $oldRole = $user->role;
+            $user->fill([
+                'name' => $validated['name'],
+                'email' => $validated['email'],
+                'role' => $validated['role'],
+            ])->save();
 
-        $oldRole = $user->role;
-        $user->fill([
-            'name' => $validated['name'],
-            'email' => $validated['email'],
-            'role' => $validated['role'],
-        ])->save();
+            return $oldRole;
+        });
 
         if ($oldRole !== $user->role) {
             $audit->record('user.role_changed', 'user', (string) $user->id, $user->name, 'success', [
@@ -121,15 +125,14 @@ class UserController extends Controller
             ]);
         }
 
-        if (! $validated['is_active'] && $user->isLastActiveAdmin()) {
-            throw ValidationException::withMessages([
-                'is_active' => 'Não é possível desativar o último administrador ativo.',
-            ]);
-        }
+        $oldStatus = DB::transaction(function () use ($user, $validated) {
+            $this->assertNotLastActiveAdminDisable($user, $validated['is_active']);
+            $oldStatus = $user->is_active ? 'active' : 'disabled';
+            $user->is_active = $validated['is_active'];
+            $user->save();
 
-        $oldStatus = $user->is_active ? 'active' : 'disabled';
-        $user->is_active = $validated['is_active'];
-        $user->save();
+            return $oldStatus;
+        });
 
         $audit->record($validated['is_active'] ? 'user.enabled' : 'user.disabled', 'user',
             (string) $user->id, $user->name, 'success', [
@@ -141,6 +144,40 @@ class UserController extends Controller
 
         return redirect()->route('users.index')
             ->with('success', $user->is_active ? 'Usuário ativado.' : 'Usuário desativado.');
+    }
+
+    /**
+     * Must be called inside the same DB::transaction() that performs the
+     * save. Locks every active-admin row first so two concurrent requests
+     * touching different admins serialize instead of both reading "someone
+     * else is still admin" before either commits (STABILIZATION-1 P1: this
+     * previously let two admins disable/demote each other at the same
+     * moment and leave zero active admins).
+     */
+    private function lockedActiveAdmins(): \Illuminate\Support\Collection
+    {
+        return User::query()->where('role', Rbac::ROLE_ADMIN)->where('is_active', true)
+            ->lockForUpdate()->get(['id']);
+    }
+
+    private function assertNotLastActiveAdminDemotion(User $user, string $newRole): void
+    {
+        $activeAdmins = $this->lockedActiveAdmins();
+        $current = User::query()->lockForUpdate()->findOrFail($user->id);
+        if ($newRole !== $current->role && $current->role === Rbac::ROLE_ADMIN && $current->is_active &&
+            $activeAdmins->where('id', '!=', $current->id)->isEmpty()) {
+            throw ValidationException::withMessages(['role' => 'Não é possível rebaixar o último administrador ativo.']);
+        }
+    }
+
+    private function assertNotLastActiveAdminDisable(User $user, bool $newActive): void
+    {
+        $activeAdmins = $this->lockedActiveAdmins();
+        $current = User::query()->lockForUpdate()->findOrFail($user->id);
+        if (! $newActive && $current->role === Rbac::ROLE_ADMIN && $current->is_active &&
+            $activeAdmins->where('id', '!=', $current->id)->isEmpty()) {
+            throw ValidationException::withMessages(['is_active' => 'Não é possível desativar o último administrador ativo.']);
+        }
     }
 
     public function resetPassword(Request $request, User $user, AuditEvents $audit): RedirectResponse

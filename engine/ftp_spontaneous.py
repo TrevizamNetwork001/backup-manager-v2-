@@ -16,6 +16,19 @@ from storage import analyze_content, store, validate_received_file_integrity
 
 TOKEN = re.compile(r'[a-f0-9]{32}\.json\Z')
 
+# STABILIZATION-1 (P1 finding, V1 lesson): discovery previously relied only on
+# the size/mtime stability window below — a file that lands with one of these
+# well-known "still transferring" suffixes (some FTP clients/servers use them
+# for an in-flight upload, then rename atomically on completion) could go
+# stable mid-transfer if the transfer stalls for longer than stable_seconds,
+# and get claimed/stored as a "succeeded" truncated backup. V1
+# (backup_manager/ftp_pipeline.py TEMP_SUFFIXES) filters these at discovery
+# time in addition to its own stability window — same defense-in-depth here.
+# This is a discovery-time skip, not a rejection: a file with one of these
+# suffixes is simply never considered until (if ever) it's renamed away from
+# it, exactly like a dotfile is already skipped by RESERVED/safe_name.
+IN_PROGRESS_SUFFIXES = ('.part', '.tmp', '.partial', '.filepart', '.upload')
+
 
 def safe_name(name):
     try:
@@ -271,6 +284,8 @@ def scan(root_name, storage_root, stable_seconds, observed, expected, receive, c
             key = (str(home), path.name)
             if account.get('purpose') == 'backup' and RESERVED.fullmatch(path.name):
                 continue  # Reserved for the manual diagnostic receiver.
+            if path.name.lower().endswith(IN_PROGRESS_SUFFIXES):
+                continue  # Still transferring — never tracked/claimed by name alone.
             try:
                 info = path.lstat()
             except FileNotFoundError:

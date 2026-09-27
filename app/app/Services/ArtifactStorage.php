@@ -21,25 +21,18 @@ class ArtifactStorage
     {
         $job = $artifact->backupExecution;
         $relative = $artifact->relative_path;
-        $expected = $job ? app(EngineJobService::class)->relativePath($job) : null;
-        // Historical artifacts retain their original extension if the device vendor changes.
-        $expectedStem = $expected ? substr($expected, 0, strrpos($expected, '.')) : null;
-        $validPaths = [];
-        if ($job) {
-            foreach (['rsc', 'cfg', 'dat'] as $extension) {
-                $validPaths[] = $expectedStem.'.'.$extension;
-                $validPaths[] = $expectedStem.'-exec-'.$job->id.'.'.$extension;
-                // Existing backups keep the path used before friendly names were introduced.
-                if ($extension !== 'dat') {
-                    $validPaths[] = $job->device_id.'/'.($job->created_at?->format('Y/m/d') ?? now()->format('Y/m/d')).
-                        '/execution-'.$job->id.'-config.'.$extension;
-                }
-            }
-        }
+        // STABILIZATION-1 fix: this used to recompute the "expected" path from
+        // the device/site's *current* name (via EngineJobService::relativePath())
+        // and require an exact match. Renaming a device or site afterwards made
+        // every historical artifact of that device fail verification forever
+        // (retention could never delete them again, manual deletion was blocked)
+        // — a silent, permanent disk-growth bug. relative_path is set once, only
+        // by the engine completion flow, never user-editable; the shape regex
+        // below (traversal/character/format confinement) plus the ownership and
+        // content-hash checks are sufficient without depending on a mutable name.
         if (! $job || $artifact->device_id !== $job->device_id ||
             $artifact->backup_policy_id !== $job->backup_policy_id ||
             $artifact->storage !== 'local' || $artifact->type !== 'config' ||
-            ! in_array($relative, $validPaths, true) ||
             ! preg_match('~\A(?:Backup Manager/[A-Z0-9-]+/[A-Z0-9-]+/[0-9]{2}-[0-9]{2}-[0-9]{4}/[A-Z0-9-]+_[0-9]{14}(?:-exec-[1-9][0-9]*)?\.(?:rsc|cfg|dat)|[1-9][0-9]*/[0-9]{4}/[0-9]{2}/[0-9]{2}/execution-[1-9][0-9]*-config\.(?:rsc|cfg))\z~D', $relative)) {
             return ['result' => 'invalid_path'];
         }

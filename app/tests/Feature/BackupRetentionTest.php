@@ -261,6 +261,24 @@ class BackupRetentionTest extends TestCase
         $this->get(route('backup-executions.show', $old->backupExecution))->assertOk()->assertSee('A execução permanece concluída com sucesso.')->assertDontSee('secret-never-display');
     }
 
+    public function test_renaming_device_or_site_after_the_fact_does_not_break_retention(): void
+    {
+        // STABILIZATION-1 regression: ArtifactStorage::verify() used to
+        // recompute the expected path from the device/site's *current* name —
+        // renaming either made every historical artifact of that device
+        // "invalid_path" forever, so retention could never delete them again.
+        $source = $this->source(30);
+        $old = $this->artifact($source, 40);
+        $old->backupExecution->device->update(['name' => 'Novo Nome do Equipamento']);
+        $old->backupExecution->device->site->update(['name' => 'Novo Nome do Site']);
+        $new = $this->artifact($source, 2);
+        $summary = $this->retention(true);
+        $this->assertSame(0, $summary['anomalies']);
+        $this->assertSame(1, $summary['deleted']);
+        $this->assertFileDoesNotExist($this->path($old));
+        $this->assertFileExists($this->path($new));
+    }
+
     public function test_scheduler_registration_uses_configured_time_and_instance_timezone(): void
     {
         config()->set('backup.retention_enabled', true);
