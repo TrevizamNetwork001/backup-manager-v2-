@@ -59,24 +59,17 @@ sucesso, race de last-admin) foram corrigidos durante esta própria fase.
 Ordenado por prioridade (P1 = deveria ser tratado logo; P2 = importante mas
 não urgente):
 
-- **P1** — Execução recebida via FTP (`origin=ftp_received`) que precisa de
-  retry (engine caiu entre o recebimento e a conclusão) é reclamada por
-  `claim()` sem filtro de origem, cai em `UNSUPPORTED_POLICY` no
-  `backup_engine.py::execute()` (que não sabe lidar com esse fluxo fora do
-  caminho de recebimento direto), e o upload originalmente válido acaba
-  quarentenado. Precisa de um guard explícito para não reclamar execuções
-  `ftp_received` pelo caminho de claim genérico.
+- **P1 resolvido na fase de relatórios** — `claim()` agora exclui
+  `origin=ftp_received`, inclusive em `retry_wait`; o receiver FTP é o único
+  responsável por retomar esse fluxo. Coberto em `EngineRetryTest`.
 - **P2** — Arquivo já gravado por `store()` fica órfão (sem `BackupArtifact`)
   se `engine:complete` falhar por timeout/erro depois do `store()` ter
   sucesso, tanto no fluxo manual quanto no espontâneo de FTP. Retention não
   limpa esses órfãos hoje.
-- **P2** — Sidecar de metadata FTP corrompido/imparseável retry para sempre
-  a cada ciclo de scan (5s) sem nunca contar para o teto de
-  `MAX_PROCESSING_RETRIES` — o mesmo caso que o teto foi criado para evitar,
-  só que pela porta dos fundos.
-- **P2** — `FtpAccountDeletionService::assertIdle()` não considera
-  `retry_wait` como "execução ainda viva" — uma conta FTP pode ser
-  desativada/apagada enquanto uma execução dela ainda pode ser reclamada.
+- **P2 resolvido na fase de relatórios** — sidecar FTP inválido é
+  quarentenado imediatamente, encerrando o retry sem fim.
+- **P2 resolvido na fase de relatórios** — `assertIdle()` inclui `retry_wait`
+  e bloqueia exclusão da conta enquanto a execução estiver viva.
 - **P2** — Recepção manual de FTP pode colocar em quarentena um upload
   espontâneo legítimo que esteja no mesmo diretório de incoming no mesmo
   instante (leitura concorrente de diretório).
@@ -87,12 +80,8 @@ não urgente):
   `audit_events` por artifact (o total agregado por execução já vai, desde
   esta fase). Não há caminho de recuperação (nem manual) para um artifact
   marcado `deleted`/`missing` que na verdade ainda existe.
-- **P2** — Permissão `backup_artifacts.download` existe e é concedida a três
-  papéis, mas não existe rota/ação que efetivamente baixe um artifact.
-- **P2** — `InstanceTimezone::get()` roda uma query a cada chamada, sem
-  memoização por request — múltiplas dezenas de queries extras por página em
-  listagens com datas formatadas por linha (execuções, auditoria, artifacts,
-  usuários).
+- **P2 resolvido na fase de relatórios** — a rota/ação de download de
+  artifact foi acrescentada e `InstanceTimezone::get()` usa cache por request.
 - **P2** — Gráfico do dashboard roda uma query por dia (até 31) carregando
   linhas inteiras para contar status em PHP; uma única `GROUP BY` resolveria.
 - **P2** — Reset de senha por admin não invalida sessões/`remember_token`
@@ -104,17 +93,14 @@ não urgente):
 
 ## FUTURO (fora de escopo desta fase, não descartado)
 
-- **Relatórios/exportação** (equipamentos com falha/continuidade, storage,
-  FTP, export CSV/XLSX/PDF) — identificado na exploração do V1 como a maior
-  lacuna funcional real; o usuário confirmou interesse nesta prioridade.
+- **Relatórios/exportação** — cinco relatórios e CSV foram entregues nesta
+  fase (ver `docs/REPORTS.md`); XLSX/PDF continuam como extensões futuras.
 - **Lixeira com prazo de graça** na retenção (soft-delete + restauração
   self-service) — dívida documentada desde o ENGINE-1, reavaliada nesta fase
   e mantida como futura (retenção atual já é TOCTOU-safe e auditada; falta a
   UX de recuperação).
-- **Metadata de versão RouterOS/VRP** no `analyze()` — extraível do próprio
-  `/export`/`display current-configuration` já coletado, sem comando SSH
-  extra; não implementado ainda porque `analyze()` não é chamado no caminho
-  SSH em produção hoje (só nos testes e no caminho FTP).
+- **Metadata de versão RouterOS/VRP** — versão RouterOS do `/export` agora
+  é extraída e auditada sem comando extra; VRP continua futuro.
 - **Export/import de configuração da instância** (clonar ambiente, DR de
   config) — identificado na exploração do V1.
 - **Notificações**: janela de manutenção e digest programado — identificado
