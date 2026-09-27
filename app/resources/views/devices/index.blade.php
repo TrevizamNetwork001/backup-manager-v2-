@@ -51,37 +51,53 @@
                 <thead>
                     <tr>
                         <th>Equipamento</th>
-                        <th>IP</th>
-                        <th>Vendor / Modelo</th>
                         <th>Site / POP</th>
+                        <th>Vendor / Modelo</th>
+                        <th>Método / política</th>
+                        <th>Último backup</th>
+                        <th>Saúde</th>
                         <th>Status</th>
                         <th class="table-actions-column">Ações</th>
                     </tr>
                 </thead>
                 <tbody>
                     @foreach($devices as $device)
+                        @php($health = $healthByDevice->get($device->id))
                         <tr data-list-row="devices-rows" data-search="{{ mb_strtolower($device->name.' '.$device->hostname.' '.$device->management_ip.' '.$device->vendor.' '.$device->model.' '.$device->site->name) }}">
-                            <td>
+                            <td data-label="Equipamento">
                                 <div class="entity-cell">
                                     <span class="entity-cell__title">{{ $device->name }}</span>
-                                    @if($device->hostname)<span class="entity-cell__meta">{{ $device->hostname }}</span>@endif
+                                    <span class="entity-cell__meta tech-value">{{ $device->hostname ? $device->hostname.' · ' : '' }}{{ $device->management_ip }}</span>
                                 </div>
                             </td>
-                            <td><span class="tech-value">{{ $device->management_ip }}</span></td>
-                            <td>
-                                <div class="entity-cell">
-                                    <span class="entity-cell__title">{{ $device->vendor }}</span>
-                                    @if($device->model)<span class="entity-cell__meta">{{ $device->model }}</span>@endif
-                                </div>
-                            </td>
-                            <td>
+                            <td data-label="Site / POP">
                                 <div class="entity-cell">
                                     <span class="entity-cell__title">{{ $device->site->name }}</span>
                                     @if($device->site->code)<span class="entity-cell__meta">{{ $device->site->code }}</span>@endif
                                 </div>
                             </td>
-                            <td><span class="badge badge--{{ $device->is_active ? 'success' : 'neutral' }}">{{ $device->is_active ? 'Ativo' : 'Inativo' }}</span></td>
-                            <td>
+                            <td data-label="Vendor / Modelo">
+                                <div class="entity-cell">
+                                    <span class="entity-cell__title">{{ $device->vendor }}</span>
+                                    @if($device->model)<span class="entity-cell__meta">{{ $device->model }}</span>@endif
+                                </div>
+                            </td>
+                            <td data-label="Método / política">
+                                <div class="entity-cell">
+                                    <span class="entity-cell__title">{{ ($health['method'] ?? null) === 'ftp_push' ? 'FTP Push' : (($health['method'] ?? null) === 'ssh_pull' ? 'SSH Pull' : '—') }}</span>
+                                    <span class="entity-cell__meta">{{ $health['policy_name'] ?? ($device->is_active ? 'Sem política ativa' : 'Não avaliado') }}</span>
+                                </div>
+                            </td>
+                            <td data-label="Último backup" class="tech-value">{{ $health && $health['last_backup_at'] ? app(\App\Services\InstanceTimezone::class)->format(\Illuminate\Support\Carbon::parse($health['last_backup_at']), 'd/m/Y H:i') : '—' }}</td>
+                            <td data-label="Saúde">
+                                @if($health)
+                                    <span class="badge badge--{{ \App\Support\HealthStatus::from($health['status'])->badgeVariant() }}">{{ \App\Support\HealthStatus::from($health['status'])->label() }}</span>
+                                @else
+                                    <span class="badge badge--neutral">Não avaliado</span>
+                                @endif
+                            </td>
+                            <td data-label="Status"><span class="badge badge--{{ $device->is_active ? 'success' : 'neutral' }}">{{ $device->is_active ? 'Ativo' : 'Inativo' }}</span></td>
+                            <td data-label="Ações">
                                 <details class="row-menu"><summary>Ações</summary><div class="table-actions">
                                     @can('devices.manage')
                                         <a href="{{ route('devices.edit', $device) }}" class="btn btn--ghost btn--sm">Editar</a>
@@ -97,7 +113,7 @@
                             </td>
                         </tr>
                     @endforeach
-                    <tr data-list-empty="devices-rows" hidden><td colspan="6" class="empty-table">Nenhum equipamento nesta página corresponde à busca.</td></tr>
+                    <tr data-list-empty="devices-rows" hidden><td colspan="8" class="empty-table">Nenhum equipamento nesta página corresponde à busca.</td></tr>
                 </tbody>
             </table>
         </div>

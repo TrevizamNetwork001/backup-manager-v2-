@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Device;
 use App\Models\Site;
+use App\Services\DeviceBackupHealth;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -14,15 +15,18 @@ use Illuminate\View\View;
 
 class DeviceController extends Controller
 {
-    public function index(): View
+    public function index(DeviceBackupHealth $backupHealth): View
     {
         $this->authorize('devices.view');
         $devices = Device::query()
             ->with('site')
             ->orderBy('name')
             ->paginate(20);
+        $healthByDevice = collect($backupHealth->rows())
+            ->whereIn('device_id', $devices->pluck('id')->all())
+            ->keyBy('device_id');
 
-        return view('devices.index', compact('devices'));
+        return view('devices.index', compact('devices', 'healthByDevice'));
     }
 
     public function create(): View

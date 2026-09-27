@@ -167,6 +167,21 @@ class DeviceBackupHealthTest extends TestCase
             ->assertDontSee($inactive->name);
     }
 
+    public function test_device_list_uses_existing_health_rows_and_marks_inactive_devices_unassessed(): void
+    {
+        $active = $this->deviceWithPolicy('1', 'daily');
+        $this->succeed($active, now()->subHours(2));
+        $inactive = $this->deviceWithPolicy('2', 'daily');
+        $inactive->update(['is_active' => false]);
+
+        $this->actingAs(User::factory()->viewer()->create());
+        $this->get(route('devices.index'))->assertOk()
+            ->assertSee('Policy 1')
+            ->assertSee('SSH Pull')
+            ->assertSee('Saudável')
+            ->assertSee('Não avaliado');
+    }
+
     public function test_affected_device_list_includes_devices_beyond_first_page(): void
     {
         foreach (range(1, 21) as $number) {

@@ -46,14 +46,14 @@ Responsividade alvo: 1920, 1366, 1280, tablet e mobile. Nenhum painel pode depen
 - Login: preservado o desenho em duas colunas já existente; removidos o botão de recuperação sem rota própria e textos de rodapé sem destino; erros associados aos inputs. O link administrativo para redefinir senha continua em Usuários.
 - Shell: navegação com RBAC existente, atalho de teclado para conteúdo e menu mobile recolhível. O topbar deixou de declarar saúde operacional sem ler um check real.
 - Dashboard: mantém métricas, gráfico, execuções e FTP com dados reais; o painel de saúde dos backups saiu conforme solicitação. A página de saúde dos backups tem link próprio no menu, sob `dashboard.view`.
-- Sites e Equipamentos: busca rápida na página atual, vazio de filtro e ações secundárias recolhidas. A busca não altera a paginação do servidor.
+- Sites e Equipamentos: busca rápida na página atual, vazio de filtro e ações secundárias recolhidas. A lista de Equipamentos usa `DeviceBackupHealth::rows()` para método, política, último backup e saúde reais; inativos são marcados “Não avaliado”. Em tela ampla usa tabela ajustada à largura; abaixo de 1500 px usa cards sem rolagem horizontal, conforme feedback do operador. A busca não altera a paginação do servidor.
 - Execuções: tabela operacional mostra hora, equipamento, política, método, status, duração, tentativa e erro. O detalhe ainda preserva timestamps e contexto completos.
 - Artefatos e criação de usuário: mudanças encontradas no working tree foram preservadas e usadas como base. O detalhe oferece download somente ao perfil autorizado e quando o status é disponível; a rota ainda verifica o arquivo. Exclusão de artifact permanece apenas no detalhe, com preview e frase de confirmação.
 - FTP: diagnóstico técnico da lista recolhido; finalidades e recebimento permanecem visíveis. O detalhe já recolhia chroot e PureDB.
 - Saúde do sistema: cada check mostra o status imediatamente e a mensagem ao expandir. Os demais painéis continuam somente leitura.
 - Relatórios, Auditoria, RBAC, Configurações e formulários: componentes e permissões existentes foram mantidos. Configurações só oferece Timezone porque as demais áreas não têm formulário nesta versão.
 
-O V2 não possui rota de detalhe geral do equipamento; a edição reúne dados gerais e o fluxo Huawei/FTP. A fase visual não cria essa rota nem duplica a lógica de saúde para preencher a lista. Método, política, último backup e saúde por equipamento estão disponíveis no relatório de equipamentos e na página de saúde, com os filtros atuais.
+O V2 não possui rota de detalhe geral do equipamento; a edição reúne dados gerais e o fluxo Huawei/FTP. A fase visual não cria essa rota nem duplica a lógica de saúde. A lista usa a classificação existente; o relatório de equipamentos e a página de saúde oferecem filtros e mais contexto.
 
 ## Validação e limites
 
