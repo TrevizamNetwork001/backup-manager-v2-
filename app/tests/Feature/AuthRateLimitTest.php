@@ -52,4 +52,39 @@ class AuthRateLimitTest extends TestCase
         $this->post(route('login.store'), ['email' => $user->email, 'password' => 'ValidPassword123!'])
             ->assertRedirect(route('dashboard'));
     }
+
+    public function test_login_accepts_a_unique_user_name(): void
+    {
+        $user = User::factory()->admin()->create(['name' => 'Operador Backup', 'password' => 'ValidPassword123!']);
+
+        $this->post(route('login.store'), ['email' => 'Operador Backup', 'password' => 'ValidPassword123!'])
+            ->assertRedirect(route('dashboard'));
+        $this->assertAuthenticatedAs($user);
+    }
+
+    public function test_login_rejects_an_ambiguous_user_name(): void
+    {
+        User::factory()->admin()->create(['name' => 'Operador Backup', 'password' => 'ValidPassword123!']);
+        User::factory()->admin()->create(['name' => 'Operador Backup', 'password' => 'ValidPassword123!']);
+
+        $this->post(route('login.store'), ['email' => 'Operador Backup', 'password' => 'ValidPassword123!'])
+            ->assertSessionHasErrors('email');
+        $this->assertGuest();
+    }
+
+    public function test_login_keeps_the_public_proxy_port_in_form_and_redirect(): void
+    {
+        $user = User::factory()->admin()->create(['password' => 'ValidPassword123!']);
+        $this->withServerVariables([
+            'HTTP_HOST' => 'backup.trevizamnetwork.com.br',
+            'HTTP_X_FORWARDED_PROTO' => 'https',
+            'HTTP_X_FORWARDED_PORT' => '8443',
+            'REMOTE_ADDR' => '127.0.0.1',
+        ]);
+
+        $this->get('/login')
+            ->assertSee('action="https://backup.trevizamnetwork.com.br:8443/login"', false);
+        $this->post('/login', ['email' => $user->email, 'password' => 'ValidPassword123!'])
+            ->assertRedirect('https://backup.trevizamnetwork.com.br:8443');
+    }
 }

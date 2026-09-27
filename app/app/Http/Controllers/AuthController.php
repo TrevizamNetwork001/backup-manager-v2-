@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\User;
 use App\Services\AuditEvents;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -18,9 +19,16 @@ class AuthController extends Controller
     public function store(Request $request, AuditEvents $audit): RedirectResponse
     {
         $credentials = $request->validate([
-            'email' => ['required', 'email'],
+            'email' => ['required', 'string', 'max:255'],
             'password' => ['required', 'string'],
         ]);
+
+        $identifier = $credentials['email'];
+        if (! filter_var($identifier, FILTER_VALIDATE_EMAIL)) {
+            // Names are not unique, so only an unambiguous match can sign in.
+            $matches = User::query()->where('name', $identifier)->limit(2)->pluck('email');
+            $credentials['email'] = $matches->count() === 1 ? $matches->first() : $identifier;
+        }
 
         // A single generic failure message is used for both "wrong credentials"
         // and "account disabled" so the response never discloses which case it is.
@@ -29,7 +37,7 @@ class AuthController extends Controller
             ->onlyInput('email');
 
         if (! Auth::attempt($credentials, $request->boolean('remember'))) {
-            $audit->record('auth.login_failed', 'user', null, $credentials['email'], 'failed', [], null, $request->ip());
+            $audit->record('auth.login_failed', 'user', null, $identifier, 'failed', [], null, $request->ip());
             return $genericFailure();
         }
 
@@ -38,7 +46,7 @@ class AuthController extends Controller
             $request->session()->invalidate();
             $request->session()->regenerateToken();
 
-            $audit->record('auth.login_failed', 'user', null, $credentials['email'], 'failed', [], null, $request->ip());
+            $audit->record('auth.login_failed', 'user', null, $identifier, 'failed', [], null, $request->ip());
             return $genericFailure();
         }
 
