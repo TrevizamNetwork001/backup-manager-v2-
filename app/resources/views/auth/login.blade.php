@@ -21,7 +21,16 @@
     <div class="login-shell">
         <section class="login-intro" aria-label="Backup Manager">
             <div class="login-brand">
-                <div class="login-brand__mark" aria-hidden="true"><svg viewBox="0 0 84 98"><path d="M42 3 80 17v27c0 26-15 43-38 51C19 87 4 70 4 44V17L42 3Z"/><ellipse cx="42" cy="32" rx="16" ry="7"/><path d="M26 32v24c0 4 7 7 16 7s16-3 16-7V32M26 40c0 4 7 7 16 7s16-3 16-7M26 48c0 4 7 7 16 7s16-3 16-7"/></svg></div>
+                <div class="login-brand__mark" aria-hidden="true">
+                    <svg viewBox="0 0 84 98">
+                        <path class="login-brand__shield" d="M42 3 80 17v27c0 26-15 43-38 51C19 87 4 70 4 44V17L42 3Z"/>
+                        <g class="login-brand__database">
+                            <ellipse cx="42" cy="32" rx="18" ry="8"/>
+                            <path d="M24 38C24 46 60 46 60 38V46C60 54 24 54 24 46Z"/>
+                            <path d="M24 50C24 58 60 58 60 50V58C60 66 24 66 24 58Z"/>
+                        </g>
+                    </svg>
+                </div>
                 <div class="login-brand__type"><div class="login-brand__name">Backup <span>Manager</span></div><div class="login-brand__subtitle">INFRASTRUCTURE BACKUP</div></div>
             </div>
             <div class="login-intro__copy"><h1>Proteção e controle<br>para a continuidade<br>do seu negócio.</h1><p>Gerencie seus backups, equipamentos e políticas<br class="login-desktop-break"> de forma centralizada, segura e confiável.</p></div>
@@ -53,7 +62,15 @@
         </section>
     </div>
 </main>
-<footer class="login-footer"><div class="login-footer__inner">Produto Trevizam Network · Backup Manager V2</div></footer>
+<footer class="login-footer">
+    <div class="login-footer__inner">
+        <div class="login-footer__brand">
+            <svg viewBox="0 0 44 44" aria-hidden="true"><path d="m24 15-8 12m13-10 5 14m-16 1 12 4"/><circle cx="27" cy="10" r="7"/><circle cx="11" cy="31" r="7"/><circle cx="36" cy="36" r="7"/></svg>
+            <span>Produto da <strong>Trevizam Network</strong></span>
+        </div>
+        <p class="login-footer__tagline">Infraestrutura e conectividade para um futuro mais seguro.</p>
+    </div>
+</footer>
 <script>
 function toggleLoginPassword(button) {
     const field = document.getElementById('password');
