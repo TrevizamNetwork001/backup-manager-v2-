@@ -17,6 +17,13 @@ return Application::configure(basePath: dirname(__DIR__))
         // The deletion confirmation is compared byte for byte, including edge whitespace.
         TrimStrings::skipWhen(fn (Request $request) => $request->isMethod('DELETE') && $request->is('ftp/accounts/*'));
         $middleware->alias(['active' => EnsureUserIsActive::class]);
+        // The app always sits behind at least one operator-controlled reverse
+        // proxy (host nginx terminating TLS, then the container's own nginx) —
+        // both are infrastructure we control, never a public/untrusted hop.
+        // Without this, url()/asset() and $request->ip() (used by audit
+        // logging) read the proxy's own address/scheme instead of the real
+        // client's, regardless of X-Forwarded-* headers being sent correctly.
+        $middleware->trustProxies(at: '*');
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->dontFlash(['secret']);
