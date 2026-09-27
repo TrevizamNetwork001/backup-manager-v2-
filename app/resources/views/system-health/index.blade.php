@@ -150,15 +150,15 @@
     </div>
     <div class="grid grid--3 system-health-checks">
         @foreach ($report['checks'] as $check)
-            <article class="card system-health-check">
-                <div class="card__header">
+            <details class="card system-health-check">
+                <summary class="card__header">
                     <h3 class="card__title">{{ $labels[$check['check']] ?? $check['check'] }}</h3>
                     <span class="badge badge--{{ $statusOf($check['status'])->badgeVariant() }}">{{ $statusOf($check['status'])->label() }}</span>
-                </div>
+                </summary>
                 <div class="card__body">
                     <p class="card__description">{{ $check['message'] }}</p>
                 </div>
-            </article>
+            </details>
         @endforeach
     </div>
 

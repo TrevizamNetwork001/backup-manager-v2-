@@ -143,7 +143,7 @@ class DeviceBackupHealthTest extends TestCase
         $this->assertSame([], $summary['problem_devices']);
     }
 
-    public function test_dashboard_and_detail_list_distinguish_backup_health_from_device_activation(): void
+    public function test_backup_health_is_available_in_dedicated_page_without_dashboard_panel(): void
     {
         $scheduled = $this->deviceWithPolicy('1', 'daily');
         $manual = $this->deviceWithPolicy('2', 'manual');
@@ -155,12 +155,8 @@ class DeviceBackupHealthTest extends TestCase
         $this->actingAs(User::factory()->viewer()->create());
         $this->get(route('dashboard'))->assertOk()
             ->assertSee('Saúde dos backups')
-            ->assertSee('Ver equipamentos')
-            ->assertViewHas('backupHealth', function (array $health) use ($scheduled, $manual) {
-                return $health['counts'] === ['healthy' => 1, 'warning' => 0, 'critical' => 1, 'unknown' => 1]
-                    && $health['problem_devices_total'] === 2
-                    && collect($health['problem_devices'])->pluck('device_id')->sort()->values()->all() === [$scheduled->id, $manual->id];
-            });
+            ->assertDontSee('Precisam de acompanhamento')
+            ->assertViewMissing('backupHealth');
 
         $this->get(route('backup-health.index'))->assertOk()
             ->assertSee($scheduled->name)

@@ -135,7 +135,18 @@ class ArtifactDeletionTest extends TestCase
         $this->actingAs(User::factory()->viewer()->create());
         $artifact = $this->artifact($this->source());
 
-        $this->get(route('backup-artifacts.show', $artifact))->assertOk()->assertDontSee('Excluir artefato');
+        $this->get(route('backup-artifacts.show', $artifact))->assertOk()
+            ->assertDontSee('Excluir artefato')
+            ->assertSee('Baixar arquivo');
+    }
+
+    public function test_auditor_does_not_see_download_action(): void
+    {
+        $this->actingAs(User::factory()->auditor()->create());
+        $artifact = $this->artifact($this->source());
+
+        $this->get(route('backup-artifacts.show', $artifact))->assertOk()
+            ->assertDontSee('Baixar arquivo');
     }
 
     // PREVIEW

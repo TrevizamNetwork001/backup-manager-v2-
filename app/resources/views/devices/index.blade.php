@@ -12,7 +12,7 @@
     </div>
     <div class="page-header__actions">
         @can('devices.manage')
-            <a href="{{ route('devices.create') }}" class="btn btn--primary"><x-icon name="add" size="sm" /> Novo Equipamento</a>
+            <a href="{{ route('devices.create') }}" class="btn btn--primary"><x-icon name="add" size="sm" /> Novo equipamento</a>
         @endcan
     </div>
 </header>
@@ -31,6 +31,9 @@
         <div class="toolbar__primary">
             <span class="toolbar__count"><strong>{{ $devices->total() }}</strong> {{ $devices->total() === 1 ? 'equipamento cadastrado' : 'equipamentos cadastrados' }}</span>
         </div>
+        @unless($devices->isEmpty())
+            <label class="list-search">Buscar nesta página <input class="form-control" type="search" data-list-search="devices-rows" placeholder="Nome, IP, vendor ou site"></label>
+        @endunless
     </div>
 
     @if($devices->isEmpty())
@@ -57,7 +60,7 @@
                 </thead>
                 <tbody>
                     @foreach($devices as $device)
-                        <tr>
+                        <tr data-list-row="devices-rows" data-search="{{ mb_strtolower($device->name.' '.$device->hostname.' '.$device->management_ip.' '.$device->vendor.' '.$device->model.' '.$device->site->name) }}">
                             <td>
                                 <div class="entity-cell">
                                     <span class="entity-cell__title">{{ $device->name }}</span>
@@ -79,7 +82,7 @@
                             </td>
                             <td><span class="badge badge--{{ $device->is_active ? 'success' : 'neutral' }}">{{ $device->is_active ? 'Ativo' : 'Inativo' }}</span></td>
                             <td>
-                                <div class="table-actions">
+                                <details class="row-menu"><summary>Ações</summary><div class="table-actions">
                                     @can('devices.manage')
                                         <a href="{{ route('devices.edit', $device) }}" class="btn btn--ghost btn--sm">Editar</a>
                                     @endcan
@@ -90,10 +93,11 @@
                                             <button type="submit" class="btn btn--ghost btn--sm table-actions__danger">Remover</button>
                                         </form>
                                     @endcan
-                                </div>
+                                </div></details>
                             </td>
                         </tr>
                     @endforeach
+                    <tr data-list-empty="devices-rows" hidden><td colspan="6" class="empty-table">Nenhum equipamento nesta página corresponde à busca.</td></tr>
                 </tbody>
             </table>
         </div>

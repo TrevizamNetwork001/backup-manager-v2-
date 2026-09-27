@@ -37,7 +37,7 @@
         @endforeach
         <tr id="ftp-empty-row" @unless($accounts->isEmpty()) hidden @endunless><td colspan="6">Nenhuma conta FTP encontrada.</td></tr>
         </tbody></table></div>
-        <p class="ftp-note"><x-icon name="info" /> O servidor aplica um único perfil global no próprio chroot. Distribuição de firmware ainda não está disponível.</p>
+        <details class="ftp-note"><summary>Detalhes do serviço FTP</summary><p>O servidor aplica um único perfil global no próprio chroot. Distribuição de firmware ainda não está disponível.</p></details>
     </section>
 </div>
 @can('ftp.manage')

@@ -11,7 +11,7 @@
             ['Equipamentos', $deviceCount, 'Total cadastrados', 'devices.index', 'server', 'sky'],
             ['Backups (24h)', $successCount, 'Execuções concluídas', 'backup-executions.index', 'file', 'green'],
             ['Falhas (24h)', $failureCount, 'Execuções com erro', 'backup-executions.index', 'error', 'red'],
-            ['Artefatos', $artifactCount, 'Arquivos armazenados', 'backup-artifacts.index', 'folder', 'amber']
+            ['Artefatos', $artifactCount, 'Arquivos armazenados', 'backup-artifacts.index', 'folder', 'slate']
         ] as [$label, $value, $detail, $route, $icon, $color])
             <a class="reference-stat" href="{{ route($route) }}"><span class="reference-stat__icon {{ $color }}"><x-icon :name="$icon" /></span><span><small>{{ $label }}</small><strong>{{ number_format($value, 0, ',', '.') }}</strong><em>{{ $detail }}</em></span></a>
         @endforeach
@@ -67,31 +67,6 @@
             </dl>
         </section>
     </div>
-    <section class="reference-panel backup-health-panel">
-        <div class="reference-panel__heading">
-            <h2>Saúde dos backups</h2>
-            <a href="{{ route('backup-health.index') }}">Ver equipamentos →</a>
-        </div>
-        <div class="backup-health-summary">
-            <dl class="backup-health-statuses">
-                @foreach (['healthy' => 'Em dia', 'warning' => 'Atenção', 'critical' => 'Crítico', 'unknown' => 'Sem histórico'] as $status => $label)
-                    <div><dt><i class="backup-health-dot backup-health-dot--{{ $status }}"></i>{{ $label }}</dt><dd>{{ $backupHealth['counts'][$status] }}</dd></div>
-                @endforeach
-            </dl>
-            <div class="backup-health-affected">
-                <h3>Precisam de acompanhamento</h3>
-                @if ($backupHealth['problem_devices_total'] > 0)
-                    <ul>
-                        @foreach (array_slice($backupHealth['problem_devices'], 0, 3) as $device)
-                            <li><span>{{ $device['name'] }}</span><small>{{ ['warning' => 'Atenção', 'critical' => 'Crítico', 'unknown' => 'Sem histórico'][$device['status']] ?? $device['status'] }}</small></li>
-                        @endforeach
-                    </ul>
-                @else
-                    <p>Nenhum equipamento precisa de acompanhamento.</p>
-                @endif
-            </div>
-        </div>
-    </section>
     <div class="dashboard-bottom">
         <section class="reference-panel">
             <div class="reference-panel__heading"><h2>Últimas execuções</h2><a href="{{ route('backup-executions.index') }}">Ver todas →</a></div>

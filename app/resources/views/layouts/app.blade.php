@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="{{ asset('assets/app.css') }}?v={{ filemtime(public_path('assets/app.css')) }}">
 </head>
 <body class="app-body {{ request()->routeIs('dashboard') ? 'dashboard-body' : '' }}">
+<a class="skip-link" href="#main-content">Ir para o conteúdo</a>
 <div class="app-shell">
 
     <aside class="sidebar">
@@ -19,7 +20,8 @@
             </div>
         </div>
 
-        <nav class="sidebar-nav">
+        <button type="button" class="sidebar-toggle" aria-controls="primary-navigation" aria-expanded="true">Menu</button>
+        <nav class="sidebar-nav" id="primary-navigation" aria-label="Navegação principal">
             <a href="{{ route('dashboard') }}" class="nav-link {{ request()->routeIs('dashboard') ? 'active' : '' }}">
                 <span class="nav-icon"><x-icon name="home" /></span>
                 Dashboard
@@ -62,6 +64,13 @@
             @endcan
 
             <div class="nav-section">Backup</div>
+
+            @can('dashboard.view')
+                <a href="{{ route('backup-health.index') }}" class="nav-link {{ request()->routeIs('backup-health.*') ? 'active' : '' }}">
+                    <span class="nav-icon"><x-icon name="check-circle" /></span>
+                    Saúde dos backups
+                </a>
+            @endcan
 
             @can('backup_policies.view')
                 <a href="{{ route('backup-policies.index') }}" class="nav-link {{ request()->routeIs('backup-policies.*') ? 'active' : '' }}">
@@ -139,7 +148,7 @@
         </div>
     </aside>
 
-    <main class="main-content">
+    <main class="main-content" id="main-content">
         @hasSection('page-header')
             @yield('page-header')
         @else
@@ -149,10 +158,7 @@
                 <p>@yield('page-description')</p>
             </div>
 
-            <div class="topbar-status">
-                <span class="status-dot"></span>
-                Sistema operacional
-            </div>
+            <div class="topbar-status">Painel de operações</div>
         </header>
         @endif
 
@@ -163,6 +169,40 @@
 
 </div>
 <script>
+    document.querySelectorAll('.sidebar-nav .nav-link.active').forEach(link => link.setAttribute('aria-current', 'page'));
+    const sidebarToggle = document.querySelector('.sidebar-toggle');
+    sidebarToggle?.setAttribute('aria-expanded', 'false');
+    sidebarToggle?.addEventListener('click', () => {
+        const expanded = sidebarToggle.getAttribute('aria-expanded') === 'true';
+        sidebarToggle.setAttribute('aria-expanded', String(!expanded));
+    });
+    document.querySelectorAll('[data-list-search]').forEach(input => {
+        const key = input.dataset.listSearch;
+        const rows = [...document.querySelectorAll(`[data-list-row="${key}"]`)];
+        const empty = document.querySelector(`[data-list-empty="${key}"]`);
+        input.addEventListener('input', () => {
+            const query = input.value.trim().toLocaleLowerCase('pt-BR');
+            let visible = 0;
+            rows.forEach(row => {
+                row.hidden = !row.dataset.search.includes(query);
+                if (!row.hidden) visible++;
+            });
+            if (empty) empty.hidden = visible !== 0;
+        });
+    });
+    document.querySelectorAll('form').forEach(form => {
+        if (form.method.toLowerCase() === 'get' || form.method.toLowerCase() === 'dialog') return;
+        form.addEventListener('submit', event => {
+            if (event.defaultPrevented) return;
+            if (form.dataset.submitting === 'true') { event.preventDefault(); return; }
+            form.dataset.submitting = 'true';
+            const button = event.submitter;
+            if (button && !button.name) {
+                button.classList.add('is-loading');
+                button.setAttribute('aria-busy', 'true');
+            }
+        });
+    });
     document.querySelectorAll('.alert--success[role="status"], .alert-success').forEach((notice) => {
         const dismiss = document.createElement('button');
         dismiss.type = 'button';

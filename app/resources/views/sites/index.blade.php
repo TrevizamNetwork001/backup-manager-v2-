@@ -32,6 +32,9 @@
     <div class="toolbar__primary">
         <span class="toolbar__count"><strong>{{ $sites->total() }}</strong> {{ $sites->total() === 1 ? 'local cadastrado' : 'locais cadastrados' }}</span>
     </div>
+    @unless($sites->isEmpty())
+        <label class="list-search">Buscar nesta página <input class="form-control" type="search" data-list-search="sites-rows" placeholder="Nome, código ou localização"></label>
+    @endunless
 </div>
 
     @if($sites->isEmpty())
@@ -68,7 +71,7 @@
 
                 <tbody>
                     @foreach($sites as $site)
-                        <tr>
+                        <tr data-list-row="sites-rows" data-search="{{ mb_strtolower($site->name.' '.$site->code.' '.$site->location.' '.$site->description) }}">
                             <td>
                                 <div class="entity-cell">
                                     <span class="entity-cell__title">{{ $site->name }}</span>
@@ -95,7 +98,7 @@
                             </td>
 
                             <td>
-                                <div class="table-actions">
+                                <details class="row-menu"><summary>Ações</summary><div class="table-actions">
                                     @can('sites.manage')
                                     <a href="{{ route('sites.edit', $site) }}" class="btn btn--ghost btn--sm">Editar</a>
                                     @endcan
@@ -111,10 +114,11 @@
                                         <button type="submit" class="btn btn--ghost btn--sm table-actions__danger">Remover</button>
                                     </form>
                                     @endcan
-                                </div>
+                                </div></details>
                             </td>
                         </tr>
                     @endforeach
+                    <tr data-list-empty="sites-rows" hidden><td colspan="5" class="empty-table">Nenhum site nesta página corresponde à busca.</td></tr>
                 </tbody>
             </table>
 

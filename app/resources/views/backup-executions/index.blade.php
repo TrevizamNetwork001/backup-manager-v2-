@@ -74,22 +74,27 @@
                 <table class="data-table">
                     <thead>
                         <tr>
-                            <th>ID</th><th>Equipamento</th><th>Política</th><th>Origem</th><th>Status</th>
-                            <th>Tentativa</th><th>Criado em</th><th>Iniciado em</th><th>Finalizado em</th>
+                            <th>Hora</th><th>Equipamento</th><th>Política</th><th>Método</th><th>Status</th>
+                            <th>Duração</th><th>Tentativa</th><th>Erro</th>
                         </tr>
                     </thead>
                     <tbody>
                         @foreach($executions as $execution)
+                            @php
+                                $duration = $execution->started_at && $execution->finished_at
+                                    ? max(0, (int) $execution->started_at->diffInSeconds($execution->finished_at)) : null;
+                                $statusLabel = ['succeeded' => 'Concluído', 'failed' => 'Erro', 'timed_out' => 'Tempo esgotado', 'running' => 'Em andamento', 'queued' => 'Na fila', 'pending' => 'Pendente', 'retry_wait' => 'Nova tentativa', 'cancelled' => 'Cancelado'][$execution->status] ?? $execution->status;
+                                $statusVariant = $execution->status === 'succeeded' ? 'success' : (in_array($execution->status, ['failed', 'timed_out'], true) ? 'danger' : (in_array($execution->status, ['retry_wait', 'running'], true) ? 'warning' : 'neutral'));
+                            @endphp
                             <tr>
-                                <td data-label="ID"><a class="btn btn--ghost btn--sm" href="{{ route('backup-executions.show', $execution) }}">#{{ $execution->id }}</a></td>
+                                <td data-label="Hora"><a class="table-action" href="{{ route('backup-executions.show', $execution) }}">{{ app(\App\Services\InstanceTimezone::class)->format($execution->started_at ?? $execution->created_at, 'd/m/Y H:i') }}</a><small class="entity-cell__meta">#{{ $execution->id }} · {{ $execution->origin === 'ftp_received' ? 'FTP recebido' : ucfirst($execution->origin) }}</small></td>
                                 <td data-label="Equipamento"><span class="entity-cell__title">{{ $execution->device->name }}</span></td>
                                 <td data-label="Política">{{ $execution->backupPolicy->name }}</td>
-                                <td data-label="Origem">{{ $execution->origin === 'ftp_received' ? 'FTP recebido' : ucfirst($execution->origin) }}</td>
-                                <td data-label="Status"><span class="badge badge--{{ $execution->status === 'succeeded' ? 'success' : ($execution->status === 'failed' ? 'danger' : 'neutral') }}">{{ strtoupper($execution->status) }}</span></td>
-                                <td data-label="Tentativa">{{ $execution->attempt }}</td>
-                                <td data-label="Criado em"><span class="tech-value">{{ app(\App\Services\InstanceTimezone::class)->format($execution->created_at, 'd/m/Y H:i') }}</span></td>
-                                <td data-label="Iniciado em"><span class="tech-value">{{ app(\App\Services\InstanceTimezone::class)->format($execution->started_at, 'd/m/Y H:i') ?? '—' }}</span></td>
-                                <td data-label="Finalizado em"><span class="tech-value">{{ app(\App\Services\InstanceTimezone::class)->format($execution->finished_at, 'd/m/Y H:i') ?? '—' }}</span></td>
+                                <td data-label="Método">{{ $execution->backupPolicy->method === 'ftp_push' ? 'FTP Push' : 'SSH Pull' }}</td>
+                                <td data-label="Status"><span class="badge badge--{{ $statusVariant }}">{{ $statusLabel }}</span></td>
+                                <td data-label="Duração" class="tech-value">{{ $duration === null ? '—' : (intdiv($duration, 3600) ? intdiv($duration, 3600).'h ' : '').intdiv($duration % 3600, 60).'m '.($duration % 60).'s' }}</td>
+                                <td data-label="Tentativa">{{ $execution->attempt }} / {{ $execution->max_attempts ?? '—' }}</td>
+                                <td data-label="Erro"><code>{{ $execution->error_code ?: '—' }}</code></td>
                             </tr>
                         @endforeach
                     </tbody>

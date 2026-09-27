@@ -2,17 +2,32 @@
 @section('title', 'Artefato #'.$backupArtifact->id.' — Backup Manager')
 @section('page-title', 'Artefato #'.$backupArtifact->id)
 @section('page-description', 'Metadados do export validado.')
+@section('page-header')
+<header class="page-header">
+    <div class="page-header__content">
+        <h1 class="page-header__title">Artefato #{{ $backupArtifact->id }}</h1>
+        <p class="page-header__description">Metadados do export validado.</p>
+    </div>
+    <div class="page-header__actions">
+        <a href="{{ route('backup-artifacts.index') }}" class="btn btn--secondary">Voltar aos artefatos</a>
+        @can('backup_artifacts.download')
+            @if($backupArtifact->status === 'available')<a href="{{ route('backup-artifacts.download', $backupArtifact) }}" class="btn btn--primary">Baixar arquivo</a>@endif
+        @endcan
+    </div>
+</header>
+@endsection
 @section('content')
-<div class="page-width stack">
+<div class="backup-artifacts-page stack">
 @if(session('success'))
     <div class="alert alert--success" role="status">{{ session('success') }}</div>
 @endif
-<article class="panel form-panel">
-    <div class="panel-header"><div><h2>Metadados</h2></div></div>
+<article class="card">
+    <div class="card__header"><div><h2 class="card__title">Metadados</h2><p class="card__description">Informações do arquivo e sua execução de origem.</p></div><span class="badge badge--{{ $backupArtifact->status === 'available' ? 'success' : ($backupArtifact->status === 'deleted' ? 'neutral' : 'warning') }}">{{ $backupArtifact->statusLabel() }}</span></div>
+    <div class="card__body artifact-details">
+    <p><strong>Arquivo:</strong> {{ $backupArtifact->original_filename ?: 'Artefato #'.$backupArtifact->id }}</p>
     <p><strong>Equipamento:</strong> {{ $backupArtifact->device->name }}</p>
     <p><strong>Política:</strong> {{ $backupArtifact->backupPolicy->name }}</p>
     <p><strong>Execução:</strong> <a href="{{ route('backup-executions.show', $backupArtifact->backup_execution_id) }}">#{{ $backupArtifact->backup_execution_id }}</a></p>
-    <p><strong>Estado:</strong> {{ $backupArtifact->statusLabel() }}</p>
     @if($backupArtifact->deleted_at)<p><strong>Removido em:</strong> {{ app(\App\Services\InstanceTimezone::class)->format($backupArtifact->deleted_at) }} · <strong>Motivo:</strong> {{ $backupArtifact->deletionReasonLabel() }}</p>@endif
     @if($backupArtifact->missing_at)<p><strong>Ausência detectada em:</strong> {{ app(\App\Services\InstanceTimezone::class)->format($backupArtifact->missing_at) }}</p>@endif
     <p><strong>Tipo:</strong> {{ $backupArtifact->type }} · <strong>Storage:</strong> {{ $backupArtifact->storage }}</p>
@@ -20,6 +35,7 @@
     <p><strong>SHA256:</strong> <code>{{ $backupArtifact->sha256 }}</code></p>
     <p><strong>Path relativo:</strong> <code>{{ $backupArtifact->relative_path }}</code></p>
     <p><strong>Validado em:</strong> {{ app(\App\Services\InstanceTimezone::class)->format($backupArtifact->validated_at) }}</p>
+    </div>
 
     @can('backup_artifacts.delete')
     <x-risk-zone description="Essa ação remove o arquivo físico do storage. A execução de backup permanecerá no histórico.">
