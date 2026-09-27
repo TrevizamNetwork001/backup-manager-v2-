@@ -12,9 +12,16 @@ class InstanceTimezone
 {
     public const DEFAULT = 'America/Sao_Paulo';
 
+    // FEATURES-FINAL-1 (P2 from CORE_STATUS): get() ran a fresh query on every
+    // call with no memoization — dozens of extra queries per page on any
+    // listing that formats a timestamp per row (executions, audit, artifacts,
+    // users, and now every report). Bound as a singleton (AppServiceProvider)
+    // so this cache is shared for the whole request, not just this instance.
+    private ?string $cached = null;
+
     public function get(): string
     {
-        return DB::table('application_settings')->where('id', 1)->value('timezone') ?? self::DEFAULT;
+        return $this->cached ??= DB::table('application_settings')->where('id', 1)->value('timezone') ?? self::DEFAULT;
     }
 
     public function set(string $timezone): void
@@ -26,6 +33,7 @@ class InstanceTimezone
         DB::table('application_settings')->where('id', 1)->update([
             'timezone' => $timezone, 'updated_at' => CarbonImmutable::now('UTC'),
         ]);
+        $this->cached = $timezone;
     }
 
     public function format(?CarbonInterface $timestamp, string $format = 'd/m/Y H:i:s'): ?string

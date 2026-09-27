@@ -263,6 +263,20 @@ class FtpDeletionTest extends TestCase
         $this->delete(route('ftp.delete', $account), ['mode' => 'account', 'confirmation' => 'EXCLUIR '.$account->username])->assertForbidden();
     }
 
+    public function test_account_deletion_is_blocked_while_execution_waits_for_retry(): void
+    {
+        $account = $this->account();
+        $job = $this->execution($account);
+        $job->update(['status' => 'retry_wait', 'next_attempt_at' => now()->addMinute()]);
+
+        $this->delete(route('ftp.delete', $account), [
+            'mode' => 'account', 'confirmation' => 'EXCLUIR '.$account->username,
+        ])->assertSessionHasErrors('mode');
+
+        $this->assertTrue($account->fresh()->is_active);
+        $this->assertSame('retry_wait', $job->fresh()->status);
+    }
+
     public function test_each_mode_accepts_only_its_exact_confirmation(): void
     {
         $prefixes = ['account' => 'EXCLUIR ', 'ftp_data' => 'EXCLUIR DADOS ', 'all' => 'APAGAR TUDO '];

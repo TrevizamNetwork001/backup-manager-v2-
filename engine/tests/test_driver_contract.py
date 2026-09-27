@@ -177,6 +177,19 @@ class MikroTikDriverTests(unittest.TestCase):
         result = self.driver.analyze(data)
         self.assertEqual([], result.warnings)
 
+    def test_analyze_extracts_only_version_from_existing_export_header(self):
+        data = (b'# jul/16/2026 by RouterOS 7.15.2\n# serial number = PRIVATE123\n'
+                b'/user add name=admin password=SuperSecret123\n')
+        result = self.driver.analyze(data)
+        self.assertEqual('7.15.2', result.version)
+        self.assertIn('contains_user_password', result.warnings)
+        self.assertNotIn('PRIVATE123', str(result.to_dict()))
+        self.assertNotIn('SuperSecret123', str(result.to_dict()))
+
+    def test_analyze_does_not_take_version_from_configuration_body(self):
+        data = b'# RouterOS export\n/system note set note="by RouterOS 99.9 secret"\n'
+        self.assertIsNone(self.driver.analyze(data).version)
+
 
 class HuaweiVrpDriverTests(unittest.TestCase):
     def setUp(self):

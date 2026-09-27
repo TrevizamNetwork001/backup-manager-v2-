@@ -52,6 +52,20 @@ class EngineRetryTest extends TestCase
         $this->assertSame('running', $claimed->status);
     }
 
+    public function test_generic_claim_skips_ftp_received_retry_and_queued_jobs(): void
+    {
+        $job = $this->queued();
+        $job->update(['origin' => 'ftp_received', 'status' => 'retry_wait', 'next_attempt_at' => now()->subSecond()]);
+
+        $engine = app(EngineJobService::class);
+        $this->assertNull($engine->claim());
+        $this->assertSame('retry_wait', $job->fresh()->status);
+
+        $job->update(['status' => 'queued', 'next_attempt_at' => null]);
+        $this->assertNull($engine->claim());
+        $this->assertSame('queued', $job->fresh()->status);
+    }
+
     public function test_second_attempt_uses_longer_backoff_and_third_failure_exhausts_attempts(): void
     {
         $job = $this->queued();

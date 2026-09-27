@@ -16,6 +16,7 @@ use App\Http\Controllers\SiteController;
 use App\Http\Controllers\SystemHealthController;
 use App\Http\Controllers\InstanceSettingsController;
 use App\Http\Controllers\OltFtpWizardController;
+use App\Http\Controllers\ReportController;
 use App\Http\Controllers\UserController;
 use Illuminate\Support\Facades\Route;
 
@@ -38,6 +39,20 @@ Route::middleware(['auth', 'active'])->group(function () {
     Route::put('settings', [InstanceSettingsController::class, 'update'])->name('settings.update');
     Route::get('audit', [AuditController::class, 'index'])->name('audit.index');
     Route::get('system/health', [SystemHealthController::class, 'index'])->name('system-health.index');
+
+    Route::prefix('reports')->name('reports.')->group(function () {
+        Route::get('/', [ReportController::class, 'index'])->name('index');
+        Route::get('executions', [ReportController::class, 'executions'])->name('executions');
+        Route::get('executions/export', [ReportController::class, 'executionsExport'])->name('executions.export');
+        Route::get('devices', [ReportController::class, 'devices'])->name('devices');
+        Route::get('devices/export', [ReportController::class, 'devicesExport'])->name('devices.export');
+        Route::get('artifacts', [ReportController::class, 'artifacts'])->name('artifacts');
+        Route::get('artifacts/export', [ReportController::class, 'artifactsExport'])->name('artifacts.export');
+        Route::get('failures', [ReportController::class, 'failures'])->name('failures');
+        Route::get('failures/export', [ReportController::class, 'failuresExport'])->name('failures.export');
+        Route::get('ftp', [ReportController::class, 'ftp'])->name('ftp');
+        Route::get('ftp/export', [ReportController::class, 'ftpExport'])->name('ftp.export');
+    });
     Route::get('audit/{auditEvent}', [AuditController::class, 'show'])->name('audit.show');
 
     Route::get('users', [UserController::class, 'index'])->name('users.index');
@@ -81,6 +96,7 @@ Route::middleware(['auth', 'active'])->group(function () {
     Route::post('backup-executions/{backup_execution}/cancel', [BackupExecutionController::class, 'cancel'])->name('backup-executions.cancel');
     Route::get('backup-artifacts', [BackupArtifactController::class, 'index'])->name('backup-artifacts.index');
     Route::get('backup-artifacts/{backup_artifact}', [BackupArtifactController::class, 'show'])->name('backup-artifacts.show');
+    Route::get('backup-artifacts/{backup_artifact}/download', [BackupArtifactController::class, 'download'])->name('backup-artifacts.download');
     Route::delete('backup-artifacts/{backup_artifact}', [BackupArtifactController::class, 'destroy'])->name('backup-artifacts.destroy');
 
     Route::post('/logout', [AuthController::class, 'destroy'])->name('logout');

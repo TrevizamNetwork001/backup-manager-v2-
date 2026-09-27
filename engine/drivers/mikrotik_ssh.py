@@ -183,7 +183,21 @@ def _analyze_routeros_export(data):
     if not data or not data.lstrip().startswith(b'#'):
         return AnalysisResult(status='unknown', vendor='mikrotik')
     warnings = [label for pattern, label in _SENSITIVE_EXPORT_MARKERS if pattern.search(data)]
-    return AnalysisResult(status='recognized', vendor='mikrotik', platform='network', warnings=warnings)
+    # Only inspect the leading comment header. Keep a validated version token,
+    # never a raw header line (which may contain serials or other identifiers).
+    header_lines = []
+    for line in data[:4096].splitlines():
+        if not line.lstrip().startswith(b'#'):
+            break
+        header_lines.append(line)
+    version = None
+    for line in header_lines:
+        match = re.search(rb'(?i)\bby RouterOS\s+([0-9]+(?:\.[0-9]+){1,3}(?:[A-Za-z0-9._-]{0,16})?)\b', line)
+        if match:
+            version = match.group(1).decode('ascii')
+            break
+    return AnalysisResult(status='recognized', vendor='mikrotik', platform='network',
+                          version=version, warnings=warnings)
 
 
 class MikroTikRouterOsSshDriver(BackupDriver):

@@ -254,7 +254,7 @@ class FtpAccountDeletionService
     private function assertIdle(FtpAccount $account): void
     {
         if (DB::table('ftp_received_files')->where('ftp_account_id', $account->id)->where('status', 'processing')->exists() ||
-            DB::table('backup_executions')->where('ftp_account_id', $account->id)->whereIn('status', ['pending', 'queued', 'running'])->exists()) {
+            DB::table('backup_executions')->where('ftp_account_id', $account->id)->whereIn('status', ['pending', 'queued', 'running', 'retry_wait'])->exists()) {
             throw ValidationException::withMessages(['mode' => 'Há processamento ou claim ativo. Tente novamente após a conclusão.']);
         }
     }

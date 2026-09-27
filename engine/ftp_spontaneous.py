@@ -256,6 +256,10 @@ def scan(root_name, storage_root, stable_seconds, observed, expected, receive, c
             if 'record' in locals() and isinstance(record, dict):
                 remember_failure(root_name, staged, metadata, record, error, receipt)
             else:
+                # An unreadable sidecar cannot be repaired by retrying. Preserve
+                # the staged bytes in quarantine and stop rescanning it forever.
+                quarantine(root_name, staged, 'metadata_invalid')
+                metadata.unlink(missing_ok=True)
                 logging.error(json.dumps({'event': 'ftp_metadata_invalid', 'claim_token': metadata.stem}))
         finally:
             record = None

@@ -25,6 +25,11 @@ class DashboardTimezoneTest extends TestCase
                 ->assertSee('22:32');
 
             DB::table('application_settings')->where('id', 1)->update(['timezone' => 'UTC']);
+            // InstanceTimezone is now a per-request singleton (FEATURES-FINAL-1
+            // N+1 fix) — a real second HTTP request would get a fresh instance
+            // automatically; simulating that here since this test reuses one
+            // container across two $this->get() calls.
+            $this->app->forgetInstance(\App\Services\InstanceTimezone::class);
             $this->get(route('dashboard'))->assertOk()
                 ->assertSee('Sábado, 26 de setembro de 2026')
                 ->assertSee('01:32');

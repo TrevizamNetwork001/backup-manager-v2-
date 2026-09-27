@@ -84,6 +84,13 @@
                 </a>
             @endcan
 
+            @can('reports.view')
+                <a href="{{ route('reports.index') }}" class="nav-link {{ request()->routeIs('reports.*') ? 'active' : '' }}">
+                    <span class="nav-icon"><x-icon name="check" /></span>
+                    Relatórios
+                </a>
+            @endcan
+
             @canany(['settings.view', 'audit.view', 'users.view', 'system_health.view'])
                 <div class="nav-section">Administração</div>
                 @can('system_health.view')

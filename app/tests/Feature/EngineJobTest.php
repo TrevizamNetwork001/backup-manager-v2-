@@ -188,7 +188,7 @@ class EngineJobTest extends TestCase
         $relative = $engine->relativePath($job);
         $this->assertMatchesRegularExpression('~\ABackup Manager/LABORATORIO/MK/[0-9]{2}-[0-9]{2}-[0-9]{4}/MK_[0-9]{14}\.rsc\z~', $relative);
         mkdir(dirname($root.'/'.$relative), 0700, true);
-        $contents = "# RouterOS 7\n/interface bridge\nadd name=bridge1\n";
+        $contents = "# jul/16/2026 by RouterOS 7.15.2\n# serial number = PRIVATE123\n/interface bridge\nadd name=bridge1\n/user add name=admin password=segredo-exportado\n";
         file_put_contents($root.'/'.$relative, $contents);
         try {
             $artifact = $engine->complete($job->id, $relative);
@@ -198,6 +198,12 @@ class EngineJobTest extends TestCase
             $this->assertSame(hash('sha256', $contents), $artifact->sha256);
             $this->assertSame('succeeded', $job->fresh()->status);
             $this->assertDatabaseHas('backup_artifacts', ['id' => $artifact->id]);
+            $analysis = DB::table('audit_events')->where('action', 'backup.content_analyzed')
+                ->where('resource_id', (string) $job->id)->first();
+            $this->assertNotNull($analysis);
+            $this->assertSame('7.15.2', json_decode($analysis->metadata, true)['version']);
+            $this->assertStringNotContainsString('PRIVATE123', $analysis->metadata);
+            $this->assertStringNotContainsString('segredo-exportado', $analysis->metadata);
             try { $engine->complete($job->id, $relative); $this->fail('Execução concluída foi reprocessada.'); }
             catch (ValidationException) { $this->assertDatabaseCount('backup_artifacts', 1); }
             try { DB::table('backup_executions')->where('id', $job->id)->delete(); $this->fail('Histórico apagado.'); }

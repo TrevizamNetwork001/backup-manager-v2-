@@ -17,7 +17,9 @@ class EngineJobService
     // this can't be a single shared source of truth across PHP/Python) plus two
     // codes that only ever originate on this side (ENGINE_STALE, ENGINE_TIMEOUT
     // — see recoverStale()). Keep both lists in sync by hand when either changes.
-    private const RETRYABLE_CODES = [
+    // Public: FailureReportQuery (FEATURES-FINAL-1) reuses this as the single
+    // canonical "is this retryable" list rather than declaring a third copy.
+    public const RETRYABLE_CODES = [
         'SSH_TIMEOUT', 'SSH_CONNECTION_REFUSED', 'SSH_CONNECT_FAILED', 'SSH_NEGOTIATION_FAILED',
         'FTP_RECEIVE_TIMEOUT', 'STORAGE_FAILED', 'ENGINE_FAILED', 'ENGINE_STALE', 'ENGINE_TIMEOUT',
     ];
@@ -82,6 +84,8 @@ class EngineJobService
         if (! preg_match('/\A[a-f0-9]{32}\z/D', $workerId)) throw new \InvalidArgumentException('Worker inválido.');
         $job = DB::transaction(function () use ($workerId) {
             $job = BackupExecution::query()
+                // FTP receipts are completed by the receiver, not by the generic SSH/FTP-push worker.
+                ->where('origin', '!=', 'ftp_received')
                 ->where(function ($query) {
                     $query->where('status', 'queued')
                         ->orWhere(function ($query) {
@@ -432,7 +436,7 @@ class EngineJobService
                 'relative_path' => $relative, 'original_filename' => $job->origin === 'ftp_received' ? $job->received_filename : basename($relative),
                 'size_bytes' => $size, 'sha256' => hash('sha256', $contents), 'validated_at' => now(),
             ]);
-            if ($payload['method'] === 'ftp_push') {
+            if ($payload['method'] === 'ftp_push' || ($vendor === 'mikrotik' && $payload['platform'] === 'network')) {
                 $analysisData = $contents;
                 $analysisVendor = $vendor;
                 $analysisPlatform = $payload['platform'];
@@ -460,6 +464,18 @@ class EngineJobService
 
     private function analyzeContent(string $contents, string $vendor, string $platform): array
     {
+        if ($vendor === 'mikrotik' && $platform === 'network' && str_starts_with(ltrim($contents), '#')) {
+            $header = '';
+            foreach (preg_split('/\R/', substr($contents, 0, 4096)) as $line) {
+                if (! str_starts_with(ltrim($line), '#')) break;
+                $header .= $line."\n";
+            }
+            $analysis = ['status' => 'recognized', 'message' => 'routeros_export'];
+            if (preg_match('/^#\s*[^\r\n]{0,120}\bby RouterOS\s+([0-9]+(?:\.[0-9]+){1,3}(?:[A-Za-z0-9._-]{0,16})?)\b/mi', $header, $matches)) {
+                $analysis['version'] = $matches[1];
+            }
+            return $analysis;
+        }
         if ($vendor === 'huawei' && $platform === 'olt' && mb_check_encoding($contents, 'UTF-8') &&
             str_contains($contents, '[!Software Version MA5800') && str_contains($contents, '[Saving time:') &&
             str_contains($contents, '[global-config]') && str_contains($contents, '<global-config>')) {

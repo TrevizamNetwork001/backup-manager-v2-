@@ -122,6 +122,21 @@ class SpontaneousTests(unittest.TestCase):
         self.assertEqual({'processing_retry_exhausted'}, {item['reason'] for item in self.sidecars()})
         self.assertEqual([], self.completed)
 
+    def test_corrupt_processing_sidecar_is_quarantined_once(self):
+        from ftp_spontaneous import scan
+        token = 'a' * 32
+        stage = Path(self.ftp.name, 'processing')
+        stage.mkdir(exist_ok=True)
+        (stage / token).write_bytes(FIXTURE.read_bytes())
+        (stage / (token + '.json')).write_text('{broken json')
+
+        scan(self.ftp.name, self.storage.name, 1, self.observed, [], self.receive,
+             self.complete, lambda *args: self.failed.append(args))
+
+        self.assertEqual([], list(stage.iterdir()))
+        self.assertEqual({'metadata_invalid'}, {item['reason'] for item in self.sidecars()})
+        self.assertEqual([], self.completed)
+
     def test_in_progress_suffix_is_never_claimed_even_once_stable(self):
         # STABILIZATION-1 (P1, V1 lesson): a well-known "still transferring"
         # suffix must be skipped at discovery, independent of the stability

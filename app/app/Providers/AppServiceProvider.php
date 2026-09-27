@@ -17,7 +17,15 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // Singleton so InstanceTimezone::get()'s per-instance cache (see that
+        // class) is shared across the whole request instead of a fresh
+        // (fresh-query) instance on every resolution — that was the actual
+        // N+1. In production this is safe because each php-fpm request boots
+        // a brand new container; a test that simulates two separate requests
+        // in one test method must explicitly forget the bound instance
+        // between them (see DashboardTimezoneTest) — scoped() would only do
+        // that automatically under Octane, which this app doesn't use.
+        $this->app->singleton(\App\Services\InstanceTimezone::class);
     }
 
     /**

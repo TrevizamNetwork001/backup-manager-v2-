@@ -23,17 +23,58 @@ class DeviceBackupHealth
 {
     public function summary(?int $limit = 20): array
     {
-        $devices = Device::query()->where('is_active', true)
-            ->with(['deviceBackupPolicies' => fn ($q) => $q->where('is_active', true)
-                ->with('backupPolicy:id,is_active,schedule_type')])
-            ->get(['id', 'name']);
-
-        if ($devices->isEmpty()) {
-            return ['counts' => ['healthy' => 0, 'warning' => 0, 'critical' => 0, 'unknown' => 0], 'problem_devices' => [], 'problem_devices_total' => 0];
+        $rows = $this->rows();
+        $counts = ['healthy' => 0, 'warning' => 0, 'critical' => 0, 'unknown' => 0];
+        $problems = [];
+        foreach ($rows as $row) {
+            $counts[$row['status']]++;
+            if ($row['status'] !== HealthStatus::Healthy->value) {
+                $problems[] = ['device_id' => $row['device_id'], 'name' => $row['name'],
+                    'status' => $row['status'], 'reason' => $row['reason']];
+            }
         }
 
-        $latestSuccess = DB::table('backup_executions')->select('device_id', DB::raw('MAX(created_at) as last_success_at'))
-            ->where('status', 'succeeded')->groupBy('device_id')->pluck('last_success_at', 'device_id');
+        usort($problems, fn ($a, $b) => HealthStatus::from($b['status'])->severity() <=> HealthStatus::from($a['status'])->severity());
+
+        return ['counts' => $counts, 'problem_devices' => $limit === null ? $problems : array_slice($problems, 0, $limit), 'problem_devices_total' => count($problems)];
+    }
+
+    /**
+     * Full per-device rows (FEATURES-FINAL-1 device report reuses this —
+     * "a fonte deve ser o mesmo serviço usado pelo health", never a second
+     * copy of the classify/streak logic). One row per active device, with
+     * last backup (any status), last success, last failure, artifact size,
+     * consecutive-failure streak and the same health classification as
+     * summary().
+     *
+     * @return list<array{device_id:int,name:string,site_id:?int,vendor:?string,model:?string,
+     *   method:?string,policy_name:?string,last_backup_at:?string,last_success_at:?string,
+     *   last_failure_at:?string,latest_artifact_size:?int,consecutive_failures:int,status:string,reason:string}>
+     */
+    public function rows(): array
+    {
+        $devices = Device::query()->where('is_active', true)
+            ->with(['deviceBackupPolicies' => fn ($q) => $q->where('is_active', true)
+                ->with('backupPolicy:id,is_active,schedule_type,method,name')])
+            ->get(['id', 'name', 'site_id', 'vendor', 'model']);
+
+        if ($devices->isEmpty()) {
+            return [];
+        }
+
+        $latestSuccess = DB::table('backup_executions')->select('device_id', DB::raw('MAX(created_at) as at'))
+            ->where('status', 'succeeded')->groupBy('device_id')->pluck('at', 'device_id');
+        $latestAny = DB::table('backup_executions')->select('device_id', DB::raw('MAX(created_at) as at'))
+            ->groupBy('device_id')->pluck('at', 'device_id');
+        $latestFailure = DB::table('backup_executions')->select('device_id', DB::raw('MAX(created_at) as at'))
+            ->whereIn('status', ['failed', 'timed_out'])->groupBy('device_id')->pluck('at', 'device_id');
+        $latestArtifact = collect(DB::select("
+            SELECT device_id, size_bytes FROM (
+                SELECT device_id, size_bytes,
+                       ROW_NUMBER() OVER (PARTITION BY device_id ORDER BY id DESC) AS rn
+                FROM backup_artifacts WHERE status = 'available'
+            ) ranked WHERE rn = 1
+        "))->keyBy('device_id');
 
         $sample = (int) config('health.device_recent_executions_sample');
         $recentByDevice = collect(DB::select('
@@ -46,22 +87,30 @@ class DeviceBackupHealth
             ORDER BY device_id, rn
         ', [$sample]))->groupBy('device_id');
 
-        $counts = ['healthy' => 0, 'warning' => 0, 'critical' => 0, 'unknown' => 0];
-        $problems = [];
+        $rows = [];
         foreach ($devices as $device) {
+            $association = $device->deviceBackupPolicies->first();
             $cadence = $this->dominantCadence($device->deviceBackupPolicies);
             $streak = $this->consecutiveFailureStreak($recentByDevice->get($device->id, collect()));
             [$status, $reason] = $this->classify($cadence, $latestSuccess[$device->id] ?? null, $streak);
-            $counts[$status->value]++;
-            if ($status !== HealthStatus::Healthy) {
-                $problems[] = ['device_id' => $device->id, 'name' => $device->name,
-                    'status' => $status->value, 'reason' => $reason];
-            }
+
+            $rows[] = [
+                'device_id' => $device->id, 'name' => $device->name, 'site_id' => $device->site_id,
+                'vendor' => $device->vendor, 'model' => $device->model,
+                'method' => $association?->backupPolicy?->method,
+                'policy_name' => $association?->backupPolicy?->name,
+                'has_policy' => $association !== null,
+                'last_backup_at' => $latestAny[$device->id] ?? null,
+                'last_success_at' => $latestSuccess[$device->id] ?? null,
+                'last_failure_at' => $latestFailure[$device->id] ?? null,
+                'latest_artifact_size' => $latestArtifact[$device->id]->size_bytes ?? null,
+                'consecutive_failures' => $streak,
+                'status' => $status->value,
+                'reason' => $reason,
+            ];
         }
 
-        usort($problems, fn ($a, $b) => HealthStatus::from($b['status'])->severity() <=> HealthStatus::from($a['status'])->severity());
-
-        return ['counts' => $counts, 'problem_devices' => $limit === null ? $problems : array_slice($problems, 0, $limit), 'problem_devices_total' => count($problems)];
+        return $rows;
     }
 
     private function dominantCadence($associations): ?string

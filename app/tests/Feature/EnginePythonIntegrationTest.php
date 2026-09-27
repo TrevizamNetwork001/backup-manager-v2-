@@ -60,7 +60,7 @@ class EnginePythonIntegrationTest extends TestCase
 
         // Now prove Laravel's own parser is happy with this exact real payload,
         // not a hand-written fixture that could drift from reality.
-        $snapshotPath = storage_path('app/test-engine-health-snapshot.json');
+        $snapshotPath = tempnam(sys_get_temp_dir(), 'engine-health-');
         file_put_contents($snapshotPath, $result->output());
         config()->set('backup.engine_health_snapshot_path', $snapshotPath);
         try {
@@ -75,7 +75,7 @@ class EnginePythonIntegrationTest extends TestCase
 
     public function test_a_stale_snapshot_is_reported_critical_not_silently_trusted(): void
     {
-        $snapshotPath = storage_path('app/test-engine-health-snapshot-stale.json');
+        $snapshotPath = tempnam(sys_get_temp_dir(), 'engine-health-stale-');
         file_put_contents($snapshotPath, json_encode([
             'engine_version' => '3.0.0', 'python_version' => '3.13.0', 'worker_id' => 'x',
             'pid' => 1, 'driver_count' => 0, 'drivers' => [], 'workspace_writable' => null,
@@ -93,7 +93,7 @@ class EnginePythonIntegrationTest extends TestCase
 
     public function test_a_malformed_snapshot_is_unknown_not_a_crash(): void
     {
-        $snapshotPath = storage_path('app/test-engine-health-snapshot-broken.json');
+        $snapshotPath = tempnam(sys_get_temp_dir(), 'engine-health-broken-');
         file_put_contents($snapshotPath, '{not valid json');
         config()->set('backup.engine_health_snapshot_path', $snapshotPath);
         try {
