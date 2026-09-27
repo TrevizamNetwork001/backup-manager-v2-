@@ -263,6 +263,24 @@ Artisan::command('backups:retention {--dry-run} {--apply}', function (BackupRete
     return $summary['errors'] > 0 ? 1 : 0;
 });
 
+Artisan::command('system:recovery-check {--json}', function (\App\Services\RecoveryCheck $check) {
+    $report = $check->run();
+    if ($this->option('json')) {
+        $this->line(json_encode($report));
+    } else {
+        $this->line('Status geral: '.strtoupper($report['overall_status']));
+        foreach ($report['checks'] as $item) {
+            $this->line(sprintf('- %-10s %-10s %s', $item['check'], strtoupper($item['status']), $item['message']));
+        }
+    }
+
+    return match ($report['overall_status']) {
+        'critical' => 2,
+        'warning' => 1,
+        default => 0,
+    };
+});
+
 Schedule::command('backups:schedule')->everyMinute()->withoutOverlapping();
 Schedule::command('engine:recover-stale')->everyMinute()->withoutOverlapping();
 if (config('backup.retention_enabled')) {
