@@ -43,7 +43,7 @@ if ($postgres && (config('database.connections.pgsql.host') !== $socket
     throw new RuntimeException('PostgreSQL is not the isolated PERF cluster.');
 }
 $mode = $argv[1] ?? 'jobs';
-if (! in_array($mode, ['jobs', 'same_device', 'status', 'scheduler', 'retention', 'retention_apply', 'stale', 'retry', 'cancel'], true)) {
+if (! in_array($mode, ['jobs', 'same_device', 'status', 'scheduler', 'retention', 'retention_apply', 'stale', 'retry', 'cancel', 'secret'], true)) {
     throw new InvalidArgumentException('Unknown PERF scenario.');
 }
 $retention = in_array($mode, ['retention', 'retention_apply'], true);
@@ -107,13 +107,26 @@ if ($mode !== 'scheduler') {
     }
 }
 touch($root.'/seeded');
+$worker = str_repeat('c', 32);
+if ($mode === 'secret') {
+    for ($i = 0; $i < $count; $i++) {
+        if (! $engine->claim($worker)) {
+            throw new RuntimeException('Secret probe could not claim synthetic job.');
+        }
+    }
+}
 $queries = [];
 DB::listen(function ($event) use (&$queries): void {
     $queries[] = ['ms' => $event->time, 'sql' => $event->sql];
 });
 $start = hrtime(true);
 $result = null;
-if ($mode === 'scheduler') {
+if ($mode === 'secret') {
+    foreach ($jobs as $id) {
+        $engine->secret($id, $worker);
+    }
+    $result = ['secrets_resolved' => count($jobs)];
+} elseif ($mode === 'scheduler') {
     $created = app(BackupScheduler::class)->run($clock);
     $duplicate = app(BackupScheduler::class)->run($clock);
     if ($created !== $count || $duplicate !== 0) {

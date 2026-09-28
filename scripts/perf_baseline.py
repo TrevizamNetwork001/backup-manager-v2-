@@ -213,7 +213,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--php', required=True)
     parser.add_argument('--output', type=Path, required=True)
-    parser.add_argument('--only', choices=['engine', 'control', 'ftp'])
+    parser.add_argument('--only', choices=['engine', 'control', 'ftp', 'secret'])
     parser.add_argument('--engine-cases', choices=['all', 'remaining'], default='all')
     parser.add_argument('--pg-socket', type=Path)
     parser.add_argument('--pg-bin', type=Path)
@@ -225,6 +225,8 @@ def main():
     logging.getLogger().setLevel(logging.CRITICAL)
     results = []
     scenarios = []
+    if args.only == 'secret':
+        scenarios += [('control', 'secret', 100)]
     if args.only in (None, 'engine'):
         scenarios += [('engine', n, .02, False) for n in ((100,) if args.engine_cases == 'remaining' else (20, 50, 100))]
         scenarios += [('engine', 20, 2., False), ('engine', 5, .1, True)]

@@ -6,6 +6,7 @@ use App\Models\BackupArtifact;
 use App\Models\BackupExecution;
 use App\Models\Device;
 use App\Models\FtpAccount;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
@@ -24,7 +25,6 @@ class EngineJobService
         'FTP_RECEIVE_TIMEOUT', 'STORAGE_FAILED', 'ENGINE_FAILED', 'ENGINE_STALE', 'ENGINE_TIMEOUT',
     ];
 
-
     public function receiveFtp(int $deviceId, string $token, string $filename, int $receivedAt, string $workerId): ?array
     {
         if (! preg_match('/\A[a-f0-9]{32}\z/D', $token) ||
@@ -33,6 +33,7 @@ class EngineJobService
             in_array($filename, ['.', '..'], true) || $receivedAt < 1) {
             throw new \InvalidArgumentException('Identidade FTP inválida.');
         }
+
         return DB::transaction(function () use ($deviceId, $token, $filename, $receivedAt, $workerId) {
             $existing = BackupExecution::query()->where('ftp_claim_token', $token)->lockForUpdate()->first();
             if ($existing) {
@@ -44,6 +45,7 @@ class EngineJobService
                     $existing->heartbeat_at = now();
                     $existing->save();
                 }
+
                 return ['id' => $existing->id, 'status' => $existing->status,
                     'relative_path' => $this->relativePath($existing), 'ftp_account_id' => $existing->ftp_account_id];
             }
@@ -60,6 +62,7 @@ class EngineJobService
             if (! $association) {
                 $hasFtpPolicy = $device->deviceBackupPolicies()->whereHas('backupPolicy',
                     fn ($query) => $query->where('method', 'ftp_push'))->exists();
+
                 return ['status' => 'rejected', 'error_code' => $hasFtpPolicy ? 'invalid_backup_policy' : 'missing_backup_policy',
                     'ftp_account_id' => $account->id];
             }
@@ -68,11 +71,12 @@ class EngineJobService
                 'device_backup_policy_id' => $association->id, 'backup_policy_id' => $association->backup_policy_id,
                 'device_id' => $deviceId, 'credential_id' => null, 'ftp_account_id' => $account->id,
                 'ftp_claim_token' => $token, 'received_filename' => $filename,
-                'received_at' => \Carbon\CarbonImmutable::createFromTimestamp($receivedAt, 'UTC'),
+                'received_at' => CarbonImmutable::createFromTimestamp($receivedAt, 'UTC'),
                 'processing_at' => $now, 'started_at' => $now, 'claimed_at' => $now,
                 'heartbeat_at' => $now, 'worker_id' => $workerId,
                 'origin' => 'ftp_received', 'status' => 'running', 'attempt' => 1,
             ]);
+
             return ['id' => $job->id, 'status' => $job->status, 'relative_path' => $this->relativePath($job),
                 'ftp_account_id' => $account->id];
         });
@@ -81,7 +85,9 @@ class EngineJobService
     public function claim(?string $workerId = null): ?BackupExecution
     {
         $workerId ??= bin2hex(random_bytes(16));
-        if (! preg_match('/\A[a-f0-9]{32}\z/D', $workerId)) throw new \InvalidArgumentException('Worker inválido.');
+        if (! preg_match('/\A[a-f0-9]{32}\z/D', $workerId)) {
+            throw new \InvalidArgumentException('Worker inválido.');
+        }
         $job = DB::transaction(function () use ($workerId) {
             $job = BackupExecution::query()
                 // FTP receipts are completed by the receiver, not by the generic SSH/FTP-push worker.
@@ -99,7 +105,9 @@ class EngineJobService
                         ->where('running_jobs.status', 'running');
                 })->orderBy('id')
                 ->lock('FOR UPDATE SKIP LOCKED')->first();
-            if (! $job) return null;
+            if (! $job) {
+                return null;
+            }
             $job->status = 'running';
             $job->started_at = now();
             $job->claimed_at = now();
@@ -107,11 +115,13 @@ class EngineJobService
             $job->worker_id = $workerId;
             $job->next_attempt_at = null;
             $job->save();
+
             return $job;
         });
         if ($job) {
             $this->audit('backup_execution.claimed', $job->id, 'success', ['attempt' => $job->attempt, 'origin' => $job->origin]);
         }
+
         return $job;
     }
 
@@ -119,9 +129,14 @@ class EngineJobService
     {
         $hasFtp = Schema::hasTable('ftp_accounts');
         $relations = ['device', 'backupPolicy', 'credential', 'association'];
-        if ($hasFtp) $relations[] = 'device.ftpAccount';
+        if ($hasFtp) {
+            $relations[] = 'device.ftpAccount';
+        }
         $job = BackupExecution::with($relations)->findOrFail($id);
-        if ($job->status !== 'running') throw new \RuntimeException('Job não está em execução.');
+        if ($job->status !== 'running') {
+            throw new \RuntimeException('Job não está em execução.');
+        }
+
         return [
             'id' => $job->id, 'device_id' => $job->device_id, 'policy_id' => $job->backup_policy_id,
             'host' => $job->device->management_ip, 'vendor' => $job->device->vendor,
@@ -151,10 +166,14 @@ class EngineJobService
     public function secret(int $id, ?string $workerId = null): string
     {
         $job = BackupExecution::with('credential')->findOrFail($id);
-        if ($workerId !== null && $job->worker_id !== $workerId) throw new \RuntimeException('Worker inválido.');
-        if (! $this->job($id)['eligible'] || $job->credential === null || $this->job($id)['method'] !== 'ssh_pull') {
+        if ($workerId !== null && $job->worker_id !== $workerId) {
+            throw new \RuntimeException('Worker inválido.');
+        }
+        $payload = $this->job($id);
+        if (! $payload['eligible'] || $job->credential === null || $payload['method'] !== 'ssh_pull') {
             throw new \RuntimeException('Credencial indisponível.');
         }
+
         return $job->credential->secret;
     }
 
@@ -168,12 +187,14 @@ class EngineJobService
         $deviceName = $this->safePathName($device->name, 'EQUIPAMENTO-'.$device->id);
         $timestamp = app(InstanceTimezone::class)->localNow($job->created_at)->format('YmdHis');
         $date = app(InstanceTimezone::class)->localNow($job->created_at)->format('d-m-Y');
+
         return 'Backup Manager/'.$siteName.'/'.$deviceName.'/'.$date.'/'.$deviceName.'_'.$timestamp.'.'.$extension;
     }
 
     private function safePathName(string $name, string $fallback): string
     {
         $safe = trim(preg_replace('/[^A-Za-z0-9]+/', '-', Str::ascii($name)), '-');
+
         return $safe === '' ? $fallback : rtrim(substr(strtoupper($safe), 0, 80), '-');
     }
 
@@ -182,6 +203,7 @@ class EngineJobService
         $base = $this->relativePath($job);
         $stem = substr($base, 0, strrpos($base, '.'));
         $extension = substr($base, strrpos($base, '.'));
+
         return $relative === $base || $relative === $stem.'-exec-'.$job->id.$extension;
     }
 
@@ -196,6 +218,7 @@ class EngineJobService
             return ['updated' => false, 'cancel_requested' => false];
         }
         BackupExecution::query()->whereKey($id)->update(['heartbeat_at' => now()]);
+
         return ['updated' => true, 'cancel_requested' => $job->cancellation_requested_at !== null];
     }
 
@@ -217,6 +240,7 @@ class EngineJobService
                 $job->finished_at = now();
                 $job->next_attempt_at = null;
                 $job->save();
+
                 return 'cancelled';
             }
             if ($job->status !== 'running') {
@@ -226,6 +250,7 @@ class EngineJobService
                 $job->cancellation_requested_at = now();
                 $job->save();
             }
+
             return 'cancel_requested';
         });
         $this->audit('backup_execution.'.$outcome, $id, 'success', [], $actorId);
@@ -264,7 +289,9 @@ class EngineJobService
                 throw new \RuntimeException('Execução indisponível.');
             }
             $device = Device::query()->lockForUpdate()->findOrFail($job->device_id);
-            if ($device->management_ip !== $host) throw new \RuntimeException('Endereço do equipamento alterado.');
+            if ($device->management_ip !== $host) {
+                throw new \RuntimeException('Endereço do equipamento alterado.');
+            }
             $device->ssh_observed_algorithm = $algorithm;
             $device->ssh_observed_fingerprint = $fingerprint;
             $device->ssh_observed_at = now();
@@ -315,11 +342,13 @@ class EngineJobService
                     $events[] = $this->recoveryEvent($job->id, $outcome, 'execution_timeout');
                 }
             }
+
             return $jobs->count();
         });
         foreach ($events as [$action, $id, $result, $metadata]) {
             $this->audit($action, $id, $result, $metadata);
         }
+
         return $recovered;
     }
 
@@ -340,6 +369,7 @@ class EngineJobService
             $job->error_message = $message;
             $job->worker_id = null;
             $job->save();
+
             return 'retry_scheduled';
         }
         $job->status = $terminalStatus;
@@ -348,13 +378,17 @@ class EngineJobService
         $job->error_message = $message;
         $job->worker_id = null;
         $job->save();
+
         return $terminalStatus;
     }
 
     private function backoffSeconds(int $nextAttempt): int
     {
         $schedule = config('backup.engine_retry_backoff_seconds');
-        if (isset($schedule[$nextAttempt])) return (int) $schedule[$nextAttempt];
+        if (isset($schedule[$nextAttempt])) {
+            return (int) $schedule[$nextAttempt];
+        }
+
         return (int) $schedule[max(array_keys($schedule))];
     }
 
@@ -367,7 +401,9 @@ class EngineJobService
 
     private function audit(string $action, int $executionId, string $result, array $metadata, ?int $actorId = null): void
     {
-        if (! Schema::hasTable('audit_events')) return;
+        if (! Schema::hasTable('audit_events')) {
+            return;
+        }
         app(AuditEvents::class)->record($action, 'backup_execution', (string) $executionId, null, $result, $metadata, $actorId);
     }
 
@@ -377,16 +413,21 @@ class EngineJobService
             throw new \RuntimeException('Caminho inválido.');
         }
         $root = realpath(config('backup.storage_root'));
-        if (! $root || $root === '/') throw new \RuntimeException('Raiz de armazenamento indisponível.');
+        if (! $root || $root === '/') {
+            throw new \RuntimeException('Raiz de armazenamento indisponível.');
+        }
         $cursor = $root;
         foreach (explode('/', $relative) as $part) {
             $cursor .= '/'.$part;
-            if (is_link($cursor)) throw new \RuntimeException('Link simbólico no caminho.');
+            if (is_link($cursor)) {
+                throw new \RuntimeException('Link simbólico no caminho.');
+            }
         }
         $file = realpath($root.'/'.$relative);
         if (! $file || ! str_starts_with($file, $root.'/') || ! is_file($file) || is_link($root.'/'.$relative)) {
             throw new \RuntimeException('Arquivo fora da raiz ou ausente.');
         }
+
         return $file;
     }
 
@@ -445,6 +486,7 @@ class EngineJobService
             $job->finished_at = now();
             $job->worker_id = null;
             $job->save();
+
             return $artifact;
         });
         $this->audit('backup_execution.succeeded', $id, 'success', []);
@@ -459,6 +501,7 @@ class EngineJobService
                 // Analysis is informational; a parser or audit failure cannot undo a stored backup.
             }
         }
+
         return $artifact;
     }
 
@@ -467,22 +510,27 @@ class EngineJobService
         if ($vendor === 'mikrotik' && $platform === 'network' && str_starts_with(ltrim($contents), '#')) {
             $header = '';
             foreach (preg_split('/\R/', substr($contents, 0, 4096)) as $line) {
-                if (! str_starts_with(ltrim($line), '#')) break;
+                if (! str_starts_with(ltrim($line), '#')) {
+                    break;
+                }
                 $header .= $line."\n";
             }
             $analysis = ['status' => 'recognized', 'message' => 'routeros_export'];
             if (preg_match('/^#\s*[^\r\n]{0,120}\bby RouterOS\s+([0-9]+(?:\.[0-9]+){1,3}(?:[A-Za-z0-9._-]{0,16})?)\b/mi', $header, $matches)) {
                 $analysis['version'] = $matches[1];
             }
+
             return $analysis;
         }
         if ($vendor === 'huawei' && $platform === 'olt' && mb_check_encoding($contents, 'UTF-8') &&
             str_contains($contents, '[!Software Version MA5800') && str_contains($contents, '[Saving time:') &&
             str_contains($contents, '[global-config]') && str_contains($contents, '<global-config>')) {
             $hasSysname = (bool) preg_match('/^\s*sysname\s+\S+/mi', $contents);
+
             return ['status' => $hasSysname ? 'recognized' : 'warning',
                 'message' => $hasSysname ? 'ma5800_config' : 'ma5800_without_sysname'];
         }
+
         return ['status' => 'unknown', 'message' => 'unrecognized_format'];
     }
 
@@ -508,20 +556,28 @@ class EngineJobService
             'FTP_STORAGE_FAILED' => 'Falha ao armazenar arquivo FTP.',
             'FTP_QUARANTINED' => 'Arquivo FTP movido para quarentena.',
         ];
-        if (! isset($messages[$code])) $code = 'ENGINE_FAILED';
+        if (! isset($messages[$code])) {
+            $code = 'ENGINE_FAILED';
+        }
         $outcome = DB::transaction(function () use ($id, $code, $messages, $workerId) {
             $job = BackupExecution::query()->lockForUpdate()->findOrFail($id);
-            if ($job->status !== 'running' || ($workerId !== null && $job->worker_id !== $workerId)) return null;
+            if ($job->status !== 'running' || ($workerId !== null && $job->worker_id !== $workerId)) {
+                return null;
+            }
             if ($job->cancellation_requested_at !== null) {
                 $job->status = 'cancelled';
                 $job->finished_at = now();
                 $job->worker_id = null;
                 $job->save();
+
                 return 'cancelled';
             }
+
             return $this->scheduleRetryOrFail($job, $code, $messages[$code], 'failed');
         });
-        if ($outcome === null) return;
+        if ($outcome === null) {
+            return;
+        }
         if ($outcome === 'retry_scheduled') {
             $this->audit('backup_execution.retry_scheduled', $id, 'success', ['code' => $code]);
         } elseif ($outcome === 'cancelled') {
