@@ -1,5 +1,9 @@
 # PERF-1 — baseline de carga e resiliência do engine/core
 
+**PERF-2 executado em 28/09/2026.** O PERF-1 abaixo permanece como histórico e
+referência BEFORE. A seção final registra as otimizações, AFTER, regressões,
+limites e validação completa. Nenhum serviço real foi reiniciado; sem push.
+
 Data: 28/09/2026. Checkout inicial: `f1850d2`; correções P1 em `f6a7395`,
 harness inicial em `5a3ef1c`. **PERF-1 fechado no escopo isolado e sintético.**
 Engine/Artisan, PostgreSQL/Redis, Pure-FTPd/FTPS e o receiver foram exercitados
@@ -434,3 +438,168 @@ Paramiko local 3.5.1 difere do pin 4.0.0. Redis sem persistência não testa res
 ou mutex residual. A retenção usa uma fonte e artifacts de 4.320 bytes.
 PERF-2 recebe os gargalos acima; nenhuma otimização P2 foi aplicada. Alterar ou
 medir o ambiente real continua exigindo confirmação. Sem push.
+
+## PERF-2 — otimizações e comparação
+
+Referência principal: PERF-1 acima, checkout `5096b7a`. Mesmo runtime isolado,
+PostgreSQL 17, quatro vCPUs, tmpfs e exports sintéticos; nenhum equipamento,
+credencial, arquivo, conta ou serviço de produção foi usado. Resultados detalhados
+em `perf_2_execution` de [PERFORMANCE_BASELINE_RESULTS.json](PERFORMANCE_BASELINE_RESULTS.json).
+Migrations/seed ficam fora do cronômetro. Comparações por otimização foram
+sequenciais; a primeira reprodução do engine coincidiu com seed de retenção e
+foi preservada apenas como observação, sem ser a referência canônica.
+
+### BEFORE / AFTER
+
+BEFORE é o fechamento PostgreSQL/FTPS do PERF-1. AFTER é a passagem final do
+PERF-2. Uma amostra por cenário, sem intervalo de confiança; os números menores
+do transporte variam entre passagens. P95 continua nearest rank.
+
+| Métrica / cenário | BEFORE | AFTER | Variação |
+| --- | --- | --- | --- |
+| 100 jobs, driver 20 ms: jobs/min | 108,32 | **255,95** | **+136,3%** |
+| 100 jobs: latência p95 | 47,11 s | **22,39 s** | −52,5% |
+| 100 jobs: queue wait p95 | 46,36 s | 21,57 s | −53,5% |
+| FTPS → receipt PostgreSQL, 40 uploads: files/s | 0,510 | **1,423** | +179,0% |
+| Receiver → PostgreSQL, mesmo lote: files/s | 0,969 | **22,437** | +2.215,4% |
+| FTPS → receipt: p95 do lote | 77,04 s | 28,07 s | −63,6% |
+| Retention 10k: dry-run | 2,227 s | **4,746 s** | **+113,1%: regressão** |
+| Retention 10k: apply | 29,759 s | **10,267 s** | **−65,5%** |
+| Retention: pico heap PHP, dry-run / apply | 104 / 108 MiB | **32 / 34 MiB** | −69,2% / −68,5% |
+| Retention dry-run: wall time do contender | 2,397 s | 0,058 s | −97,6%; AFTER sem Lock observado |
+| Retention apply: fase após aquisição de locks | 29,565 s | 10,147 s | −65,7% |
+| 100 jobs: subprocessos Artisan | 323 | **206** | −36,2% |
+| Receiver: subprocessos para callbacks de 40 uploads | 100 na reprodução | **1** | −99,0% |
+| `secret()`, 100 jobs: queries | 2.001 na reprodução | **1.101** | −45,0% |
+| Retention apply 10k: queries | 9.998 | **67** | −99,3% |
+| Retention dry-run 10k: queries | 9 | 47 | +422,2%; hidratação em páginas |
+| Engine: RSS Python / maior filho PHP individual | 41,4 / 52,5 MiB | 40,0 / 54,3 MiB | −3,4% / +3,5% |
+| Engine: waiters de lock amostrados | 0, observação parcial | 0, lote completo | amostragem a cada 50 ms |
+
+Heap de retenção é `memory_get_peak_usage(true)` em processo PHP novo; RSS do
+engine usa `ru_maxrss`, inclusive filhos, e não é a soma dos processos ativos.
+O pico amostrado de conexões do workload final de 100 jobs foi **5**, zero waiters
+de lock em 457 amostras. O sampler usa outra conexão no banco `postgres`, excluída
+desse número; o cluster sintético permite 40 conexões. Não se mediu um pool global
+de produção nem p95 de espera de lock. Os 0,058 s do contender incluem conexão e
+amostragem; não representam duração de lock. A fase de apply ainda pertence a uma
+transação por fonte, com locks acumulados até o commit.
+
+### Evidência por otimização
+
+1. **Receiver/Artisan:** uma sessão local via stdin/stdout executa os comandos
+   Laravel existentes e é fechada ao terminar o scan; há limite de 1.000 requests,
+   tamanho máximo, timeout e allowlist sem comandos de segredo. Não há regra de
+   negócio ou acesso SQL novo em Python. Reprodução anterior: upload 38,03 s,
+   scan 40,15 s, total 78,18 s. Primeira passagem validada: scan 1,875 s; final:
+   upload 26,31 s, scan 1,783 s, total 28,11 s. **O transporte/TLS não foi
+   otimizado**: a mudança comprovada é o custo do receiver, não a variação do
+   login/upload. Permanecem 20 succeeded/artifacts, 40 receipts/tokens únicos,
+   hashes/tamanhos corretos e zero processing pendente. Outage PostgreSQL depois
+   da publicação deixa sidecar; retorno produz 41 arquivos/receipts e 21 artifacts,
+   sem duplicação. Erro do transporte não é erro de integridade do arquivo: ele
+   preserva a retomada. Caches de filesystem e de timezone são renovados por request.
+2. **Queries de secret:** `job()` é resolvido uma vez por chamada, sem cache de
+   elegibilidade entre chamadas. 100 resoluções: 2,514 s/2.001 queries →
+   1,557 s/1.101 queries. Ownership, revogação de credencial e FD de segredo
+   continuam validados; nenhum segredo passa no JSON/stdout da sessão.
+3. **Retention:** materializa somente IDs ordenados e hidrata 500 artifacts por
+   página, com apenas os campos de execução exigidos por `ArtifactStorage`.
+   Verificação, hash, latest válido, inode/TOCTOU e unlink por arquivo permanecem;
+   updates de status são agrupados por página e motivo. Apply continua serializado
+   pelo lock da fonte e mantém locks dos artifacts até commit. Dry-run não adquire
+   locks de fontes/artifacts nem altera seus statuses/arquivos; a auditoria de
+   resumo permanece. A primeira paginação repetia o filtro/sort do
+   histórico: dry-run 8,23 s; foi rejeitada e substituída pela seleção única de IDs.
+   **Tradeoff final:** menor memória e nenhum bloqueio no preview, com dry-run
+   mais lento. Reprodução cold do original: 2,536 s/96 MiB → 4,746 s/32 MiB.
+   Apply reproduzido: 27,389 s/108 MiB → 10,267 s/34 MiB. Dez arquivos preservados,
+   9.990 removidos somente do storage sintético, histórico intacto. IDs ainda
+   ocupam O(n) memória; não se declara memória constante para fontes ilimitadas.
+4. **Scheduler/Redis:** mutexes e sinais de pause/resume/interrupt usam o store
+   database existente. No Laravel 13, mudar só o mutex não basta: `schedule:run`
+   consulta pausa no cache. O binding do repository fica restrito aos comandos
+   do scheduler; demais caches/telemetria mantêm seus fluxos. Redis indisponível:
+   antes `RedisException`/zero ocorrências; depois duas ocorrências em 1,445 s,
+   repetição mantém duas. Exclusão do mutex, pausa e retomada também passam.
+5. **23505:** rollback e até três tentativas apenas para a constraint
+   `backup_executions_one_running_device`; demais erros continuam propagados.
+   Barreira multiprocesso: antes um claim e um erro 23505, outro device aguardando;
+   depois dois claims de devices distintos, perdedor reclama o terceiro job em
+   46,6 ms. Mesma barreira com um único device: um running, outro queued, ambos
+   processos sem erro. A colisão física ainda pode acontecer; eliminou-se sua
+   propagação para o backoff de cinco segundos do engine, sem retirar a constraint.
+6. **Waits/concurrency:** dispatcher espera conclusão de futures enquanto há
+   trabalho ativo; poll totalmente idle e falhas continuam com cinco segundos.
+   Cinco jobs no mesmo device: 31,31 → 7,70 s nessa etapa. Limite por processo
+   configurável via `BACKUP_ENGINE_WORKERS`, entre 1 e 4, default 4. Não foi ampliado.
+7. **Reuso no dispatcher:** claims usam uma sessão PHP independente, sequencial,
+   com os mesmos comandos, transações e payload sem senha. Antes desta única
+   alteração: 100 jobs em 47,66 s, p95 45,77 s, 312 subprocessos. Depois:
+   **23,44 s, p95 22,39 s, 206 subprocessos**; CPU dos filhos 110,51 → 60,64 s.
+   São dois spawns por job SSH curto (secret/complete), mais sessões amortizadas;
+   heartbeat, falha e observação de host key acrescentam comandos conforme o fluxo.
+   Timeout/EOF não fazem replay automático de operação que pode ter dado commit.
+
+Todas as passagens finais de engine terminaram com acknowledgment, artifacts
+esperados e zero overlap de device. Lote lento: 20 jobs de 2 s em 15,70 s,
+76,45 jobs/min. Cinco jobs no mesmo device terminaram em 6,04 s, pico ativo 1.
+Comparação final de 20 jobs rápidos, após reuso do dispatcher:
+
+| Workers por processo | Jobs/min | Queue p95 | Latência p95 | Pico conexões | Overlap |
+| --- | --- | --- | --- | --- | --- |
+| 1 | 57,92 | 19,18 s | 19,93 s | 2 | 0 |
+| 4, default preservado | 212,69 | 4,47 s | 5,25 s | 4 | 0 |
+
+V1 consultado em `backup_manager/ftp_importer.py`, `ftp_pipeline.py`,
+`ftp_storage.py`, `worker.py`, `jobs.py` e `lifecycle.py`. O claim durável antes de
+hash/publicação e o controle no banco serviram de referência; a V1 usa worker
+serial e retenção com materialização/trash. Não se importou esse modelo nem se
+substituíram as regras/safety checks do V2.
+
+### Validação, reprodução e limites restantes
+
+- Laravel SQLite completo: **349/349**, 2.129 assertions.
+- Laravel PostgreSQL completo: **349/349**, 2.136 assertions, banco/root temporários.
+- Python completo: **95/95**; ftp-admin completo: **16/16**.
+- Pint, `git diff --check`, `php -l` em **147 arquivos** e `py_compile` em
+  **32 arquivos** passam. Secret scan local por padrões, sem novos achados;
+  somente a fixture truncada preexistente revisada. Não equivale a gitleaks.
+- Regressões novas cobrem transporte sem replay, erro/timeout/EOF, reciclagem,
+  argumentos, allowlist sem segredo, caches frescos, claim/ownership, dispatcher,
+  paginação com datas iguais e arquivos inválidos, latest e mutex/pausa sem Redis.
+  O teste de aquisição repetida do mutex PostgreSQL usa conexão autocommit própria:
+  a violação de unicidade esperada dentro do `RefreshDatabase` abortava a transação
+  externa da fixture. Corrigido o isolamento do teste, sem alteração no vendor.
+
+Scripts versionados para o runtime sintético PERF-1 existente em `/tmp`:
+
+```sh
+export LD_LIBRARY_PATH=/tmp/perf-1-runtime/usr/lib/x86_64-linux-gnu
+PYTHONPATH=engine python3 scripts/perf_baseline.py \
+  --php /tmp/perf-1-runtime/bin/php \
+  --pg-socket /tmp/bm-perf-1-services/socket \
+  --pg-bin /tmp/perf-1-runtime/usr/lib/postgresql/17/bin \
+  --only engine --engine-cases remaining --output /tmp/perf-2-engine.json
+python3 scripts/perf_pipeline.py --session --output /tmp/perf-2-ftp.json
+python3 scripts/perf_retention.py --output /tmp/perf-2-retention.json
+python3 scripts/perf_scheduler.py --output /tmp/perf-2-scheduler.json
+python3 scripts/perf_claim.py --other-device --output /tmp/perf-2-claim.json
+```
+
+O cluster precisa ser exclusivamente sintético; não apontar esses scripts para
+produção. O probe FTPS cria contas/certificado temporários e interrompe apenas
+esse PostgreSQL para testar retomada. Scheduler pressupõe Redis sintético offline.
+O harness do engine admite `--workers 1|2|4` e `--engine-cases quick` para o lote
+20; `--only secret` mede as queries de secret. Os guardrails do PERF-1 permanecem.
+
+**Regressão de performance aceita e explícita:** dry-run leva mais tempo em troca
+da queda de memória e ausência de locks; o custo das verificações de segurança
+não foi reduzido. Apply ainda mantém transação/locks por fonte por ~10 s; fontes
+maiores e arquivos grandes precisam de outra medição antes de fragmentar commits.
+Scanner continua serial e pode atrasar claims em lotes grandes; seu paralelismo
+não foi aumentado. Secret/complete continuam criando PHP, e hashing de completion
+fica dentro da transação. Idle poll de cinco segundos, cap de recovery, N+1 do
+scheduler, concorrência global entre processos, disco/fsync físico e WAN continuam
+como gargalos/limites. Nenhuma claim de throughput real, saturação ou SLA; sem
+novas dependências, migration, restart real ou push.
