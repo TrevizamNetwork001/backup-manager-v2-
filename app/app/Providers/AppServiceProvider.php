@@ -3,11 +3,17 @@
 namespace App\Providers;
 
 use App\Models\User;
+use App\Services\InstanceTimezone;
 use App\Support\Rbac;
 use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Console\Scheduling\ScheduleInterruptCommand;
+use Illuminate\Console\Scheduling\SchedulePauseCommand;
+use Illuminate\Console\Scheduling\ScheduleResumeCommand;
+use Illuminate\Console\Scheduling\ScheduleRunCommand;
+use Illuminate\Contracts\Cache\Repository;
+use Illuminate\Pagination\Paginator;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
-use Illuminate\Pagination\Paginator;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -25,7 +31,11 @@ class AppServiceProvider extends ServiceProvider
         // in one test method must explicitly forget the bound instance
         // between them (see DashboardTimezoneTest) — scoped() would only do
         // that automatically under Octane, which this app doesn't use.
-        $this->app->singleton(\App\Services\InstanceTimezone::class);
+        $this->app->singleton(InstanceTimezone::class);
+        $this->app->when([
+            ScheduleRunCommand::class, SchedulePauseCommand::class,
+            ScheduleResumeCommand::class, ScheduleInterruptCommand::class,
+        ])->needs(Repository::class)->give(fn () => $this->app->make('cache')->store('database'));
     }
 
     /**

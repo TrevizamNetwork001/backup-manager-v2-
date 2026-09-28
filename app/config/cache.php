@@ -17,6 +17,8 @@ return [
 
     'default' => env('CACHE_STORE', 'database'),
 
+    'schedule_store' => 'database',
+
     /*
     |--------------------------------------------------------------------------
     | Cache Stores
