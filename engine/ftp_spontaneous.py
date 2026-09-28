@@ -69,6 +69,58 @@ def sync_directory(path):
 MAX_PROCESSING_RETRIES = 20
 
 
+def save_record(metadata, record):
+    temporary = metadata.with_name('.' + metadata.name + '.' + uuid.uuid4().hex)
+    fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    try:
+        with os.fdopen(fd, 'w', encoding='utf-8') as handle:
+            json.dump(record, handle)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, metadata)
+        sync_directory(metadata.parent)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def store_claimed(storage_root, base_relative, data, job_id):
+    # An execution-specific name also covers a crash after publication but
+    # before the sidecar is saved. Never reuse another execution's base file.
+    base = Path(base_relative)
+    relative = str(base.with_name(f'{base.stem}-exec-{job_id}{base.suffix}'))
+    root = Path(storage_root).resolve(strict=True)
+    target = root / relative
+    if not target.resolve(strict=False).is_relative_to(root):
+        raise BackupError('FTP_STORAGE_FAILED')
+    cursor = root
+    for part in Path(relative).parts:
+        cursor = cursor / part
+        if cursor.is_symlink():
+            raise BackupError('FTP_STORAGE_FAILED')
+    if target.exists():
+        cleanup_publication_link(target, '.partial-')
+        existing, _ = validate_received_file_integrity(target)
+        if existing != data:
+            raise BackupError('FTP_STORAGE_FAILED')
+        return relative
+    return store(storage_root, relative, data, 'ftp')
+
+
+def cleanup_publication_link(target, prefix):
+    """Recover a crash between exclusive link publication and temp unlink."""
+    published = target.lstat()
+    if not stat.S_ISREG(published.st_mode) or published.st_nlink != 2:
+        return
+    for temporary in target.parent.iterdir():
+        if not temporary.name.startswith(prefix):
+            continue
+        info = temporary.lstat()
+        if stat.S_ISREG(info.st_mode) and (info.st_dev, info.st_ino) == (published.st_dev, published.st_ino):
+            temporary.unlink()
+            sync_directory(target.parent)
+            return
+
+
 def remember_failure(root_name, staged, metadata, record, error, receipt):
     code = error.code if isinstance(error, BackupError) else 'FTP_PROCESSING_RETRY'
     record['retry_count'] = int(record.get('retry_count', 0)) + 1
@@ -81,17 +133,7 @@ def remember_failure(root_name, staged, metadata, record, error, receipt):
         logging.error(json.dumps({'event': 'ftp_processing_retry_exhausted', 'claim_token': metadata.stem,
                                   'account_id': record.get('account_id'), 'attempts': record['retry_count'], 'code': code}))
         return
-    temporary = metadata.with_name('.' + metadata.name + '.' + uuid.uuid4().hex)
-    fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
-    try:
-        with os.fdopen(fd, 'w', encoding='utf-8') as handle:
-            json.dump(record, handle)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temporary, metadata)
-        sync_directory(metadata.parent)
-    finally:
-        temporary.unlink(missing_ok=True)
+    save_record(metadata, record)
     if receipt and record.get('purpose') == 'file_server' and record.get('account_id'):
         try:
             receipt(record['account_id'], metadata.stem, record['original_filename'], record['received_at'],
@@ -151,7 +193,8 @@ def process(root_name, storage_root, staged, metadata, record, receive, complete
     if response['status'] == 'succeeded':
         if receipt and account_id:
             data, digest = validate_received_file_integrity(staged, record['identity'])
-            receipt(account_id, token, filename, record['received_at'], 'stored', len(data), digest, response['relative_path'], '-')
+            receipt(account_id, token, filename, record['received_at'], 'stored', len(data), digest,
+                    record.get('relative_path', response['relative_path']), '-')
         staged.unlink()
         metadata.unlink()
         return
@@ -164,7 +207,9 @@ def process(root_name, storage_root, staged, metadata, record, receive, complete
         return
     try:
         data, digest = validate_received_file_integrity(staged, record['identity'])
-        relative = store(storage_root, response['relative_path'], data, 'ftp', job_id)
+        relative = store_claimed(storage_root, response['relative_path'], data, job_id)
+        record['relative_path'] = relative
+        save_record(metadata, record)
         complete(job_id, relative)
         if receipt and account_id:
             receipt(account_id, token, filename, record['received_at'], 'stored', len(data), digest, relative, '-')
@@ -210,6 +255,7 @@ def process_file_server(root_name, storage_root, staged, metadata, record, recei
         target = root / relative
         temporary = target_dir / ('.' + token + '.tmp')
         if target.exists() or target.is_symlink():
+            cleanup_publication_link(target, temporary.name)
             previous = target.lstat()
             if not stat.S_ISREG(previous.st_mode) or previous.st_nlink != 1 or previous.st_size != len(data):
                 raise BackupError('FTP_STORAGE_FAILED')
@@ -220,6 +266,13 @@ def process_file_server(root_name, storage_root, staged, metadata, record, recei
             finally:
                 os.close(existing_fd)
         else:
+            # Only this claim's private temporary file may be discarded. A
+            # restart rewrites a partial upload from the intact staged source.
+            if temporary.exists() or temporary.is_symlink():
+                previous = temporary.lstat()
+                if not stat.S_ISREG(previous.st_mode) or previous.st_nlink != 1:
+                    raise BackupError('FTP_STORAGE_FAILED')
+                temporary.unlink()
             out = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
             try:
                 with os.fdopen(out, 'wb') as handle:
