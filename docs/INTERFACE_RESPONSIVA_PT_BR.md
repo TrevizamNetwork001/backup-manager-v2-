@@ -54,8 +54,10 @@ Os formulários compartilhados também atualizam as páginas de cadastro e
 os modais existentes. Campos usam duas colunas quando há espaço e uma no
 celular. Os valores, métodos HTTP e destinos dos formulários são preservados.
 
-O controle **Site ativo** usa o mesmo fundo de cartão, borda e escala de
-texto dos outros campos, em vez do fundo quase preto do componente antigo.
+Os controles **Site ativo** e **Equipamento ativo** usam o mesmo fundo de
+cartão, borda e escala de texto dos outros campos, em vez do fundo quase
+preto do componente antigo. O ajuste compartilhado também acompanha as
+telas de edição de Credenciais, Políticas e Usuários.
 
 Em Usuários continuam disponíveis a alteração de nome, e-mail e papel e a
 redefinição de senha, com os limites de administrador existentes. Políticas
@@ -135,6 +137,12 @@ interface inclui as dependências já presentes dos modais de equipamento e
 credencial e do acompanhamento de execução. Os detalhes anteriores de
 interface permanecem em [UI_POLISH.md](UI_POLISH.md).
 
-O commit Git solicitado será identificado na entrega. Alterações de
-recuperação, scripts de backup do sistema, instruções do projeto e remoções
-de referências fora desta revisão são preservadas na área de trabalho.
+Commits desta entrega:
+
+- `4865bb9` — atualização responsiva, relatórios, saúde do sistema, traduções
+  e formulários de edição.
+- `69d7d64` — padronização visual dos controles de ativação nos formulários.
+
+Alterações locais de recuperação, scripts de backup do sistema, instruções
+do projeto e remoções de referências fora desta revisão permanecem na área
+de trabalho.
