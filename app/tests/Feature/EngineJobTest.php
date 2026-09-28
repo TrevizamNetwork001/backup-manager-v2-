@@ -14,12 +14,32 @@ use App\Services\EngineJobService;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
 use Tests\TestCase;
 
 class EngineJobTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_ftp_account_index_migration_up_and_down_preserve_execution_data(): void
+    {
+        $job = $this->queued();
+        $index = 'backup_executions_ftp_account_id_index';
+        $migration = require database_path('migrations/2026_09_27_000001_add_missing_index_to_backup_executions_ftp_account_id.php');
+        $this->assertTrue(Schema::hasIndex('backup_executions', $index));
+        $migration->down();
+
+        try {
+            $this->assertFalse(Schema::hasIndex('backup_executions', $index));
+            $this->assertSame('queued', $job->fresh()->status);
+        } finally {
+            $migration->up();
+        }
+
+        $this->assertTrue(Schema::hasIndex('backup_executions', $index));
+        $this->assertSame('queued', $job->fresh()->status);
+    }
 
     private function queued(): BackupExecution
     {

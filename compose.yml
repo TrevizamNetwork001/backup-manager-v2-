@@ -4,7 +4,7 @@ services:
     container_name: backup-manager-v2-nginx
     restart: unless-stopped
     ports:
-      - "8081:80"
+      - "127.0.0.1:8081:80"
     volumes:
       - ./app:/var/www/html:ro
       - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
@@ -21,6 +21,10 @@ services:
     restart: unless-stopped
     working_dir: /var/www/html
     environment:
+      SESSION_SECURE_COOKIE: "true"
+      SESSION_HTTP_ONLY: "true"
+      SESSION_SAME_SITE: lax
+      TRUSTED_PROXIES: ${BACKUP_TRUSTED_PROXIES:-172.18.0.0/16}
       BACKUP_STORAGE_ROOT: /data/backups
       BACKUP_FTP_ROOT: /data/ftp
       BACKUP_FTP_HOST: ${BACKUP_FTP_HOST:-}
@@ -29,7 +33,10 @@ services:
       BACKUP_FTP_MAX_BYTES: ${BACKUP_FTP_MAX_BYTES:-8388608}
       BACKUP_ENGINE_STALE_SECONDS: ${BACKUP_ENGINE_STALE_SECONDS:-300}
     volumes:
-      - ./app:/var/www/html
+      - ./app:/var/www/html:ro
+      - ./app/storage:/var/www/html/storage
+      - ./app/bootstrap/cache:/var/www/html/bootstrap/cache
+      - ./docker/php/storage-pool.conf:/usr/local/etc/php-fpm.d/zz-storage.conf:ro
       - backups:/data/backups
       - ftp-data:/data/ftp:ro
       - engine-health:/var/www/html/storage/app/engine-health
