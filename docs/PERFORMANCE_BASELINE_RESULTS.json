@@ -1,6 +1,6 @@
 {
   "date": "2026-09-28",
-  "status": "closed isolated synthetic baseline; production capacity and persistent-disk saturation unmeasured",
+  "status": "PERF-3 closed: synthetic core gains validated; production capacity and physical storage unmeasured",
   "environment": {
     "os": "Linux-6.12.107+deb13-amd64-x86_64-with-glibc2.41",
     "python": "3.13.5",
@@ -2930,5 +2930,2178 @@
         "findings": []
       }
     }
+  },
+  "perf_3_execution": {
+    "date": "2026-09-28",
+    "initial_commit": "3f9f64e",
+    "scope": "one optimization per measurement; isolated synthetic services, no real devices/UI/real restart/push",
+    "canonical_results": {
+      "engine": "engine-final",
+      "retention": "retention-canonical",
+      "scanner": "scanner-after",
+      "mixed": "mixed-after",
+      "idle": "idle-final",
+      "enqueue_cost": "enqueue-listener-after",
+      "ftps": "pipeline-after and pipeline-repeat (publish both; no attributed gain)"
+    },
+    "method": {
+      "p95": "nearest rank",
+      "retention_profiler": "verify inclusive includes verify within remove; do not sum verify and remove",
+      "memory": "per-process RSS lifetime high water, not total simultaneous children; retention PHP heap peak",
+      "load_sampler": "pg_stat_activity every 50ms, instantaneous waiters; not lock latency p95",
+      "hardware": "same PERF-1 unreserved host, temporary tmpfs; physical I/O unmeasured",
+      "final_runs": "engine, retention and repeated FTPS sequential before full validation",
+      "idle": "5 committed arrivals + 15 seconds quiet + rollback/missed hint/race probes",
+      "enqueue": "1000 Eloquent transitions pending->queued, autocommit listener connected in canonical samples",
+      "rejected_regression": "pages-only retention 9.54/9.65s vs 8.85s; fixed ArtifactStorage metadata overhead",
+      "tradeoffs": "NOTIFY +1 query per signaled transition, enqueue +13%; more persistent PHP/PG sessions; no idle query frequency or Redis increase",
+      "ftps_variability": "upload runs before changed core scanner; before 38.99s, after 48.88s and 24.90s; no causal gain/regression isolated",
+      "fixtures": "Enqueue ID lists omitted; count and all metrics retained."
+    },
+    "validation": {
+      "laravel_sqlite": {
+        "tests": 353,
+        "assertions": 2141,
+        "result": "passed"
+      },
+      "laravel_postgresql": {
+        "tests": 353,
+        "assertions": 2148,
+        "result": "passed"
+      },
+      "python": {
+        "tests": 103,
+        "result": "passed"
+      },
+      "ftp_admin": {
+        "tests": 16,
+        "result": "passed"
+      },
+      "pint": "passed",
+      "php_l_files": 230,
+      "py_compile_files": 35,
+      "diff_check": "passed",
+      "secret_scan": {
+        "method": "local patterns, private keys and common credential tokens; no values printed",
+        "files_scanned": 294,
+        "findings": [
+          {
+            "path": "engine/tests/test_driver_contract.py",
+            "line": 171,
+            "kind": "private_key"
+          }
+        ],
+        "new_findings": []
+      }
+    },
+    "results": {
+      "engine-before": [
+        {
+          "scenario": "engine_queue",
+          "jobs": 100,
+          "driver_delay_seconds": 0.02,
+          "control_plane": "real Artisan/pgsql",
+          "workers": 4,
+          "database_activity": {
+            "peak_workload_connections": 5,
+            "peak_lock_waiters": 0,
+            "samples": 459,
+            "interval_ms": 50,
+            "seconds": 23.4669451713562
+          },
+          "seconds": 23.47089991599205,
+          "cpu_seconds": 0.41342500000000004,
+          "child_cpu_seconds": 62.304792,
+          "peak_rss_kib": 41008,
+          "child_peak_rss_kib": 55016,
+          "io_delta": {
+            "rchar": 1581026107,
+            "wchar": 98412,
+            "syscr": 187134,
+            "syscw": 2075,
+            "read_bytes": 0,
+            "write_bytes": 0,
+            "cancelled_write_bytes": 0
+          },
+          "throughput_jobs_min": 255.63570299713396,
+          "latency": {
+            "mean_seconds": 11.967820846998801,
+            "p95_seconds": 22.086800613993546
+          },
+          "execution": {
+            "mean_seconds": 0.8386538509400271,
+            "p95_seconds": 1.1251605029974598
+          },
+          "queue": {
+            "mean_seconds": 11.130247258179443,
+            "p95_seconds": 21.11900350700307
+          },
+          "command": {
+            "mean_seconds": 0.2737572275941965,
+            "p95_seconds": 0.555097800999647
+          },
+          "artisan_operations": {
+            "ftp:expected": 5,
+            "ftp:accounts": 5,
+            "engine:claim": 103,
+            "engine:secret": 100,
+            "engine:complete": 100
+          },
+          "subprocess_count": 206,
+          "subprocess_commands": {
+            "engine:session": 6,
+            "engine:secret": 100,
+            "engine:complete": 100
+          },
+          "peak_active_devices": 4,
+          "device_overlap": 0,
+          "failure_rate": 0.0,
+          "database_result": {
+            "statuses": {
+              "succeeded": 100
+            },
+            "artifacts": 100,
+            "retries": 0
+          },
+          "subprocess_errors": {},
+          "attempted_jobs": 100,
+          "unreported_jobs": 0,
+          "database_backend": "pgsql"
+        },
+        {
+          "scenario": "engine_queue",
+          "jobs": 20,
+          "driver_delay_seconds": 2.0,
+          "control_plane": "real Artisan/pgsql",
+          "workers": 4,
+          "database_activity": {
+            "peak_workload_connections": 5,
+            "peak_lock_waiters": 0,
+            "samples": 307,
+            "interval_ms": 50,
+            "seconds": 15.66805100440979
+          },
+          "seconds": 15.666230671005906,
+          "cpu_seconds": 0.1177329999999999,
+          "child_cpu_seconds": 15.180892000000004,
+          "peak_rss_kib": 41520,
+          "child_peak_rss_kib": 55016,
+          "io_delta": {
+            "rchar": 337999828,
+            "wchar": 20557,
+            "syscr": 40054,
+            "syscw": 451,
+            "read_bytes": 0,
+            "write_bytes": 0,
+            "cancelled_write_bytes": 0
+          },
+          "throughput_jobs_min": 76.59787636223729,
+          "latency": {
+            "mean_seconds": 9.783915625847294,
+            "p95_seconds": 15.619929277992924
+          },
+          "execution": {
+            "mean_seconds": 2.9090824066501226,
+            "p95_seconds": 3.08695337100653
+          },
+          "queue": {
+            "mean_seconds": 6.875653375349065,
+            "p95_seconds": 12.864921871005208
+          },
+          "command": {
+            "mean_seconds": 0.2932735046937444,
+            "p95_seconds": 0.595078256999841
+          },
+          "artisan_operations": {
+            "ftp:expected": 3,
+            "ftp:accounts": 3,
+            "engine:claim": 23,
+            "engine:secret": 20,
+            "engine:complete": 20
+          },
+          "subprocess_count": 44,
+          "subprocess_commands": {
+            "engine:session": 4,
+            "engine:secret": 20,
+            "engine:complete": 20
+          },
+          "peak_active_devices": 4,
+          "device_overlap": 0,
+          "failure_rate": 0.0,
+          "database_result": {
+            "statuses": {
+              "succeeded": 20
+            },
+            "artifacts": 20,
+            "retries": 0
+          },
+          "subprocess_errors": {},
+          "attempted_jobs": 20,
+          "unreported_jobs": 0,
+          "database_backend": "pgsql"
+        },
+        {
+          "scenario": "engine_same_device",
+          "jobs": 5,
+          "driver_delay_seconds": 0.1,
+          "control_plane": "real Artisan/pgsql",
+          "workers": 4,
+          "database_activity": {
+            "peak_workload_connections": 2,
+            "peak_lock_waiters": 0,
+            "samples": 118,
+            "interval_ms": 50,
+            "seconds": 6.031001091003418
+          },
+          "seconds": 6.031261115000234,
+          "cpu_seconds": 0.037024000000000085,
+          "child_cpu_seconds": 5.003517000000009,
+          "peak_rss_kib": 42160,
+          "child_peak_rss_kib": 55016,
+          "io_delta": {
+            "rchar": 100081996,
+            "wchar": 6040,
+            "syscr": 11913,
+            "syscw": 143,
+            "read_bytes": 0,
+            "write_bytes": 0,
+            "cancelled_write_bytes": 0
+          },
+          "throughput_jobs_min": 49.74084097501197,
+          "latency": {
+            "mean_seconds": 3.692483144000289,
+            "p95_seconds": 5.593851212004665
+          },
+          "execution": {
+            "mean_seconds": 0.9320794950035634,
+            "p95_seconds": 0.9946591160114622
+          },
+          "queue": {
+            "mean_seconds": 2.76124191719864,
+            "p95_seconds": 4.661264562004362
+          },
+          "command": {
+            "mean_seconds": 0.22736079041472598,
+            "p95_seconds": 0.4363502579944907
+          },
+          "artisan_operations": {
+            "ftp:expected": 2,
+            "ftp:accounts": 2,
+            "engine:claim": 10,
+            "engine:secret": 5,
+            "engine:complete": 5
+          },
+          "subprocess_count": 13,
+          "subprocess_commands": {
+            "engine:session": 3,
+            "engine:secret": 5,
+            "engine:complete": 5
+          },
+          "peak_active_devices": 1,
+          "device_overlap": 0,
+          "failure_rate": 0.0,
+          "database_result": {
+            "statuses": {
+              "succeeded": 5
+            },
+            "artifacts": 5,
+            "retries": 0
+          },
+          "subprocess_errors": {},
+          "attempted_jobs": 5,
+          "unreported_jobs": 0,
+          "database_backend": "pgsql"
+        }
+      ],
+      "engine-final": [
+        {
+          "scenario": "engine_queue",
+          "jobs": 100,
+          "driver_delay_seconds": 0.02,
+          "control_plane": "real Artisan/pgsql",
+          "workers": 4,
+          "scanner_files": 0,
+          "database_activity": {
+            "peak_workload_connections": 8,
+            "peak_lock_waiters": 0,
+            "samples": 313,
+            "interval_ms": 50,
+            "seconds": 16.224879026412964
+          },
+          "seconds": 16.231045522989007,
+          "cpu_seconds": 0.412962,
+          "child_cpu_seconds": 36.810266,
+          "peak_rss_kib": 42584,
+          "child_peak_rss_kib": 53608,
+          "io_delta": {
+            "rchar": 835195180,
+            "wchar": 105580,
+            "syscr": 99423,
+            "syscw": 1495,
+            "read_bytes": 0,
+            "write_bytes": 0,
+            "cancelled_write_bytes": 0
+          },
+          "throughput_jobs_min": 369.66195378491415,
+          "latency": {
+            "mean_seconds": 9.10499975790357,
+            "p95_seconds": 15.435860485988087
+          },
+          "execution": {
+            "mean_seconds": 0.5847737386800873,
+            "p95_seconds": 0.8344875309994677
+          },
+          "queue": {
+            "mean_seconds": 8.521255917763629,
+            "p95_seconds": 15.077904051999212
+          },
+          "command": {
+            "mean_seconds": 0.19753270546007876,
+            "p95_seconds": 0.6363060059957206
+          },
+          "artisan_operations": {
+            "ftp:expected": 4,
+            "ftp:accounts": 4,
+            "engine:claim": 103,
+            "engine:secret": 100,
+            "engine:complete": 100
+          },
+          "subprocess_count": 109,
+          "subprocess_commands": {
+            "engine:session": 9,
+            "engine:secret": 100
+          },
+          "peak_active_devices": 4,
+          "device_overlap": 0,
+          "failure_rate": 0.0,
+          "database_result": {
+            "statuses": {
+              "succeeded": 100
+            },
+            "artifacts": 100,
+            "retries": 0
+          },
+          "subprocess_errors": {},
+          "attempted_jobs": 100,
+          "unreported_jobs": 0,
+          "database_backend": "pgsql"
+        },
+        {
+          "scenario": "engine_queue",
+          "jobs": 20,
+          "driver_delay_seconds": 2.0,
+          "control_plane": "real Artisan/pgsql",
+          "workers": 4,
+          "scanner_files": 0,
+          "database_activity": {
+            "peak_workload_connections": 7,
+            "peak_lock_waiters": 0,
+            "samples": 274,
+            "interval_ms": 50,
+            "seconds": 13.984241962432861
+          },
+          "seconds": 13.983900547013036,
+          "cpu_seconds": 0.1203459999999999,
+          "child_cpu_seconds": 11.794870000000003,
+          "peak_rss_kib": 43096,
+          "child_peak_rss_kib": 53608,
+          "io_delta": {
+            "rchar": 215564443,
+            "wchar": 22369,
+            "syscr": 25642,
+            "syscw": 363,
+            "read_bytes": 0,
+            "write_bytes": 0,
+            "cancelled_write_bytes": 0
+          },
+          "throughput_jobs_min": 85.81296727373538,
+          "latency": {
+            "mean_seconds": 8.668582770400826,
+            "p95_seconds": 13.820779867994133
+          },
+          "execution": {
+            "mean_seconds": 2.6362373484516866,
+            "p95_seconds": 3.124153529002797
+          },
+          "queue": {
+            "mean_seconds": 6.03339084374893,
+            "p95_seconds": 11.279847911995603
+          },
+          "command": {
+            "mean_seconds": 0.21703680137558706,
+            "p95_seconds": 0.5801548849995015
+          },
+          "artisan_operations": {
+            "engine:claim": 23,
+            "ftp:expected": 3,
+            "ftp:accounts": 3,
+            "engine:secret": 20,
+            "engine:complete": 20
+          },
+          "subprocess_count": 28,
+          "subprocess_commands": {
+            "engine:session": 8,
+            "engine:secret": 20
+          },
+          "peak_active_devices": 4,
+          "device_overlap": 0,
+          "failure_rate": 0.0,
+          "database_result": {
+            "statuses": {
+              "succeeded": 20
+            },
+            "artifacts": 20,
+            "retries": 0
+          },
+          "subprocess_errors": {},
+          "attempted_jobs": 20,
+          "unreported_jobs": 0,
+          "database_backend": "pgsql"
+        },
+        {
+          "scenario": "engine_same_device",
+          "jobs": 5,
+          "driver_delay_seconds": 0.1,
+          "control_plane": "real Artisan/pgsql",
+          "workers": 4,
+          "scanner_files": 0,
+          "database_activity": {
+            "peak_workload_connections": 3,
+            "peak_lock_waiters": 0,
+            "samples": 74,
+            "interval_ms": 50,
+            "seconds": 3.768083095550537
+          },
+          "seconds": 3.776715346000856,
+          "cpu_seconds": 0.03563600000000011,
+          "child_cpu_seconds": 3.419756000000003,
+          "peak_rss_kib": 43096,
+          "child_peak_rss_kib": 53608,
+          "io_delta": {
+            "rchar": 61800902,
+            "wchar": 6266,
+            "syscr": 7415,
+            "syscw": 109,
+            "read_bytes": 0,
+            "write_bytes": 0,
+            "cancelled_write_bytes": 0
+          },
+          "throughput_jobs_min": 79.43410411315972,
+          "latency": {
+            "mean_seconds": 2.6090979924047133,
+            "p95_seconds": 3.7170637770032045
+          },
+          "execution": {
+            "mean_seconds": 0.6205067630042322,
+            "p95_seconds": 0.9395607360056601
+          },
+          "queue": {
+            "mean_seconds": 1.98895560860401,
+            "p95_seconds": 3.213117923005484
+          },
+          "command": {
+            "mean_seconds": 0.16486182577368294,
+            "p95_seconds": 0.4521290809934726
+          },
+          "artisan_operations": {
+            "ftp:expected": 1,
+            "ftp:accounts": 1,
+            "engine:claim": 10,
+            "engine:secret": 5,
+            "engine:complete": 5
+          },
+          "subprocess_count": 8,
+          "subprocess_commands": {
+            "engine:session": 3,
+            "engine:secret": 5
+          },
+          "peak_active_devices": 1,
+          "device_overlap": 0,
+          "failure_rate": 0.0,
+          "database_result": {
+            "statuses": {
+              "succeeded": 5
+            },
+            "artifacts": 5,
+            "retries": 0
+          },
+          "subprocess_errors": {},
+          "attempted_jobs": 5,
+          "unreported_jobs": 0,
+          "database_backend": "pgsql"
+        }
+      ],
+      "worker-after": [
+        {
+          "scenario": "engine_queue",
+          "jobs": 100,
+          "driver_delay_seconds": 0.02,
+          "control_plane": "real Artisan/pgsql",
+          "workers": 4,
+          "database_activity": {
+            "peak_workload_connections": 8,
+            "peak_lock_waiters": 0,
+            "samples": 276,
+            "interval_ms": 50,
+            "seconds": 14.115393161773682
+          },
+          "seconds": 14.127774282998871,
+          "cpu_seconds": 0.3859269999999999,
+          "child_cpu_seconds": 36.32097400000001,
+          "peak_rss_kib": 40960,
+          "child_peak_rss_kib": 53656,
+          "io_delta": {
+            "rchar": 827264324,
+            "wchar": 105334,
+            "syscr": 98522,
+            "syscw": 1483,
+            "read_bytes": 0,
+            "write_bytes": 0,
+            "cancelled_write_bytes": 0
+          },
+          "throughput_jobs_min": 424.695346896949,
+          "latency": {
+            "mean_seconds": 7.78313338282198,
+            "p95_seconds": 13.4716155250062
+          },
+          "execution": {
+            "mean_seconds": 0.4652586229504959,
+            "p95_seconds": 0.7424137079942739
+          },
+          "queue": {
+            "mean_seconds": 7.318751257320982,
+            "p95_seconds": 13.155301121994853
+          },
+          "command": {
+            "mean_seconds": 0.1554894164957812,
+            "p95_seconds": 0.4614421910082456
+          },
+          "artisan_operations": {
+            "ftp:expected": 3,
+            "ftp:accounts": 3,
+            "engine:claim": 103,
+            "engine:secret": 100,
+            "engine:complete": 100
+          },
+          "subprocess_count": 108,
+          "subprocess_commands": {
+            "engine:session": 8,
+            "engine:secret": 100
+          },
+          "peak_active_devices": 4,
+          "device_overlap": 0,
+          "failure_rate": 0.0,
+          "database_result": {
+            "statuses": {
+              "succeeded": 100
+            },
+            "artifacts": 100,
+            "retries": 0
+          },
+          "subprocess_errors": {},
+          "attempted_jobs": 100,
+          "unreported_jobs": 0,
+          "database_backend": "pgsql"
+        },
+        {
+          "scenario": "engine_queue",
+          "jobs": 20,
+          "driver_delay_seconds": 2.0,
+          "control_plane": "real Artisan/pgsql",
+          "workers": 4,
+          "database_activity": {
+            "peak_workload_connections": 8,
+            "peak_lock_waiters": 0,
+            "samples": 280,
+            "interval_ms": 50,
+            "seconds": 14.296849012374878
+          },
+          "seconds": 14.303423239995027,
+          "cpu_seconds": 0.11596100000000006,
+          "child_cpu_seconds": 10.017832000000002,
+          "peak_rss_kib": 41728,
+          "child_peak_rss_kib": 53656,
+          "io_delta": {
+            "rchar": 215507148,
+            "wchar": 22369,
+            "syscr": 25642,
+            "syscw": 363,
+            "read_bytes": 0,
+            "write_bytes": 0,
+            "cancelled_write_bytes": 0
+          },
+          "throughput_jobs_min": 83.8960002696821,
+          "latency": {
+            "mean_seconds": 8.907951086442335,
+            "p95_seconds": 14.049896543991053
+          },
+          "execution": {
+            "mean_seconds": 2.6064739584486234,
+            "p95_seconds": 3.0128308679995826
+          },
+          "queue": {
+            "mean_seconds": 6.302222917444306,
+            "p95_seconds": 11.537024229997769
+          },
+          "command": {
+            "mean_seconds": 0.20430624513023032,
+            "p95_seconds": 0.5389032059902092
+          },
+          "artisan_operations": {
+            "ftp:expected": 3,
+            "ftp:accounts": 3,
+            "engine:claim": 23,
+            "engine:secret": 20,
+            "engine:complete": 20
+          },
+          "subprocess_count": 28,
+          "subprocess_commands": {
+            "engine:session": 8,
+            "engine:secret": 20
+          },
+          "peak_active_devices": 4,
+          "device_overlap": 0,
+          "failure_rate": 0.0,
+          "database_result": {
+            "statuses": {
+              "succeeded": 20
+            },
+            "artifacts": 20,
+            "retries": 0
+          },
+          "subprocess_errors": {},
+          "attempted_jobs": 20,
+          "unreported_jobs": 0,
+          "database_backend": "pgsql"
+        },
+        {
+          "scenario": "engine_same_device",
+          "jobs": 5,
+          "driver_delay_seconds": 0.1,
+          "control_plane": "real Artisan/pgsql",
+          "workers": 4,
+          "database_activity": {
+            "peak_workload_connections": 3,
+            "peak_lock_waiters": 0,
+            "samples": 92,
+            "interval_ms": 50,
+            "seconds": 4.689641952514648
+          },
+          "seconds": 4.694326522992924,
+          "cpu_seconds": 0.03832300000000005,
+          "child_cpu_seconds": 3.829072000000007,
+          "peak_rss_kib": 41728,
+          "child_peak_rss_kib": 53656,
+          "io_delta": {
+            "rchar": 61784622,
+            "wchar": 6370,
+            "syscr": 7417,
+            "syscw": 111,
+            "read_bytes": 0,
+            "write_bytes": 0,
+            "cancelled_write_bytes": 0
+          },
+          "throughput_jobs_min": 63.9069307451437,
+          "latency": {
+            "mean_seconds": 3.4248095931950955,
+            "p95_seconds": 4.6036341809958685
+          },
+          "execution": {
+            "mean_seconds": 0.6928939761972288,
+            "p95_seconds": 1.1908708609989844
+          },
+          "queue": {
+            "mean_seconds": 2.7323674693965585,
+            "p95_seconds": 4.058592226996552
+          },
+          "command": {
+            "mean_seconds": 0.17793513369700953,
+            "p95_seconds": 0.5374313909996999
+          },
+          "artisan_operations": {
+            "ftp:expected": 1,
+            "ftp:accounts": 1,
+            "engine:claim": 11,
+            "engine:secret": 5,
+            "engine:complete": 5
+          },
+          "subprocess_count": 8,
+          "subprocess_commands": {
+            "engine:session": 3,
+            "engine:secret": 5
+          },
+          "peak_active_devices": 1,
+          "device_overlap": 0,
+          "failure_rate": 0.0,
+          "database_result": {
+            "statuses": {
+              "succeeded": 5
+            },
+            "artifacts": 5,
+            "retries": 0
+          },
+          "subprocess_errors": {},
+          "attempted_jobs": 5,
+          "unreported_jobs": 0,
+          "database_backend": "pgsql"
+        }
+      ],
+      "mixed-before": [
+        {
+          "scenario": "engine_queue",
+          "jobs": 100,
+          "driver_delay_seconds": 0.02,
+          "control_plane": "real Artisan/pgsql",
+          "workers": 4,
+          "scanner_files": 1000,
+          "database_activity": {
+            "peak_workload_connections": 7,
+            "peak_lock_waiters": 0,
+            "samples": 613,
+            "interval_ms": 50,
+            "seconds": 31.31949806213379
+          },
+          "seconds": 31.319332344995928,
+          "cpu_seconds": 5.1561829999999995,
+          "child_cpu_seconds": 39.440687000000004,
+          "peak_rss_kib": 45120,
+          "child_peak_rss_kib": 53636,
+          "io_delta": {
+            "rchar": 854954222,
+            "wchar": 4943189,
+            "syscr": 107223,
+            "syscw": 7511,
+            "read_bytes": 0,
+            "write_bytes": 0,
+            "cancelled_write_bytes": 0
+          },
+          "scanner_receipts_verified": 1000,
+          "throughput_jobs_min": 191.57496506973447,
+          "latency": {
+            "mean_seconds": 18.80055139979377,
+            "p95_seconds": 30.771201673996984
+          },
+          "execution": {
+            "mean_seconds": 0.455082237769675,
+            "p95_seconds": 0.7220373839954846
+          },
+          "queue": {
+            "mean_seconds": 18.346421250413986,
+            "p95_seconds": 30.355734741009655
+          },
+          "command": {
+            "mean_seconds": 0.15132788896761495,
+            "p95_seconds": 0.44807257600768935
+          },
+          "artisan_operations": {
+            "ftp:expected": 4,
+            "ftp:accounts": 4,
+            "engine:claim": 103,
+            "engine:secret": 100,
+            "engine:complete": 100
+          },
+          "subprocess_count": 111,
+          "subprocess_commands": {
+            "engine:session": 11,
+            "engine:secret": 100
+          },
+          "peak_active_devices": 4,
+          "device_overlap": 0,
+          "failure_rate": 0.0,
+          "database_result": {
+            "statuses": {
+              "succeeded": 100
+            },
+            "artifacts": 100,
+            "retries": 0
+          },
+          "subprocess_errors": {},
+          "attempted_jobs": 100,
+          "unreported_jobs": 0,
+          "database_backend": "pgsql"
+        },
+        {
+          "scenario": "engine_queue",
+          "jobs": 20,
+          "driver_delay_seconds": 2.0,
+          "control_plane": "real Artisan/pgsql",
+          "workers": 4,
+          "scanner_files": 0,
+          "database_activity": {
+            "peak_workload_connections": 9,
+            "peak_lock_waiters": 0,
+            "samples": 277,
+            "interval_ms": 50,
+            "seconds": 14.080415964126587
+          },
+          "seconds": 14.08210195499123,
+          "cpu_seconds": 0.12511300000000025,
+          "child_cpu_seconds": 10.955490000000001,
+          "peak_rss_kib": 45120,
+          "child_peak_rss_kib": 53648,
+          "io_delta": {
+            "rchar": 215507096,
+            "wchar": 22369,
+            "syscr": 25642,
+            "syscw": 363,
+            "read_bytes": 0,
+            "write_bytes": 0,
+            "cancelled_write_bytes": 0
+          },
+          "throughput_jobs_min": 85.21455133867104,
+          "latency": {
+            "mean_seconds": 8.840945150145126,
+            "p95_seconds": 13.924085278995335
+          },
+          "execution": {
+            "mean_seconds": 2.5421180246485164,
+            "p95_seconds": 3.048103363995324
+          },
+          "queue": {
+            "mean_seconds": 6.299745402593544,
+            "p95_seconds": 11.493016023989185
+          },
+          "command": {
+            "mean_seconds": 0.1850835995500202,
+            "p95_seconds": 0.5066809429990826
+          },
+          "artisan_operations": {
+            "ftp:expected": 3,
+            "ftp:accounts": 3,
+            "engine:claim": 23,
+            "engine:secret": 20,
+            "engine:complete": 20
+          },
+          "subprocess_count": 28,
+          "subprocess_commands": {
+            "engine:session": 8,
+            "engine:secret": 20
+          },
+          "peak_active_devices": 4,
+          "device_overlap": 0,
+          "failure_rate": 0.0,
+          "database_result": {
+            "statuses": {
+              "succeeded": 20
+            },
+            "artifacts": 20,
+            "retries": 0
+          },
+          "subprocess_errors": {},
+          "attempted_jobs": 20,
+          "unreported_jobs": 0,
+          "database_backend": "pgsql"
+        },
+        {
+          "scenario": "engine_same_device",
+          "jobs": 5,
+          "driver_delay_seconds": 0.1,
+          "control_plane": "real Artisan/pgsql",
+          "workers": 4,
+          "scanner_files": 0,
+          "database_activity": {
+            "peak_workload_connections": 3,
+            "peak_lock_waiters": 0,
+            "samples": 79,
+            "interval_ms": 50,
+            "seconds": 4.019056081771851
+          },
+          "seconds": 4.024391653001658,
+          "cpu_seconds": 0.03288999999999964,
+          "child_cpu_seconds": 3.206515999999999,
+          "peak_rss_kib": 45120,
+          "child_peak_rss_kib": 53648,
+          "io_delta": {
+            "rchar": 61784564,
+            "wchar": 6266,
+            "syscr": 7415,
+            "syscw": 109,
+            "read_bytes": 0,
+            "write_bytes": 0,
+            "cancelled_write_bytes": 0
+          },
+          "throughput_jobs_min": 74.5454284441327,
+          "latency": {
+            "mean_seconds": 2.8883815840061287,
+            "p95_seconds": 3.9696161150059197
+          },
+          "execution": {
+            "mean_seconds": 0.6048387165996246,
+            "p95_seconds": 0.9392542119894642
+          },
+          "queue": {
+            "mean_seconds": 2.283932193406508,
+            "p95_seconds": 3.4903683550073765
+          },
+          "command": {
+            "mean_seconds": 0.15709820140843725,
+            "p95_seconds": 0.44823125400580466
+          },
+          "artisan_operations": {
+            "ftp:expected": 1,
+            "ftp:accounts": 1,
+            "engine:claim": 10,
+            "engine:secret": 5,
+            "engine:complete": 5
+          },
+          "subprocess_count": 8,
+          "subprocess_commands": {
+            "engine:session": 3,
+            "engine:secret": 5
+          },
+          "peak_active_devices": 1,
+          "device_overlap": 0,
+          "failure_rate": 0.0,
+          "database_result": {
+            "statuses": {
+              "succeeded": 5
+            },
+            "artifacts": 5,
+            "retries": 0
+          },
+          "subprocess_errors": {},
+          "attempted_jobs": 5,
+          "unreported_jobs": 0,
+          "database_backend": "pgsql"
+        }
+      ],
+      "mixed-after": [
+        {
+          "scenario": "engine_queue",
+          "jobs": 100,
+          "driver_delay_seconds": 0.02,
+          "control_plane": "real Artisan/pgsql",
+          "workers": 4,
+          "scanner_files": 1000,
+          "database_activity": {
+            "peak_workload_connections": 10,
+            "peak_lock_waiters": 0,
+            "samples": 339,
+            "interval_ms": 50,
+            "seconds": 17.44907808303833
+          },
+          "seconds": 17.462872371994308,
+          "cpu_seconds": 2.944264,
+          "child_cpu_seconds": 36.419907,
+          "peak_rss_kib": 46860,
+          "child_peak_rss_kib": 53632,
+          "io_delta": {
+            "rchar": 847202432,
+            "wchar": 4942018,
+            "syscr": 106313,
+            "syscw": 7495,
+            "read_bytes": 0,
+            "write_bytes": 0,
+            "cancelled_write_bytes": 0
+          },
+          "scanner_receipts_verified": 1000,
+          "throughput_jobs_min": 343.58608779746714,
+          "latency": {
+            "mean_seconds": 8.929406289258477,
+            "p95_seconds": 16.176427318001515
+          },
+          "execution": {
+            "mean_seconds": 0.6163313976291102,
+            "p95_seconds": 0.8956849829992279
+          },
+          "queue": {
+            "mean_seconds": 8.314487140498969,
+            "p95_seconds": 15.654287375000422
+          },
+          "command": {
+            "mean_seconds": 0.20620296722094464,
+            "p95_seconds": 0.7064171780075412
+          },
+          "artisan_operations": {
+            "ftp:expected": 2,
+            "ftp:accounts": 2,
+            "engine:claim": 103,
+            "engine:secret": 100,
+            "engine:complete": 100
+          },
+          "subprocess_count": 110,
+          "subprocess_commands": {
+            "engine:session": 10,
+            "engine:secret": 100
+          },
+          "peak_active_devices": 4,
+          "device_overlap": 0,
+          "failure_rate": 0.0,
+          "database_result": {
+            "statuses": {
+              "succeeded": 100
+            },
+            "artifacts": 100,
+            "retries": 0
+          },
+          "subprocess_errors": {},
+          "attempted_jobs": 100,
+          "unreported_jobs": 0,
+          "database_backend": "pgsql"
+        },
+        {
+          "scenario": "engine_queue",
+          "jobs": 20,
+          "driver_delay_seconds": 2.0,
+          "control_plane": "real Artisan/pgsql",
+          "workers": 4,
+          "scanner_files": 0,
+          "database_activity": {
+            "peak_workload_connections": 8,
+            "peak_lock_waiters": 0,
+            "samples": 269,
+            "interval_ms": 50,
+            "seconds": 13.697468042373657
+          },
+          "seconds": 13.698383280003327,
+          "cpu_seconds": 0.12545399999999995,
+          "child_cpu_seconds": 10.966790000000001,
+          "peak_rss_kib": 46860,
+          "child_peak_rss_kib": 53668,
+          "io_delta": {
+            "rchar": 215507247,
+            "wchar": 22369,
+            "syscr": 25642,
+            "syscw": 363,
+            "read_bytes": 0,
+            "write_bytes": 0,
+            "cancelled_write_bytes": 0
+          },
+          "throughput_jobs_min": 87.60157862948252,
+          "latency": {
+            "mean_seconds": 8.427145830855443,
+            "p95_seconds": 13.521484512006282
+          },
+          "execution": {
+            "mean_seconds": 2.579248825699324,
+            "p95_seconds": 2.85387873298896
+          },
+          "queue": {
+            "mean_seconds": 5.849145903306635,
+            "p95_seconds": 11.033381989007466
+          },
+          "command": {
+            "mean_seconds": 0.1963828704199683,
+            "p95_seconds": 0.5229537909908686
+          },
+          "artisan_operations": {
+            "ftp:expected": 3,
+            "ftp:accounts": 3,
+            "engine:claim": 23,
+            "engine:secret": 20,
+            "engine:complete": 20
+          },
+          "subprocess_count": 28,
+          "subprocess_commands": {
+            "engine:session": 8,
+            "engine:secret": 20
+          },
+          "peak_active_devices": 4,
+          "device_overlap": 0,
+          "failure_rate": 0.0,
+          "database_result": {
+            "statuses": {
+              "succeeded": 20
+            },
+            "artifacts": 20,
+            "retries": 0
+          },
+          "subprocess_errors": {},
+          "attempted_jobs": 20,
+          "unreported_jobs": 0,
+          "database_backend": "pgsql"
+        },
+        {
+          "scenario": "engine_same_device",
+          "jobs": 5,
+          "driver_delay_seconds": 0.1,
+          "control_plane": "real Artisan/pgsql",
+          "workers": 4,
+          "scanner_files": 0,
+          "database_activity": {
+            "peak_workload_connections": 3,
+            "peak_lock_waiters": 0,
+            "samples": 72,
+            "interval_ms": 50,
+            "seconds": 3.6773910522460938
+          },
+          "seconds": 3.6942862080031773,
+          "cpu_seconds": 0.03406899999999968,
+          "child_cpu_seconds": 3.408516000000006,
+          "peak_rss_kib": 46860,
+          "child_peak_rss_kib": 53668,
+          "io_delta": {
+            "rchar": 61784618,
+            "wchar": 6267,
+            "syscr": 7415,
+            "syscw": 109,
+            "read_bytes": 0,
+            "write_bytes": 0,
+            "cancelled_write_bytes": 0
+          },
+          "throughput_jobs_min": 81.20648566699843,
+          "latency": {
+            "mean_seconds": 2.5324636839999584,
+            "p95_seconds": 3.5996390609943774
+          },
+          "execution": {
+            "mean_seconds": 0.6145014090026961,
+            "p95_seconds": 0.9800496670068242
+          },
+          "queue": {
+            "mean_seconds": 1.918371024398948,
+            "p95_seconds": 3.1066089689993532
+          },
+          "command": {
+            "mean_seconds": 0.16674238213785098,
+            "p95_seconds": 0.4773431409994373
+          },
+          "artisan_operations": {
+            "engine:claim": 10,
+            "ftp:expected": 1,
+            "ftp:accounts": 1,
+            "engine:secret": 5,
+            "engine:complete": 5
+          },
+          "subprocess_count": 8,
+          "subprocess_commands": {
+            "engine:session": 3,
+            "engine:secret": 5
+          },
+          "peak_active_devices": 1,
+          "device_overlap": 0,
+          "failure_rate": 0.0,
+          "database_result": {
+            "statuses": {
+              "succeeded": 5
+            },
+            "artifacts": 5,
+            "retries": 0
+          },
+          "subprocess_errors": {},
+          "attempted_jobs": 5,
+          "unreported_jobs": 0,
+          "database_backend": "pgsql"
+        }
+      ],
+      "retention-profile-before": {
+        "initial_dry_run": {
+          "mode": "retention",
+          "count": 10000,
+          "seconds": 3.45709912,
+          "query_count": 48,
+          "query_ms": 332.89,
+          "peak_php_bytes": 39845888,
+          "result": {
+            "scanned": 10000,
+            "candidates": 9990,
+            "protected_latest": 0,
+            "missing": 0,
+            "deleted": 0,
+            "anomalies": 0,
+            "errors": 0
+          }
+        },
+        "contender_wall_seconds": 0.03977385300095193,
+        "dry_run_lock_probe": {
+          "seconds": 3.816554352,
+          "locked_seconds": 3.71640179,
+          "peak_php_bytes": 33554432,
+          "query_count": 47,
+          "query_ms": 433.2700000000001,
+          "result": {
+            "scanned": 10000,
+            "candidates": 9990,
+            "protected_latest": 0,
+            "missing": 0,
+            "deleted": 0,
+            "anomalies": 0,
+            "errors": 0
+          },
+          "verify_seconds": 2.254891741000003,
+          "remove_seconds": 0,
+          "transaction_seconds": []
+        },
+        "wait_events": [],
+        "dry_run_blocked": false,
+        "apply_contender_wall_seconds": 8.360191181011032,
+        "apply_wait_events": [
+          "Lock:transactionid:1"
+        ],
+        "apply": {
+          "seconds": 8.851633104,
+          "locked_seconds": 8.767843042,
+          "peak_php_bytes": 33554432,
+          "query_count": 67,
+          "query_ms": 866.2299999999998,
+          "result": {
+            "scanned": 10000,
+            "candidates": 9990,
+            "protected_latest": 0,
+            "missing": 0,
+            "deleted": 9990,
+            "anomalies": 0,
+            "errors": 0
+          },
+          "verify_seconds": 4.926928580000005,
+          "remove_seconds": 2.479929263999999,
+          "transaction_seconds": [
+            8.810473891
+          ]
+        },
+        "database_statuses": "available|10\ndeleted|9990",
+        "remaining_files": 10,
+        "deadlocks": 0
+      },
+      "retention-canonical": {
+        "initial_dry_run": {
+          "mode": "retention",
+          "count": 10000,
+          "seconds": 3.356348208,
+          "query_count": 48,
+          "query_ms": 340.81999999999994,
+          "peak_php_bytes": 39845888,
+          "result": {
+            "scanned": 10000,
+            "candidates": 9990,
+            "protected_latest": 0,
+            "missing": 0,
+            "deleted": 0,
+            "anomalies": 0,
+            "errors": 0
+          }
+        },
+        "contender_wall_seconds": 0.06083315999421757,
+        "dry_run_lock_probe": {
+          "seconds": 3.897371085,
+          "locked_seconds": 3.839951003,
+          "peak_php_bytes": 31457280,
+          "query_count": 47,
+          "query_ms": 426.4600000000001,
+          "result": {
+            "scanned": 10000,
+            "candidates": 9990,
+            "protected_latest": 0,
+            "missing": 0,
+            "deleted": 0,
+            "anomalies": 0,
+            "errors": 0
+          },
+          "verify_seconds": 2.136351929000002,
+          "remove_seconds": 0,
+          "transaction_seconds": []
+        },
+        "wait_events": [],
+        "dry_run_blocked": false,
+        "contender_kind": "artifact_update",
+        "apply_contender_wall_seconds": 0.3858156409987714,
+        "apply_wait_events": [
+          "Lock:transactionid:1"
+        ],
+        "apply": {
+          "seconds": 7.593708187,
+          "locked_seconds": 7.533140575,
+          "peak_php_bytes": 33554432,
+          "query_count": 164,
+          "query_ms": 841.2199999999997,
+          "result": {
+            "scanned": 10000,
+            "candidates": 9990,
+            "protected_latest": 0,
+            "missing": 0,
+            "deleted": 9990,
+            "anomalies": 0,
+            "errors": 0
+          },
+          "verify_seconds": 3.840229429000009,
+          "remove_seconds": 1.937781528999994,
+          "transaction_seconds": [
+            0.388592589,
+            0.343063058,
+            0.298469651,
+            0.333781627,
+            0.35284679,
+            0.35493376,
+            0.419137916,
+            0.462070001,
+            0.418821307,
+            0.384794538,
+            0.296395615,
+            0.311778515,
+            0.315777886,
+            0.34178781,
+            0.373567009,
+            0.32094526,
+            0.308632399,
+            0.432470203,
+            0.304911312,
+            0.395966143
+          ]
+        },
+        "database_statuses": "available|10\ndeleted|9990",
+        "remaining_files": 10,
+        "deadlocks": 0
+      },
+      "retention-pages": {
+        "initial_dry_run": {
+          "mode": "retention",
+          "count": 10000,
+          "seconds": 3.898883876,
+          "query_count": 48,
+          "query_ms": 395.0200000000001,
+          "peak_php_bytes": 39845888,
+          "result": {
+            "scanned": 10000,
+            "candidates": 9990,
+            "protected_latest": 0,
+            "missing": 0,
+            "deleted": 0,
+            "anomalies": 0,
+            "errors": 0
+          }
+        },
+        "contender_wall_seconds": 0.058396200998686254,
+        "dry_run_lock_probe": {
+          "seconds": 4.64844753,
+          "locked_seconds": 4.566423551,
+          "peak_php_bytes": 31457280,
+          "query_count": 47,
+          "query_ms": 459.17000000000013,
+          "result": {
+            "scanned": 10000,
+            "candidates": 9990,
+            "protected_latest": 0,
+            "missing": 0,
+            "deleted": 0,
+            "anomalies": 0,
+            "errors": 0
+          },
+          "verify_seconds": 2.8848476489999917,
+          "remove_seconds": 0,
+          "transaction_seconds": []
+        },
+        "wait_events": [
+          "::0"
+        ],
+        "dry_run_blocked": false,
+        "apply": {
+          "seconds": 9.53791067,
+          "locked_seconds": 9.468523603,
+          "peak_php_bytes": 33554432,
+          "query_count": 145,
+          "query_ms": 1048.2300000000002,
+          "result": {
+            "scanned": 10000,
+            "candidates": 9990,
+            "protected_latest": 0,
+            "missing": 0,
+            "deleted": 9990,
+            "anomalies": 0,
+            "errors": 0
+          },
+          "verify_seconds": 5.2010754070000225,
+          "remove_seconds": 2.615102020000009,
+          "transaction_seconds": [
+            0.365077399,
+            0.334761828,
+            0.477779416,
+            0.433435129,
+            0.457316088,
+            0.430021334,
+            0.376283465,
+            0.435819927,
+            0.416383309,
+            0.480756438,
+            0.635339301,
+            0.463941438,
+            0.505469091,
+            0.502653496,
+            0.467584887,
+            0.496241396,
+            0.370556992,
+            0.436619828,
+            0.468685049,
+            0.560056776
+          ]
+        },
+        "database_statuses": "available|10\ndeleted|9990",
+        "remaining_files": 10,
+        "deadlocks": 0
+      },
+      "retention-final": {
+        "initial_dry_run": {
+          "mode": "retention",
+          "count": 10000,
+          "seconds": 4.525795009,
+          "query_count": 48,
+          "query_ms": 439.4200000000001,
+          "peak_php_bytes": 39845888,
+          "result": {
+            "scanned": 10000,
+            "candidates": 9990,
+            "protected_latest": 0,
+            "missing": 0,
+            "deleted": 0,
+            "anomalies": 0,
+            "errors": 0
+          }
+        },
+        "contender_wall_seconds": 0.06538852500671055,
+        "dry_run_lock_probe": {
+          "seconds": 4.468744062,
+          "locked_seconds": 4.380002388,
+          "peak_php_bytes": 31457280,
+          "query_count": 47,
+          "query_ms": 470.2700000000001,
+          "result": {
+            "scanned": 10000,
+            "candidates": 9990,
+            "protected_latest": 0,
+            "missing": 0,
+            "deleted": 0,
+            "anomalies": 0,
+            "errors": 0
+          },
+          "verify_seconds": 2.6775788950000083,
+          "remove_seconds": 0,
+          "transaction_seconds": []
+        },
+        "wait_events": [],
+        "dry_run_blocked": false,
+        "apply_contender_wall_seconds": 0.48573141000815667,
+        "apply_wait_events": [
+          "Lock:transactionid:1"
+        ],
+        "apply": {
+          "seconds": 9.64522674,
+          "locked_seconds": 9.571345183,
+          "peak_php_bytes": 33554432,
+          "query_count": 145,
+          "query_ms": 996.4100000000003,
+          "result": {
+            "scanned": 10000,
+            "candidates": 9990,
+            "protected_latest": 0,
+            "missing": 0,
+            "deleted": 9990,
+            "anomalies": 0,
+            "errors": 0
+          },
+          "verify_seconds": 5.334101750999983,
+          "remove_seconds": 2.660865919,
+          "transaction_seconds": [
+            0.474878348,
+            0.512825283,
+            0.463116612,
+            0.429603194,
+            0.440662307,
+            0.468955436,
+            0.426381868,
+            0.51727125,
+            0.379141292,
+            0.442180648,
+            0.460772126,
+            0.493592401,
+            0.388990812,
+            0.419963524,
+            0.471690221,
+            0.494646353,
+            0.444637955,
+            0.469393871,
+            0.448743958,
+            0.430041502
+          ]
+        },
+        "database_statuses": "available|10\ndeleted|9990",
+        "remaining_files": 10,
+        "deadlocks": 0
+      },
+      "retention-storage": {
+        "initial_dry_run": {
+          "mode": "retention",
+          "count": 10000,
+          "seconds": 3.763058795,
+          "query_count": 48,
+          "query_ms": 442.59,
+          "peak_php_bytes": 39845888,
+          "result": {
+            "scanned": 10000,
+            "candidates": 9990,
+            "protected_latest": 0,
+            "missing": 0,
+            "deleted": 0,
+            "anomalies": 0,
+            "errors": 0
+          }
+        },
+        "contender_wall_seconds": 0.055575475009391084,
+        "dry_run_lock_probe": {
+          "seconds": 3.784117825,
+          "locked_seconds": 3.701990922,
+          "peak_php_bytes": 31457280,
+          "query_count": 47,
+          "query_ms": 433.93000000000006,
+          "result": {
+            "scanned": 10000,
+            "candidates": 9990,
+            "protected_latest": 0,
+            "missing": 0,
+            "deleted": 0,
+            "anomalies": 0,
+            "errors": 0
+          },
+          "verify_seconds": 2.0921507949999993,
+          "remove_seconds": 0,
+          "transaction_seconds": []
+        },
+        "wait_events": [],
+        "dry_run_blocked": false,
+        "apply_contender_wall_seconds": 0.36338213199633174,
+        "apply_wait_events": [
+          "::0",
+          "Lock:transactionid:1"
+        ],
+        "apply": {
+          "seconds": 8.516423089,
+          "locked_seconds": 8.450512709,
+          "peak_php_bytes": 33554432,
+          "query_count": 145,
+          "query_ms": 893.6399999999996,
+          "result": {
+            "scanned": 10000,
+            "candidates": 9990,
+            "protected_latest": 0,
+            "missing": 0,
+            "deleted": 9990,
+            "anomalies": 0,
+            "errors": 0
+          },
+          "verify_seconds": 4.292495482000004,
+          "remove_seconds": 2.172417798999995,
+          "transaction_seconds": [
+            0.33411974,
+            0.311913495,
+            0.442823567,
+            0.412756293,
+            0.392990592,
+            0.335883355,
+            0.502615564,
+            0.412229522,
+            0.435863759,
+            0.482001488,
+            0.427302917,
+            0.46241829,
+            0.42734351,
+            0.478995387,
+            0.344232633,
+            0.292105805,
+            0.299075202,
+            0.431492627,
+            0.404247868,
+            0.385486318
+          ]
+        },
+        "database_statuses": "available|10\ndeleted|9990",
+        "remaining_files": 10,
+        "deadlocks": 0
+      },
+      "retention-fk-before": {
+        "initial_dry_run": {
+          "mode": "retention",
+          "count": 1000,
+          "seconds": 0.977061794,
+          "query_count": 12,
+          "query_ms": 538.6800000000001,
+          "peak_php_bytes": 35651584,
+          "result": {
+            "scanned": 1000,
+            "candidates": 990,
+            "protected_latest": 0,
+            "missing": 0,
+            "deleted": 0,
+            "anomalies": 0,
+            "errors": 0
+          }
+        },
+        "contender_wall_seconds": 0.055146871993201785,
+        "dry_run_lock_probe": {
+          "seconds": 1.053414944,
+          "locked_seconds": 0.729096387,
+          "peak_php_bytes": 27262976,
+          "query_count": 14,
+          "query_ms": 619.4699999999999,
+          "result": {
+            "scanned": 1000,
+            "candidates": 990,
+            "protected_latest": 0,
+            "missing": 0,
+            "deleted": 0,
+            "anomalies": 0,
+            "errors": 0
+          },
+          "verify_seconds": 0.25337746099999986,
+          "remove_seconds": 0,
+          "transaction_seconds": []
+        },
+        "wait_events": [],
+        "dry_run_blocked": false,
+        "contender_kind": "other_source_foreign_key",
+        "apply_contender_wall_seconds": 0.3598596730007557,
+        "apply_wait_events": [
+          "Lock:transactionid:1"
+        ],
+        "apply": {
+          "seconds": 1.389632836,
+          "locked_seconds": 1.0799898,
+          "peak_php_bytes": 29360128,
+          "query_count": 22,
+          "query_ms": 596.0100000000002,
+          "result": {
+            "scanned": 1000,
+            "candidates": 990,
+            "protected_latest": 0,
+            "missing": 0,
+            "deleted": 990,
+            "anomalies": 0,
+            "errors": 0
+          },
+          "verify_seconds": 0.40194122199999954,
+          "remove_seconds": 0.20265203600000012,
+          "transaction_seconds": [
+            0.549188087,
+            0.460880129
+          ]
+        },
+        "database_statuses": "available|10\ndeleted|990",
+        "remaining_files": 10,
+        "deadlocks": 0
+      },
+      "retention-fk-after": {
+        "initial_dry_run": {
+          "mode": "retention",
+          "count": 1000,
+          "seconds": 1.103129112,
+          "query_count": 12,
+          "query_ms": 648.11,
+          "peak_php_bytes": 35651584,
+          "result": {
+            "scanned": 1000,
+            "candidates": 990,
+            "protected_latest": 0,
+            "missing": 0,
+            "deleted": 0,
+            "anomalies": 0,
+            "errors": 0
+          }
+        },
+        "contender_wall_seconds": 0.044606382987694815,
+        "dry_run_lock_probe": {
+          "seconds": 0.981942084,
+          "locked_seconds": 0.732552166,
+          "peak_php_bytes": 27262976,
+          "query_count": 14,
+          "query_ms": 499.56,
+          "result": {
+            "scanned": 1000,
+            "candidates": 990,
+            "protected_latest": 0,
+            "missing": 0,
+            "deleted": 0,
+            "anomalies": 0,
+            "errors": 0
+          },
+          "verify_seconds": 0.28507796700000054,
+          "remove_seconds": 0,
+          "transaction_seconds": []
+        },
+        "wait_events": [],
+        "dry_run_blocked": false,
+        "contender_kind": "other_source_foreign_key",
+        "apply_contender_wall_seconds": 0.04562691500177607,
+        "apply_wait_events": [
+          "::0"
+        ],
+        "apply": {
+          "seconds": 1.481775938,
+          "locked_seconds": 1.156471818,
+          "peak_php_bytes": 29360128,
+          "query_count": 22,
+          "query_ms": 655.89,
+          "result": {
+            "scanned": 1000,
+            "candidates": 990,
+            "protected_latest": 0,
+            "missing": 0,
+            "deleted": 990,
+            "anomalies": 0,
+            "errors": 0
+          },
+          "verify_seconds": 0.4192669150000006,
+          "remove_seconds": 0.20998185600000005,
+          "transaction_seconds": [
+            0.587550153,
+            0.502397724
+          ]
+        },
+        "database_statuses": "available|10\ndeleted|990",
+        "remaining_files": 10,
+        "deadlocks": 0
+      },
+      "scanner-before-final": {
+        "database_activity": {
+          "peak_workload_connections": 2,
+          "peak_lock_waiters": 0,
+          "samples": 307,
+          "interval_ms": 50,
+          "seconds": 15.593082904815674
+        },
+        "session": true,
+        "receiver_subprocesses": 2,
+        "scanner_workers": 1,
+        "transport": "synthetic filesystem",
+        "uploads": 1000,
+        "backup_uploads": 0,
+        "file_server_uploads": 1000,
+        "bytes_each": 4096,
+        "sessions": 4,
+        "upload_seconds": 0.2538166930025909,
+        "upload_files_per_second": 3939.851190125593,
+        "scan_seconds": 15.555279893989791,
+        "scan_files_per_second": 64.28685351951638,
+        "end_to_end_seconds": 15.938300597001216,
+        "end_to_end_files_per_second": 62.741940506515355,
+        "upload_session_p95_seconds": 0.0023006679984973744,
+        "receipt_command_p95_seconds": 0.008386393004911952,
+        "batch_receipt_p95_seconds": 15.161552008998115,
+        "batch_receipt_mean_seconds": 8.277548834591325,
+        "db_counts": {
+          "executions": 0,
+          "succeeded": 0,
+          "artifacts": 0,
+          "receipts": 1000
+        },
+        "unique_tokens": 1000,
+        "processing_files": 0,
+        "deadlocks": 0,
+        "publication_postgres_outage": {
+          "offline_completion_rejected": true,
+          "files_after_outage": 1001,
+          "files_after_restart": 1001,
+          "artifacts_after_restart": 1,
+          "unique_receipts_after_restart": 1001,
+          "processing_after_restart": 0
+        }
+      },
+      "scanner-after": {
+        "database_activity": {
+          "peak_workload_connections": 3,
+          "peak_lock_waiters": 0,
+          "samples": 200,
+          "interval_ms": 50,
+          "seconds": 10.240353107452393
+        },
+        "session": true,
+        "receiver_subprocesses": 3,
+        "scanner_workers": 2,
+        "transport": "synthetic filesystem",
+        "uploads": 1000,
+        "backup_uploads": 0,
+        "file_server_uploads": 1000,
+        "bytes_each": 4096,
+        "sessions": 4,
+        "upload_seconds": 0.27181742699758615,
+        "upload_files_per_second": 3678.9399820522926,
+        "scan_seconds": 10.158876474000863,
+        "scan_files_per_second": 98.43608223401999,
+        "end_to_end_seconds": 10.594720135995885,
+        "end_to_end_files_per_second": 94.38662027755099,
+        "upload_session_p95_seconds": 0.0018874550005421042,
+        "receipt_command_p95_seconds": 0.01081557699944824,
+        "batch_receipt_p95_seconds": 9.672212749996106,
+        "batch_receipt_mean_seconds": 5.4194440114079265,
+        "db_counts": {
+          "executions": 0,
+          "succeeded": 0,
+          "artifacts": 0,
+          "receipts": 1000
+        },
+        "unique_tokens": 1000,
+        "processing_files": 0,
+        "deadlocks": 0,
+        "publication_postgres_outage": {
+          "offline_completion_rejected": true,
+          "files_after_outage": 1001,
+          "files_after_restart": 1001,
+          "artifacts_after_restart": 1,
+          "unique_receipts_after_restart": 1001,
+          "processing_after_restart": 0
+        }
+      },
+      "pipeline-before": {
+        "session": true,
+        "receiver_subprocesses": 1,
+        "uploads": 40,
+        "backup_uploads": 20,
+        "file_server_uploads": 20,
+        "bytes_each": 4096,
+        "sessions": 4,
+        "upload_seconds": 38.98822111800837,
+        "upload_files_per_second": 1.0259508860106545,
+        "scan_seconds": 1.7230946470081108,
+        "scan_files_per_second": 23.214046929722553,
+        "end_to_end_seconds": 40.73021260800306,
+        "end_to_end_files_per_second": 0.9820719169081358,
+        "upload_session_p95_seconds": 5.599481340002967,
+        "receipt_command_p95_seconds": 0.007046329992590472,
+        "batch_receipt_p95_seconds": 40.689654927002266,
+        "batch_receipt_mean_seconds": 40.34950605951914,
+        "db_counts": {
+          "executions": 20,
+          "succeeded": 20,
+          "artifacts": 20,
+          "receipts": 40
+        },
+        "unique_tokens": 40,
+        "processing_files": 0,
+        "deadlocks": 0,
+        "publication_postgres_outage": {
+          "offline_completion_rejected": true,
+          "files_after_outage": 41,
+          "files_after_restart": 41,
+          "artifacts_after_restart": 21,
+          "unique_receipts_after_restart": 41,
+          "processing_after_restart": 0
+        }
+      },
+      "pipeline-after": {
+        "database_activity": {
+          "peak_workload_connections": 1,
+          "peak_lock_waiters": 0,
+          "samples": 33,
+          "interval_ms": 50,
+          "seconds": 1.678973913192749
+        },
+        "session": true,
+        "receiver_subprocesses": 1,
+        "scanner_workers": 2,
+        "transport": "FTPS",
+        "uploads": 40,
+        "backup_uploads": 20,
+        "file_server_uploads": 20,
+        "bytes_each": 4096,
+        "sessions": 4,
+        "upload_seconds": 48.88127601299493,
+        "upload_files_per_second": 0.8183092435918843,
+        "scan_seconds": 1.610728408995783,
+        "scan_files_per_second": 24.83348513418113,
+        "end_to_end_seconds": 50.646754450994194,
+        "end_to_end_files_per_second": 0.7897840544990645,
+        "upload_session_p95_seconds": 6.049488270000438,
+        "receipt_command_p95_seconds": 0.006454985006712377,
+        "batch_receipt_p95_seconds": 50.55453471800138,
+        "batch_receipt_mean_seconds": 50.240226837234516,
+        "db_counts": {
+          "executions": 20,
+          "succeeded": 20,
+          "artifacts": 20,
+          "receipts": 40
+        },
+        "unique_tokens": 40,
+        "processing_files": 0,
+        "deadlocks": 0,
+        "publication_postgres_outage": {
+          "offline_completion_rejected": true,
+          "files_after_outage": 41,
+          "files_after_restart": 41,
+          "artifacts_after_restart": 21,
+          "unique_receipts_after_restart": 41,
+          "processing_after_restart": 0
+        }
+      },
+      "pipeline-repeat": {
+        "database_activity": {
+          "peak_workload_connections": 1,
+          "peak_lock_waiters": 0,
+          "samples": 37,
+          "interval_ms": 50,
+          "seconds": 1.8916890621185303
+        },
+        "session": true,
+        "receiver_subprocesses": 1,
+        "scanner_workers": 2,
+        "transport": "FTPS",
+        "uploads": 40,
+        "backup_uploads": 20,
+        "file_server_uploads": 20,
+        "bytes_each": 4096,
+        "sessions": 4,
+        "upload_seconds": 24.902959319995716,
+        "upload_files_per_second": 1.6062348047078159,
+        "scan_seconds": 1.8260827100020833,
+        "scan_files_per_second": 21.904812843857638,
+        "end_to_end_seconds": 26.879188837992842,
+        "end_to_end_files_per_second": 1.4881399831655429,
+        "upload_session_p95_seconds": 3.054088762990432,
+        "receipt_command_p95_seconds": 0.00801045099797193,
+        "batch_receipt_p95_seconds": 26.788549799995963,
+        "batch_receipt_mean_seconds": 26.432427197344804,
+        "db_counts": {
+          "executions": 20,
+          "succeeded": 20,
+          "artifacts": 20,
+          "receipts": 40
+        },
+        "unique_tokens": 40,
+        "processing_files": 0,
+        "deadlocks": 0,
+        "publication_postgres_outage": {
+          "offline_completion_rejected": true,
+          "files_after_outage": 41,
+          "files_after_restart": 41,
+          "artifacts_after_restart": 21,
+          "unique_receipts_after_restart": 41,
+          "processing_after_restart": 0
+        }
+      },
+      "idle-before": {
+        "notify": false,
+        "samples": [
+          {
+            "arrival_delay_seconds": 0.1,
+            "idle_wait_seconds": 5.049758894005208,
+            "commit_to_claim_seconds": 4.625406887003919
+          },
+          {
+            "arrival_delay_seconds": 0.5,
+            "idle_wait_seconds": 5.021991807996528,
+            "commit_to_claim_seconds": 4.092718189000152
+          },
+          {
+            "arrival_delay_seconds": 1,
+            "idle_wait_seconds": 5.0227509120013565,
+            "commit_to_claim_seconds": 3.6517793520033592
+          },
+          {
+            "arrival_delay_seconds": 2,
+            "idle_wait_seconds": 5.023839524001232,
+            "commit_to_claim_seconds": 2.671306143995025
+          },
+          {
+            "arrival_delay_seconds": 4,
+            "idle_wait_seconds": 5.02467739500571,
+            "commit_to_claim_seconds": 0.5942763310013106
+          }
+        ],
+        "idle_latency_mean_seconds": 3.127097380600753,
+        "idle_latency_p95_seconds": 4.625406887003919,
+        "quiet_idle_seconds": 15.016199925987166,
+        "quiet_claims": 3,
+        "quiet_claims_per_second": 0.19978423401303907,
+        "quiet_python_cpu_seconds": 0.0011050000000000088,
+        "redis_commands": 0,
+        "duplicate_claims": 0
+      },
+      "idle-after": {
+        "notify": true,
+        "samples": [
+          {
+            "arrival_delay_seconds": 0.1,
+            "idle_wait_seconds": 0.48061558800691273,
+            "commit_to_claim_seconds": 0.040044395995209925
+          },
+          {
+            "arrival_delay_seconds": 0.5,
+            "idle_wait_seconds": 0.8638269820075948,
+            "commit_to_claim_seconds": 0.019531726007699035
+          },
+          {
+            "arrival_delay_seconds": 1,
+            "idle_wait_seconds": 1.4374372210004367,
+            "commit_to_claim_seconds": 0.019168625003658235
+          },
+          {
+            "arrival_delay_seconds": 2,
+            "idle_wait_seconds": 2.412076505992445,
+            "commit_to_claim_seconds": 0.028168477001599967
+          },
+          {
+            "arrival_delay_seconds": 4,
+            "idle_wait_seconds": 4.323398891996476,
+            "commit_to_claim_seconds": 0.01891734699893277
+          }
+        ],
+        "idle_latency_mean_seconds": 0.025166114201419988,
+        "idle_latency_p95_seconds": 0.040044395995209925,
+        "quiet_idle_seconds": 15.02620756298711,
+        "quiet_claims": 3,
+        "quiet_claims_per_second": 0.19965117528322096,
+        "quiet_python_cpu_seconds": 0.0014019999999999866,
+        "redis_commands": 0,
+        "duplicate_claims": 0
+      },
+      "idle-final": {
+        "notify": true,
+        "samples": [
+          {
+            "arrival_delay_seconds": 0.1,
+            "idle_wait_seconds": 0.4687706300028367,
+            "commit_to_claim_seconds": 0.05275619799795095
+          },
+          {
+            "arrival_delay_seconds": 0.5,
+            "idle_wait_seconds": 0.8560336770024151,
+            "commit_to_claim_seconds": 0.027382738000596873
+          },
+          {
+            "arrival_delay_seconds": 1,
+            "idle_wait_seconds": 1.3739638040133286,
+            "commit_to_claim_seconds": 0.03164821700192988
+          },
+          {
+            "arrival_delay_seconds": 2,
+            "idle_wait_seconds": 2.4054559850046644,
+            "commit_to_claim_seconds": 0.025899275991832837
+          },
+          {
+            "arrival_delay_seconds": 4,
+            "idle_wait_seconds": 4.328482052995241,
+            "commit_to_claim_seconds": 0.019178625007043593
+          }
+        ],
+        "idle_latency_mean_seconds": 0.03137301079987083,
+        "idle_latency_p95_seconds": 0.05275619799795095,
+        "quiet_idle_seconds": 15.03000948499539,
+        "quiet_claims": 3,
+        "quiet_claims_per_second": 0.19960067244102078,
+        "quiet_python_cpu_seconds": 0.001468000000000011,
+        "redis_commands": 0,
+        "duplicate_claims": 0,
+        "resilience": {
+          "rollback_wait_seconds": 0.20081917800416704,
+          "missed_hint_wait_seconds": 0.20083287300076336,
+          "race_wakeup_seconds": 0.0002872930053854361,
+          "rollback_preserved_pending": true,
+          "missed_hint_recovered": true,
+          "race_claimed_once": true
+        }
+      },
+      "enqueue-before": [
+        {
+          "mode": "enqueue",
+          "count": 1000,
+          "seconds": 4.260481649,
+          "query_count": 3001,
+          "query_ms": 2186.300000000038,
+          "slowest": [
+            {
+              "ms": 7.24,
+              "sql": "select * from \"backup_executions\" where \"backup_executions\".\"id\" = ? limit 1"
+            },
+            {
+              "ms": 4.7,
+              "sql": "select * from \"backup_executions\" where \"backup_executions\".\"id\" = ? limit 1 for update"
+            },
+            {
+              "ms": 4.37,
+              "sql": "update \"backup_executions\" set \"status\" = ?, \"updated_at\" = ? where \"id\" = ?"
+            }
+          ],
+          "peak_php_bytes": 35651584,
+          "result": {
+            "queued": 1000
+          },
+          "database_backend": "pgsql",
+          "fixture_job_ids_count": 1000
+        }
+      ],
+      "enqueue-after": [
+        {
+          "mode": "enqueue",
+          "count": 1000,
+          "seconds": 4.903748138,
+          "query_count": 4001,
+          "query_ms": 2628.8600000000224,
+          "slowest": [
+            {
+              "ms": 7.56,
+              "sql": "update \"backup_executions\" set \"status\" = ?, \"updated_at\" = ? where \"id\" = ?"
+            },
+            {
+              "ms": 5.28,
+              "sql": "select * from \"backup_executions\" where \"backup_executions\".\"id\" = ? limit 1"
+            },
+            {
+              "ms": 4.9,
+              "sql": "select * from \"backup_executions\" where \"backup_executions\".\"id\" = ? limit 1 for update"
+            }
+          ],
+          "peak_php_bytes": 35651584,
+          "result": {
+            "queued": 1000
+          },
+          "database_backend": "pgsql",
+          "fixture_job_ids_count": 1000
+        }
+      ],
+      "enqueue-listener-before": [
+        {
+          "mode": "enqueue",
+          "count": 1000,
+          "seconds": 4.753096202,
+          "query_count": 3001,
+          "query_ms": 2447.24999999998,
+          "slowest": [
+            {
+              "ms": 7.35,
+              "sql": "select * from \"backup_executions\" where \"backup_executions\".\"id\" = ? limit 1 for update"
+            },
+            {
+              "ms": 7.32,
+              "sql": "select * from \"backup_executions\" where \"backup_executions\".\"id\" = ? limit 1"
+            },
+            {
+              "ms": 5.24,
+              "sql": "update \"backup_executions\" set \"status\" = ?, \"updated_at\" = ? where \"id\" = ?"
+            }
+          ],
+          "peak_php_bytes": 35651584,
+          "result": {
+            "queued": 1000
+          },
+          "database_backend": "pgsql",
+          "fixture_job_ids_count": 1000
+        }
+      ],
+      "enqueue-listener-after": [
+        {
+          "mode": "enqueue",
+          "count": 1000,
+          "seconds": 5.370377783,
+          "query_count": 4001,
+          "query_ms": 2922.469999999965,
+          "slowest": [
+            {
+              "ms": 9.02,
+              "sql": "select * from \"backup_executions\" where \"backup_executions\".\"id\" = ? limit 1 for update"
+            },
+            {
+              "ms": 8.69,
+              "sql": "select * from \"backup_executions\" where \"backup_executions\".\"id\" = ? limit 1"
+            },
+            {
+              "ms": 8.64,
+              "sql": "select count(*) as \"aggregate\" from \"backup_executions\" where \"status\" = ?"
+            }
+          ],
+          "peak_php_bytes": 35651584,
+          "result": {
+            "queued": 1000
+          },
+          "database_backend": "pgsql",
+          "fixture_job_ids_count": 1000
+        }
+      ]
+    },
+    "closure": "Return to tuning only when production shows a measured bottleneck. Existing device safety/idempotence/ArtifactStorage retained; limits described in markdown."
   }
 }

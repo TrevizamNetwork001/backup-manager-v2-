@@ -1,8 +1,10 @@
-# PERF-1 — baseline de carga e resiliência do engine/core
+# Performance do core — PERF-1, PERF-2 e fechamento PERF-3
 
-**PERF-2 executado em 28/09/2026.** O PERF-1 abaixo permanece como histórico e
-referência BEFORE. A seção final registra as otimizações, AFTER, regressões,
-limites e validação completa. Nenhum serviço real foi reiniciado; sem push.
+**PERF-3 fechado em 28/09/2026, no laboratório isolado e sintético.**
+PERF-1 e PERF-2 permanecem abaixo como histórico. A última seção traz a tabela
+final, comparações por otimização, custos e validação. Sem UI, novas dependências,
+migrations, alterações de serviços reais ou push. Novo tuning somente se
+produção apresentar um gargalo medido.
 
 Data: 28/09/2026. Checkout inicial: `f1850d2`; correções P1 em `f6a7395`,
 harness inicial em `5a3ef1c`. **PERF-1 fechado no escopo isolado e sintético.**
@@ -603,3 +605,179 @@ fica dentro da transação. Idle poll de cinco segundos, cap de recovery, N+1 do
 scheduler, concorrência global entre processos, disco/fsync físico e WAN continuam
 como gargalos/limites. Nenhuma claim de throughput real, saturação ou SLA; sem
 novas dependências, migration, restart real ou push.
+
+
+## PERF-3 — fechamento final de performance
+
+Base: PERF-2, checkout `3f9f64e`. Mesmo runtime isolado e quatro workers SSH;
+nenhum equipamento real. BEFORE foi reproduzido antes de cada alteração,
+AFTER medido antes da seguinte. Migrações/fixtures ficam fora da medida.
+A passagem final do engine, retenção e FTPS foi sequencial, sem outras suítes
+PERF concorrentes. Os JSON incluem as passagens intermediárias, a regressão
+corrigida e repetições; não se publica apenas o melhor resultado.
+
+### Tabela final
+
+Comparação com BEFORE reproduzido nesta execução, não com números de máquinas
+reservadas. P95 usa nearest rank; a latência do lote inclui espera na fila.
+Valores por cenário, arquivos de 4 KiB salvo retenção; tmpfs, não disco físico.
+
+| Métrica / cenário | BEFORE | AFTER final | Variação |
+| --- | --- | --- | --- |
+| Jobs/min, 100 SSH de 20 ms | 255,64 | **369,66** | **+44,6%** |
+| P95 do mesmo lote | 22,09 s | **15,44 s** | **−30,1%** |
+| FTPS upload, 40 arquivos, 4 sessões | 1,026 files/s | 0,818 e 1,606 files/s | Sem ganho atribuível; variação do transporte |
+| FTPS → receipt, mesmo lote | 0,982 files/s | 0,790 e 1,488 files/s | Sem ganho atribuível; upload domina |
+| Receiver, 20 backups + 20 file_server após FTPS | 23,21 files/s | 24,83 e 21,90 files/s | −5,6% a +7,0%; inconclusivo |
+| Retention apply, 10.000 artifacts / 9.990 removidos | 8,852 s | **7,594 s** | **−14,2%** |
+| Maior transação de retention | 8,810 s | **0,462 s** | **−94,8%** |
+| Espera do contender de artifact, retention | 8,360 s | **0,386 s** | **−95,4%** |
+| Memória Python / PHP, lote SSH, RSS máximo individual | 40,05 / 53,73 MiB | 41,59 / 52,35 MiB | +3,8% / −2,6% |
+| Memória PHP, retention apply, heap de pico | 32 MiB | 32 MiB | Estável |
+| Scanner, 1.000 file_server com receipts PostgreSQL | 64,29 files/s | **98,44 files/s** | **+53,1%** |
+| Jobs/min, 100 SSH junto de 1.000 uploads locais | 191,57 | **343,59** | **+79,3%** |
+| P95 SSH na carga mista | 30,77 s | **16,18 s** | **−47,4%** |
+| Idle, commit → claim, p95 de 5 chegadas | 4,625 s | **0,053 s** | **−98,9%** |
+| Idle silencioso, claims/s por 15 s | 0,1998 | 0,1996 | Mantido ~0,2 Hz |
+| Subprocess/job, lote SSH, incluindo sessões amortizadas | 2,06 (206/100) | **1,09 (109/100)** | **−47,1%** |
+
+A referência histórica PERF-2 é 255,95 jobs/min, p95 22,39 s e retention
+10,267 s; a comparação de ganho acima usa medições reproduzidas com instrumentação
+igual. Lote lento final: 20 jobs com driver de 2 s, 85,81 jobs/min, p95 13,82 s.
+Mesmo device: cinco jobs, 3,78 s, pico um ativo, sem overlap. Todos os lotes
+finalizaram com acknowledgment, artifacts esperados e zero falhas.
+
+FTPS foi repetido porque o AFTER inicial caiu. Upload leva 38,99 s no BEFORE,
+48,88 s no primeiro AFTER e 24,90 s na repetição. Ele ocorre **antes** do scanner,
+sem código de transporte alterado. O host não é reservado; essas amostras não
+isolam uma regressão causal do core nem demonstram ganho de transporte. O receiver
+pequeno permanece serial e varia ao redor do BEFORE. Não se escolheu a repetição
+mais rápida como prova de melhoria. Upload/TLS/loopback continuam sem tuning novo.
+
+### Otimizações e evidência por alteração
+
+1. **Retention:** profiler separou queries, verificação e remoção, eventos de
+   transação e espera real de outro cliente. BEFORE: 8,85 s, queries 0,87 s,
+   `verify` inclusivo 4,93 s; `remove` 2,48 s inclui sua própria reverificação
+   (não somar os dois tempos). Paginar commits sozinho subiu para 9,54/9,65 s;
+   a regressão foi corrigida antes do fechamento. Ler os metadados persistidos
+   uma vez dentro de `ArtifactStorage::verify`, preservando todas as verificações,
+   reduziu esse custo. Resultado final: verify inclusivo 3,84 s, queries 0,84 s.
+   Apply usa páginas de 500; cada página trava a associação, compara a política
+   atual, protege os keepers e reverifica o latest antes de continuar. IDs de uma
+   fonte são um snapshot ordenado; arquivos/entidades completos só por página.
+   Mudança da política ou perda do latest entre commits interrompe a fonte com
+   segurança. Hash, inode, paths, ownership, symlinks, logs e idempotência ficam
+   em `ArtifactStorage`/Laravel. Dry-run não abre transação nem trava artifacts.
+   9.990 removidos, dez disponíveis, nenhum deadlock; updates passam de 67 para
+   164 queries pelo particionamento e revalidação, sem aumento do tempo SQL final.
+2. **Subprocessos:** os dois spawns de cada job curto eram `engine:secret` e
+   `engine:complete`. Secret mantém subprocesso dedicado com FD privado; não
+   entra no protocolo persistente. Complete/fail/observe-host-key/cancel-ack
+   reutilizam uma sessão Artisan por worker. Heartbeat conserva thread/transporte
+   independente. Regras, validação de conteúdo e ownership continuam em PHP.
+   Sem replay automático depois de EOF/timeout. AFTER isolado desta alteração:
+   424,70 jobs/min (+66,1%), p95 13,47 s, 108 spawns; o fechamento completo usa
+   o AFTER final mais conservador da tabela. CPU dos filhos no lote final:
+   62,30 → 36,81 s (−40,9%). Pico de conexões observado: cinco → oito.
+3. **Scanner:** coordenador observa/claim durável; no máximo duas tarefas pendentes,
+   um processamento por device de backup, lock `flock` do diretório processing
+   durante toda a scan. Não há scans sobrepostas nem duplicação de tokens.
+   Sessão Artisan independente por thread; shutdown espera as tarefas antes de
+   fechar sessões. Scanner roda fora do dispatcher SSH, mantendo intervalo de
+   cinco segundos. `BACKUP_FTP_SCAN_WORKERS` limita a concorrência a 1–2 (default 2);
+   lotes abaixo de 256 candidatos ou sem possibilidade de paralelismo usam um.
+   Teste de 1.000 file_server: 15,56 → 10,16 s, todos hashes/tokens conferidos,
+   zero processing restante. Pico de conexões dois → três, zero lock waiters nas
+   amostras. Carga mista: 31,32 → 17,46 s, pico sete → dez conexões, zero waiters,
+   100 jobs e 1.000 receipts únicos. Uso de CPU/IO físico não foi inferido de tmpfs.
+   Backup com purpose legado null continua serial por device, como o fluxo original.
+4. **Idle:** `LISTEN/NOTIFY` nativo no mesmo PostgreSQL e na conexão do dispatcher,
+   sem Redis, fila nova ou conexão adicional para escutar. Mudanças Eloquent para
+   queued/retry_wait, exceto ftp_received, emitem sinal sem payload na transação;
+   rollback não acorda o dispatcher. O listener é armado antes do claim; hints
+   antigos são drenados com limite, o banco continua sendo fonte de verdade.
+   Wait máximo cinco segundos preserva descoberta de retries e updates sem sinal;
+   SQLite usa espera limitada equivalente. Cinco chegadas reais medidas no banco
+   sintético: p95 53 ms. Idle quieto manteve três claims em 15 s e Redis zero;
+   CPU Python 1,1 → 1,5 ms no intervalo. Probes confirmam rollback, hint ausente e
+   commit entre claim vazio e wait, com claim único. **Custo explícito:** lote de
+   1.000 transições com listener conectado: 4,753 → 5,370 s (+13,0%); 3.001 →
+   4.001 queries, uma por transição sinalizada. Não se aumentou a frequência SQL
+   quando idle; o custo de escrita foi medido e mantido pelo ganho de latência.
+5. **Contenção descoberta na revisão:** lock exclusivo da política a cada página
+   atrasava INSERT com FK de outra fonte que compartilhava a mesma política.
+   Trocar para `FOR SHARE` mantém bloqueio contra edição, permite `FOR KEY SHARE`
+   da FK ([compatibilidade de locks PostgreSQL](https://www.postgresql.org/docs/17/explicit-locking.html)).
+   Probe com 1.000 artifacts: espera 360 → 46 ms (−87,3%), nenhum waiter
+   no AFTER. Não se reivindica ganho no wall time desse probe (1,39 → 1,48 s).
+   Keepers também usam share lock e somente seus IDs são carregados; o latest
+   passa novamente pelo storage. Este ajuste e a correção do purpose legado
+   passaram nas suítes completas.
+
+### Validação e resiliência final
+
+- Laravel SQLite completo: **353/353**, 2.141 assertions; PostgreSQL completo:
+  **353/353**, 2.148 assertions, configuração/banco/storage/views temporários.
+- Python completo: **103/103**; ftp-admin completo: **16/16**.
+- Pint passa; `php -l` em **230 arquivos**, `py_compile` em **35 arquivos**,
+  `git diff --check` e secret scan local por padrões em **294 arquivos** passam.
+  Zero novos achados; somente a fixture truncada preexistente de chave OpenSSH,
+  revisada. Scan por padrões não equivale a gitleaks.
+- Testes novos: mudança de política/perda do latest entre páginas, sessão de
+  worker e FD do secret, transporte por thread, scanner concorrente com hashing
+  real, scan sobreposta, backup serial incluindo purpose null, dispatcher livre
+  enquanto scanner demora, espera idle limitada e rejeição de timeout inválido.
+- Integração FTPS/receiver repete outage do PostgreSQL **sintético** depois da
+  publicação; retomada preserva arquivos, tokens e hashes, uma conclusão e nenhum
+  processing pendente. Todas as três passagens FTPS e scanner passaram esse probe.
+- Nenhum serviço real reiniciado/alterado, equipamento usado, UI tocada ou push.
+  Commits locais: `9b85ffc` (retention), `f890c33` (reporting), `7456f2e` (scanner),
+  `1290819` (idle), seguidos do fechamento de contenção/documentação. Alterações
+  preexistentes do usuário permanecem fora desses commits.
+
+### Reprodução e limites de encerramento
+
+Usar apenas o runtime sintético PERF-1 e seus guardrails descritos acima:
+
+```sh
+export LD_LIBRARY_PATH=/tmp/perf-1-runtime/usr/lib/x86_64-linux-gnu
+PYTHONPATH=engine python3 scripts/perf_baseline.py \
+  --php /tmp/perf-1-runtime/bin/php \
+  --pg-socket /tmp/bm-perf-1-services/socket \
+  --pg-bin /tmp/perf-1-runtime/usr/lib/postgresql/17/bin \
+  --only engine --engine-cases remaining --output /tmp/perf-3-engine.json
+# Acrescentar --scanner-files 1000 para a carga mista.
+python3 scripts/perf_pipeline.py --session --workers 2 --local-files \
+  --file-server-only --uploads 1000 \
+  --output /tmp/perf-3-scanner.json
+python3 scripts/perf_pipeline.py --session --workers 2 --output /tmp/perf-3-ftps.json
+python3 scripts/perf_retention.py --output /tmp/perf-3-retention.json
+python3 scripts/perf_retention.py --count 1000 --fk-contender \
+  --output /tmp/perf-3-retention-fk.json
+python3 scripts/perf_idle.py --notify --output /tmp/perf-3-idle.json
+# Sem --notify, mede o polling anterior com sleeps de cinco segundos.
+# Enqueue: mesmos argumentos PHP/PG de perf_baseline, --only enqueue.
+# BEFORE enqueue: --execution-model /tmp/perf-3-execution-original.php,
+# extraído de git show 7456f2e:app/app/Models/BackupExecution.php.
+# BEFORE retention: --service-file /tmp/perf-3-retention-original.php,
+# extraído do checkout 3f9f64e; ArtifactStorage também precisa da versão BEFORE
+# para repetir o perfil anterior à otimização de metadados.
+```
+
+O storage/hashing continua dominante: apply ainda leva ~7,6 s e revalida o
+arquivo antes do unlink. Páginas limitam rows, não garantem teto de tempo com
+arquivos grandes/disco lento. Snapshot de IDs e lista de keepers crescem com a
+fonte; fontes muito maiores/retention_count alto não foram validados. Sessões
+persistentes aumentam conexões e memória agregada; RSS da tabela é individual,
+não soma dos filhos. Paralelismo FTP pode ter outro custo em disco persistente;
+cap dois evita expansão irrestrita, mas não demonstra saturação/IOPS em produção.
+SSH continua um subprocesso secret/job; heartbeat/host key/falhas podem acrescentar
+operações. Recovery, scheduler, limites globais entre engines, WAN e durabilidade
+física mantêm os limites documentados no PERF-2. Resultados são sintéticos, com
+host compartilhado, sem intervalos de confiança ou promessa de SLA.
+
+**Performance do core encerrada no escopo PERF-3, sem regressão funcional.**
+Não continuar microtuning a partir destes números. Reabrir somente com gargalo
+real de produção e nova medição representativa; documentação e JSON preservam
+os custos e a variabilidade que não permitiram alegar ganho.

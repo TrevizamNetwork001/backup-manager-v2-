@@ -93,7 +93,13 @@ class ScannerConcurrencyTest(unittest.TestCase):
         self.assertEqual(['processing', 'stored'], calls)
 
     def test_parallel_scanner_keeps_one_processing_task_per_backup_device(self):
-        account = dict(self.account, purpose='backup')
+        self.assert_backup_tasks_serial('backup')
+
+    def test_legacy_null_purpose_keeps_backup_device_serial(self):
+        self.assert_backup_tasks_serial(None)
+
+    def assert_backup_tasks_serial(self, purpose):
+        account = dict(self.account, purpose=purpose)
         other_home = self.ftp / '8/incoming'
         other_home.mkdir(parents=True)
         other = dict(account, id=12, device_id=8, home=str(other_home))

@@ -5,6 +5,7 @@ parser=argparse.ArgumentParser(description='Isolated synthetic retention/lock co
 parser.add_argument('--output',type=Path,required=True)
 parser.add_argument('--count',type=int,default=10000)
 parser.add_argument('--service-file',type=Path)
+parser.add_argument('--fk-contender',action='store_true')
 args=parser.parse_args()
 if args.service_file and not str(args.service_file).startswith('/tmp/perf-3-'): parser.error('service-file must be a PERF-3 copy in /tmp')
 if args.count < 11: parser.error('count must be at least 11')
@@ -17,6 +18,16 @@ with tempfile.TemporaryDirectory(prefix='bm-perf-1-') as name:
  def sql(q):return subprocess.check_output([BIN+'/psql',*PG,'-d',db,'-Atc',q],text=True).strip()
  try:
   seed=subprocess.check_output([PHP,'/opt/backup-manager-v2/scripts/perf_control.php','retention',str(args.count)],env=env,text=True);out['initial_dry_run']={k:v for k,v in json.loads(seed).items() if k not in ('job_ids','slowest')};print('seeded',flush=True)
+  peer_source=None
+  if args.fk_contender:
+   peer_setup=r/'peer.php';peer_setup.write_text('''<?php
+require '/opt/backup-manager-v2/app/vendor/autoload.php';$app=require '/opt/backup-manager-v2/app/bootstrap/app.php';$app->make(Illuminate\\Contracts\\Console\\Kernel::class)->bootstrap();
+if(getenv('APP_ENV')!=='testing'||Illuminate\\Support\\Facades\\DB::selectOne('SHOW data_directory')->data_directory!=='/tmp/bm-perf-1-services/pgdata')throw new RuntimeException('not isolated');
+$device=App\\Models\\Device::create(['site_id'=>1,'name'=>'PEER','management_ip'=>'198.18.0.2','vendor'=>'MikroTik','is_active'=>true]);
+$credential=new App\\Models\\Credential(['device_id'=>$device->id,'name'=>'PERF','type'=>'ssh','username'=>'synthetic','is_active'=>true]);$credential->secret='synthetic-only';$credential->save();
+$source=App\\Models\\DeviceBackupPolicy::create(['device_id'=>$device->id,'backup_policy_id'=>1,'credential_id'=>$credential->id,'is_active'=>true]);echo $source->id;
+''')
+   peer_source=int(subprocess.check_output([PHP,str(peer_setup)],env=env,text=True))
   if args.service_file: env['PERF_RETENTION_SERVICE_FILE']=str(args.service_file)
   probe=r/'probe.php';probe.write_text('''<?php
 require '/opt/backup-manager-v2/app/vendor/autoload.php';if(getenv('PERF_RETENTION_SERVICE_FILE'))require getenv('PERF_RETENTION_SERVICE_FILE');$app=require '/opt/backup-manager-v2/app/bootstrap/app.php';$app->make(Illuminate\\Contracts\\Console\\Kernel::class)->bootstrap();
@@ -57,13 +68,17 @@ echo json_encode(['seconds'=>(hrtime(true)-$start)/1e9,'locked_seconds'=>$locked
    if time.monotonic()>deadline:raise RuntimeError('apply lock signal timeout')
    time.sleep(.002)
   tick=time.monotonic()
-  contender=subprocess.Popen([BIN+'/psql',*PG,'-d',db,'-Atc',f'UPDATE backup_artifacts SET updated_at=updated_at WHERE id={args.count}'],env=contender_env,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+  contender_sql=f'UPDATE backup_artifacts SET updated_at=updated_at WHERE id={args.count}'
+  if peer_source:
+   contender_sql=f"INSERT INTO backup_executions (device_backup_policy_id,backup_policy_id,device_id,credential_id,origin,status,attempt,max_attempts,created_at,updated_at) SELECT id,backup_policy_id,device_id,credential_id,'manual','pending',1,3,now(),now() FROM device_backup_policies WHERE id={peer_source} RETURNING id"
+  contender=subprocess.Popen([BIN+'/psql',*PG,'-d',db,'-Atc',contender_sql],env=contender_env,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
   apply_events=[]
   while contender.poll() is None:
    sample=sql("select coalesce(wait_event_type,'')||':'||coalesce(wait_event,'')||':'||cardinality(pg_blocking_pids(pid)) from pg_stat_activity where application_name='bm_perf_retention_contender'")
    if sample:apply_events.append(sample)
    time.sleep(.015)
   result,errors=contender.communicate(timeout=5);assert contender.returncode==0,errors
+  out['contender_kind']='other_source_foreign_key' if peer_source else 'artifact_update'
   out['apply_contender_wall_seconds']=time.monotonic()-tick;out['apply_wait_events']=sorted(set(apply_events))
   result,_=worker.communicate(timeout=30);assert worker.returncode==0;out['apply']=json.loads(result)
   assert out['apply']['result']['deleted']==args.count-10

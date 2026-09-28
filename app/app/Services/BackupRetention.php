@@ -59,18 +59,21 @@ class BackupRetention
             $retainBatch = function () use ($source, $policy, $apply, $nowUtc, $cutoff, $batch, &$validCount, &$protected, &$totals): bool {
                 if ($apply) {
                     $current = DeviceBackupPolicy::query()->lockForUpdate()->find($source->id);
-                    $currentPolicy = $current ? $current->backupPolicy()->lockForUpdate()->first() : null;
+                    $currentPolicy = $current ? $current->backupPolicy()->sharedLock()->first() : null;
                     if (! $currentPolicy || $current->backup_policy_id !== $source->backup_policy_id ||
                         $currentPolicy->retention_days !== $policy->retention_days ||
                         $currentPolicy->retention_count !== $policy->retention_count) {
                         return false;
                     }
                     if ($protected) {
-                        $keepers = BackupArtifact::query()->with('backupExecution:id,device_id,backup_policy_id')
-                            ->whereIn('id', $protected)->where('status', 'available')->lockForUpdate()->get();
-                        $latest = $keepers->firstWhere('id', $protected[0]);
-                        if ($keepers->count() !== count($protected) || ! $latest ||
-                            $this->storage->verify($latest)['result'] !== 'valid') {
+                        $keepers = BackupArtifact::query()->whereIn('id', $protected)
+                            ->where('status', 'available')->sharedLock()->pluck('id');
+                        if ($keepers->count() !== count($protected)) {
+                            return false;
+                        }
+                        $latest = BackupArtifact::query()->with('backupExecution:id,device_id,backup_policy_id')
+                            ->find($protected[0]);
+                        if (! $latest || $this->storage->verify($latest)['result'] !== 'valid') {
                             return false;
                         }
                     }

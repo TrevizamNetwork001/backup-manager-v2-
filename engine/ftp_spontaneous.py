@@ -421,7 +421,7 @@ def scan(root_name, storage_root, stable_seconds, observed, expected, receive, c
 
             def enqueue(*arguments):
                 record = arguments[4]
-                key = ('backup', record['device_id']) if record.get('purpose', 'backup') == 'backup' else ('file_server', arguments[2].name)
+                key = ('file_server', arguments[2].name) if record.get('purpose') == 'file_server' else ('backup', record['device_id'])
                 if key in pending:
                     done, _ = wait([pending[key]])
                     drain(done)
