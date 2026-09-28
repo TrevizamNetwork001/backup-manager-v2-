@@ -7,6 +7,7 @@ use App\Models\BackupExecution;
 use App\Models\Device;
 use App\Models\FtpAccount;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
@@ -88,36 +89,48 @@ class EngineJobService
         if (! preg_match('/\A[a-f0-9]{32}\z/D', $workerId)) {
             throw new \InvalidArgumentException('Worker inválido.');
         }
-        $job = DB::transaction(function () use ($workerId) {
-            $job = BackupExecution::query()
-                // FTP receipts are completed by the receiver, not by the generic SSH/FTP-push worker.
-                ->where('origin', '!=', 'ftp_received')
-                ->where(function ($query) {
-                    $query->where('status', 'queued')
-                        ->orWhere(function ($query) {
-                            // A retry becomes claimable once its backoff window has elapsed.
-                            $query->where('status', 'retry_wait')->where('next_attempt_at', '<=', now());
-                        });
-                })
-                ->whereNotExists(function ($query) {
-                    $query->selectRaw('1')->from('backup_executions as running_jobs')
-                        ->whereColumn('running_jobs.device_id', 'backup_executions.device_id')
-                        ->where('running_jobs.status', 'running');
-                })->orderBy('id')
-                ->lock('FOR UPDATE SKIP LOCKED')->first();
-            if (! $job) {
-                return null;
-            }
-            $job->status = 'running';
-            $job->started_at = now();
-            $job->claimed_at = now();
-            $job->heartbeat_at = now();
-            $job->worker_id = $workerId;
-            $job->next_attempt_at = null;
-            $job->save();
+        $job = null;
+        for ($attempt = 0; $attempt < 3; $attempt++) {
+            try {
+                $job = DB::transaction(function () use ($workerId) {
+                    $job = BackupExecution::query()
+                        // FTP receipts are completed by the receiver, not by the generic SSH/FTP-push worker.
+                        ->where('origin', '!=', 'ftp_received')
+                        ->where(function ($query) {
+                            $query->where('status', 'queued')
+                                ->orWhere(function ($query) {
+                                    // A retry becomes claimable once its backoff window has elapsed.
+                                    $query->where('status', 'retry_wait')->where('next_attempt_at', '<=', now());
+                                });
+                        })
+                        ->whereNotExists(function ($query) {
+                            $query->selectRaw('1')->from('backup_executions as running_jobs')
+                                ->whereColumn('running_jobs.device_id', 'backup_executions.device_id')
+                                ->where('running_jobs.status', 'running');
+                        })->orderBy('id')
+                        ->lock('FOR UPDATE SKIP LOCKED')->first();
+                    if (! $job) {
+                        return null;
+                    }
+                    $job->status = 'running';
+                    $job->started_at = now();
+                    $job->claimed_at = now();
+                    $job->heartbeat_at = now();
+                    $job->worker_id = $workerId;
+                    $job->next_attempt_at = null;
+                    $job->save();
 
-            return $job;
-        });
+                    return $job;
+                });
+                break;
+            } catch (QueryException $exception) {
+                if (($exception->errorInfo[0] ?? null) !== '23505' ||
+                    ! str_contains($exception->getMessage(), 'backup_executions_one_running_device')) {
+                    throw $exception;
+                }
+                // Rollback precedes a fresh claim: the winning device is now excluded.
+            }
+        }
         if ($job) {
             $this->audit('backup_execution.claimed', $job->id, 'success', ['attempt' => $job->attempt, 'origin' => $job->origin]);
         }
