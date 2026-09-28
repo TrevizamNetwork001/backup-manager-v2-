@@ -10,6 +10,9 @@ use App\Models\Device;
 use App\Models\DeviceBackupPolicy;
 use App\Models\Site;
 use App\Models\User;
+use App\Services\ArtifactDeletionService;
+use App\Services\ArtifactStorage;
+use App\Services\BackupRetention;
 use App\Services\EngineJobService;
 use App\Support\DestructiveMode;
 use Carbon\CarbonImmutable;
@@ -22,6 +25,7 @@ class ArtifactDeletionTest extends TestCase
     use RefreshDatabase;
 
     private string $root;
+
     private CarbonImmutable $clock;
 
     protected function setUp(): void
@@ -36,7 +40,9 @@ class ArtifactDeletionTest extends TestCase
     protected function tearDown(): void
     {
         $files = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($this->root, \FilesystemIterator::SKIP_DOTS), \RecursiveIteratorIterator::CHILD_FIRST);
-        foreach ($files as $file) $file->isDir() && ! $file->isLink() ? rmdir($file->getPathname()) : unlink($file->getPathname());
+        foreach ($files as $file) {
+            $file->isDir() && ! $file->isLink() ? rmdir($file->getPathname()) : unlink($file->getPathname());
+        }
         rmdir($this->root);
         parent::tearDown();
     }
@@ -64,7 +70,9 @@ class ArtifactDeletionTest extends TestCase
             'status' => $executionStatus, 'attempt' => 1]);
         $relative = app(EngineJobService::class)->relativePath($job);
         $path = $this->root.'/'.$relative;
-        if (! is_dir(dirname($path))) mkdir(dirname($path), 0700, true);
+        if (! is_dir(dirname($path))) {
+            mkdir(dirname($path), 0700, true);
+        }
         $content = "/interface bridge\nadd name=bridge{$job->id}\n";
         file_put_contents($path, $content);
         $artifact = BackupArtifact::create(['backup_execution_id' => $job->id, 'device_id' => $job->device_id,
@@ -84,6 +92,40 @@ class ArtifactDeletionTest extends TestCase
     private function confirmation(BackupArtifact $artifact): string
     {
         return DestructiveMode::confirmationPhrase(DestructiveMode::DELETE, $artifact->original_filename);
+    }
+
+    public function test_authorized_roles_can_download_a_verified_artifact(): void
+    {
+        $artifact = $this->artifact($this->source());
+
+        foreach (['admin', 'operator', 'viewer'] as $role) {
+            $this->actingAs(User::factory()->create(['role' => $role]));
+            $this->get(route('backup-artifacts.download', $artifact))
+                ->assertOk()
+                ->assertDownload()
+                ->assertHeader('X-Content-Type-Options', 'nosniff');
+        }
+
+        $this->assertFileExists($this->path($artifact));
+    }
+
+    public function test_auditor_cannot_download_an_artifact(): void
+    {
+        $artifact = $this->artifact($this->source());
+        $this->actingAs(User::factory()->auditor()->create());
+
+        $this->get(route('backup-artifacts.download', $artifact))->assertForbidden();
+        $this->assertFileExists($this->path($artifact));
+    }
+
+    public function test_download_rejects_a_tampered_artifact_without_removing_it(): void
+    {
+        $artifact = $this->artifact($this->source());
+        file_put_contents($this->path($artifact), 'tampered');
+        $this->actingAs(User::factory()->admin()->create());
+
+        $this->get(route('backup-artifacts.download', $artifact))->assertNotFound();
+        $this->assertFileExists($this->path($artifact));
     }
 
     // AUTH
@@ -333,12 +375,12 @@ class ArtifactDeletionTest extends TestCase
 
     public function test_manual_deletion_and_retention_share_the_same_storage_primitive(): void
     {
-        $reflection = new \ReflectionClass(\App\Services\ArtifactDeletionService::class);
+        $reflection = new \ReflectionClass(ArtifactDeletionService::class);
         $property = $reflection->getConstructor()->getParameters()[0];
-        $this->assertSame(\App\Services\ArtifactStorage::class, $property->getType()->getName());
+        $this->assertSame(ArtifactStorage::class, $property->getType()->getName());
 
-        $retentionReflection = new \ReflectionClass(\App\Services\BackupRetention::class);
+        $retentionReflection = new \ReflectionClass(BackupRetention::class);
         $retentionProperty = $retentionReflection->getConstructor()->getParameters()[0];
-        $this->assertSame(\App\Services\ArtifactStorage::class, $retentionProperty->getType()->getName());
+        $this->assertSame(ArtifactStorage::class, $retentionProperty->getType()->getName());
     }
 }

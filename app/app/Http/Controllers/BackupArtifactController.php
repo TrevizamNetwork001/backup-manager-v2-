@@ -8,9 +8,9 @@ use App\Services\ArtifactStorage;
 use App\Support\DestructiveMode;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Http\Response;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class BackupArtifactController extends Controller
 {
@@ -19,6 +19,7 @@ class BackupArtifactController extends Controller
         $this->authorize('backup_artifacts.view');
         $artifacts = BackupArtifact::with(['device:id,name', 'backupPolicy:id,name'])
             ->latest('id')->paginate(20);
+
         return view('backup-artifacts.index', compact('artifacts'));
     }
 
@@ -45,7 +46,7 @@ class BackupArtifactController extends Controller
      * reading `relative_path` directly — a missing/tampered/renamed-device
      * artifact never reaches the filesystem call.
      */
-    public function download(BackupArtifact $backupArtifact, ArtifactStorage $storage): Response
+    public function download(BackupArtifact $backupArtifact, ArtifactStorage $storage): BinaryFileResponse
     {
         $this->authorize('backup_artifacts.download');
         $backupArtifact->load('backupExecution.device');
