@@ -137,6 +137,22 @@ class RbacTest extends TestCase
 
     // AUTH
 
+    public function test_login_and_logout_end_the_authenticated_session(): void
+    {
+        $user = User::factory()->admin()->create(['password' => 'ValidPassword123!']);
+
+        $this->get(route('login'))->assertOk();
+        $this->post(route('login.store'), ['email' => $user->email, 'password' => 'ValidPassword123!'])
+            ->assertRedirect(route('dashboard'));
+        $this->assertAuthenticatedAs($user);
+        $this->get(route('dashboard'))->assertOk();
+
+        $this->post(route('logout'))->assertRedirect(route('login'));
+        $this->assertGuest();
+        $this->get(route('dashboard'))->assertRedirect(route('login'));
+        $this->assertDatabaseHas('audit_events', ['action' => 'auth.logout', 'actor_user_id' => $user->id]);
+    }
+
     public function test_disabled_user_cannot_login(): void
     {
         $user = User::factory()->operator()->inactive()->create(['password' => 'ValidPassword123!']);

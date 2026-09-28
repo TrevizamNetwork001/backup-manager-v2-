@@ -1,5 +1,52 @@
 # Estado do core — Backup Manager V2
 
+## RELEASE-1 — 28/09/2026
+
+**NOT READY para `v2.0.0` neste deployment.** Core funcional e performance
+PERF-1/2/3 fechados; a homologação sintética passou. A liberação depende dos
+gates operacionais detalhados em [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md).
+As seções de STABILIZATION-1 abaixo são histórico; "nenhum bloqueante" nessa
+fase não significa produção aprovada hoje.
+
+### READY
+
+- Suítes completas Laravel SQLite/PostgreSQL isolado, Python e ftp-admin;
+  RBAC, login/logout, telas/CSV, engine, FTP/PureDB e retention sintéticos.
+- RELEASE-1 corrigiu dois bugs reais com regressões: download retornava
+  HTTP 500 por tipo incompatível com BinaryFileResponse; scheduler era
+  UNKNOWN mesmo com tick Redis recente porque o timestamp vinha como string.
+- Produção: APP_ENV=production, APP_DEBUG=false, APP_KEY presente sem
+  impressão; DB/Redis/engine/scheduler conectados/ativos. Recovery-check
+  HEALTHY sob CLI root. Nenhum novo tuning ou feature.
+
+### WARNINGS / GATES
+
+- Migration legítima de índice ftp_account_id pendente; não aplicada.
+- PHP-FPM www-data não consegue acessar backups 0700 de nobody: download
+  real permanece bloqueado por permissões, apesar da correção PHP.
+- Backend HTTP 8081 público, cookies Secure dependentes do esquema do proxy,
+  headers básicos incompletos e redirect de HTTP para V1 (:443), não V2 (:8443).
+  URL oficial e adequação da topologia precisam de confirmação operacional.
+- Backup pré-release real e custódia externa da APP_KEY não comprovados.
+  Script validado somente com dump sintético, manifesto e checksum.
+- Health final UNKNOWN: 13 HEALTHY, worker ocioso e retention nunca executada
+  UNKNOWN; zero WARNING/CRITICAL nativos. CLI root não comprova acesso web.
+- FTP sem TLS, seis containers sem healthcheck Docker, firewall passivo
+  mais amplo que o V2 e commit desconhecido no diagnose são warnings.
+- Alterações preexistentes preservadas e fora dos commits desta fase;
+  worktree sujo. Sem tag e sem push.
+
+### PÓS-RELEASE
+
+Monitoramento operacional, ensaio autorizado de DR em destino independente,
+retention somente após revisão de políticas/janela, endurecimento de runtime
+e refinamentos visuais. Não criar jobs reais para forçar health HEALTHY.
+
+### V2.1 / FUTURO
+
+Manter a dívida P2 e extensões já descritas abaixo, sem ampliar este release.
+Novo tuning somente quando houver gargalo medido em produção.
+
 Referência de "o que está pronto" antes do polimento geral de UI. Produzido
 pelo STABILIZATION-1, uma fase de fechamento de core (não de features novas):
 mapeamento e correção de bugs, dívida técnica, gaps de segurança/recovery, e
@@ -86,10 +133,11 @@ não urgente):
   linhas inteiras para contar status em PHP; uma única `GROUP BY` resolveria.
 - **P2** — Reset de senha por admin não invalida sessões/`remember_token`
   existentes do usuário afetado.
-- **P2** — Índice CHECK constraints (`ftp_accounts`, `ftp_received_files`)
-  só existem no PostgreSQL; a suíte de testes roda inteiramente em SQLite, que
-  os ignora silenciosamente — uma regressão nessas regras não seria pega por
-  `php artisan test`, só na homologação manual contra o Postgres real.
+- **P2 atualizado em PERF/RELEASE-1** — CHECK constraints (`ftp_accounts`,
+  `ftp_received_files`) continuam específicas do PostgreSQL. A suíte completa
+  agora também foi homologada em PostgreSQL isolado; o comando padrão
+  `php artisan test` segue usando SQLite. Preservar ambas as validações nas
+  próximas fases, sem executar testes destrutivos no PostgreSQL de produção.
 
 ## FUTURO (fora de escopo desta fase, não descartado)
 
