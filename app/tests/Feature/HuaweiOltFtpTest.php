@@ -66,9 +66,10 @@ class HuaweiOltFtpTest extends TestCase
                 $this->assertSame($status, json_decode(DB::table('audit_events')->where('action', 'backup.content_analyzed')
                     ->where('resource_id', (string) $received['id'])->value('metadata'), true)['status']);
                 $this->actingAs(User::factory()->create())->get(route('backup-executions.show', $received['id']))
-                    ->assertOk()->assertSee('Armazenamento:</strong> OK', false)
-                    ->assertSee('Integridade:</strong> OK', false)
-                    ->assertSee('Análise de conteúdo:</strong> '.($status === 'warning' ? 'Aviso' : 'Não reconhecido'), false);
+                    ->assertOk()->assertSeeInOrder([
+                        'Armazenamento', 'OK', 'Integridade', 'OK',
+                        'Análise de conteúdo', $status === 'warning' ? 'Aviso' : 'Não reconhecido',
+                    ]);
             }
             $this->assertDatabaseCount('backup_artifacts', 2);
         } finally {

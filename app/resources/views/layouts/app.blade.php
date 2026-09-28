@@ -170,11 +170,34 @@
 </div>
 <script>
     document.querySelectorAll('.sidebar-nav .nav-link.active').forEach(link => link.setAttribute('aria-current', 'page'));
+    const sidebar = document.querySelector('.sidebar');
+    const sidebarSize = new ResizeObserver(() => {
+        sidebar.style.setProperty('--sidebar-height', `${sidebar.offsetHeight}px`);
+    });
+    sidebarSize.observe(sidebar);
     const sidebarToggle = document.querySelector('.sidebar-toggle');
     sidebarToggle?.setAttribute('aria-expanded', 'false');
     sidebarToggle?.addEventListener('click', () => {
         const expanded = sidebarToggle.getAttribute('aria-expanded') === 'true';
         sidebarToggle.setAttribute('aria-expanded', String(!expanded));
+    });
+    document.querySelectorAll('.row-menu, .chart-filter-menu').forEach(menu => {
+        menu.addEventListener('toggle', () => {
+            if (!menu.open) return;
+            const panel = menu.querySelector('.table-actions, .chart-filters');
+            if (!panel) return;
+            panel.style.removeProperty('top');
+            panel.style.removeProperty('bottom');
+            const bounds = panel.getBoundingClientRect();
+            const button = menu.querySelector('summary').getBoundingClientRect();
+            if (bounds.bottom > window.innerHeight && button.top >= bounds.height + 4) {
+                panel.style.top = 'auto';
+                panel.style.bottom = 'calc(100% + 4px)';
+            } else if (bounds.top < 0) {
+                panel.style.top = 'calc(100% + 4px)';
+                panel.style.bottom = 'auto';
+            }
+        });
     });
     document.querySelectorAll('[data-list-search]').forEach(input => {
         const key = input.dataset.listSearch;
@@ -191,7 +214,8 @@
         });
     });
     document.querySelectorAll('form').forEach(form => {
-        if (form.method.toLowerCase() === 'get' || form.method.toLowerCase() === 'dialog') return;
+        const method = (form.getAttribute('method') || 'get').toLowerCase();
+        if (method === 'get' || method === 'dialog') return;
         form.addEventListener('submit', event => {
             if (event.defaultPrevented) return;
             if (form.dataset.submitting === 'true') { event.preventDefault(); return; }

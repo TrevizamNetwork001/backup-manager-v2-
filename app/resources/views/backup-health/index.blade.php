@@ -30,10 +30,10 @@
                 <tbody>
                     @foreach ($devices as $device)
                         <tr>
-                            <td>{{ $device['name'] }}</td>
-                            <td><span class="badge badge--{{ \App\Support\HealthStatus::from($device['status'])->badgeVariant() }}">{{ $statuses[$device['status']] ?? $device['status'] }}</span></td>
-                            <td>{{ $reasons[$device['reason']] ?? $device['reason'] }}</td>
-                            <td><a class="table-action" href="{{ route('backup-executions.index', ['device_id' => $device['device_id']]) }}">Ver execuções</a></td>
+                            <td data-label="Equipamento">{{ $device['name'] }}</td>
+                            <td data-label="Situação"><span class="badge badge--{{ \App\Support\HealthStatus::from($device['status'])->badgeVariant() }}">{{ $statuses[$device['status']] ?? $device['status'] }}</span></td>
+                            <td data-label="Motivo">{{ $reasons[$device['reason']] ?? $device['reason'] }}</td>
+                            <td data-label="Histórico"><a class="table-action" href="{{ route('backup-executions.index', ['device_id' => $device['device_id']]) }}">Ver execuções</a></td>
                         </tr>
                     @endforeach
                 </tbody>
