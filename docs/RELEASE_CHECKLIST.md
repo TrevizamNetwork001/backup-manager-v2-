@@ -1,242 +1,254 @@
-# RELEASE-1 — homologação final e preparação para produção
+# RELEASE-1.1 — checklist final de produção
 
-Data: 28/09/2026. **NOT READY para `v2.0.0` neste deployment.**
-O core e as suítes sintéticas estão homologados; os gates operacionais abaixo
-continuam abertos. Nenhuma tag foi criada. Sem novas features ou tuning.
+Data: 28/09/2026. HEAD inicial: `2add72364cddad73d9429d52171992af2e0d8a0d`.
+**NOT READY para `v2.0.0`: correções preparadas e homologadas, ativação real e
+custódia externa ainda sem confirmação.** Esta seção substitui os gates do
+RELEASE-1; não confundir código pronto com deployment aprovado.
 
 Base: [CORE_STATUS.md](CORE_STATUS.md), [PERFORMANCE_BASELINE.md](PERFORMANCE_BASELINE.md),
 [DISASTER_RECOVERY.md](DISASTER_RECOVERY.md) e [UPGRADE.md](UPGRADE.md).
-HEAD inicial: `6b342cac03b5040d0ed6b7fcbaa9f3b895c4bb8d`.
+Sem feature nova, tuning, tag ou push.
 
-## READY — evidência funcional
+## Blockers e estado atual
 
-- [x] Laravel completo em SQLite e PostgreSQL **isolado**, incluindo RBAC,
-  login/logout, telas, relatórios/CSV, auditoria, lifecycle e storage.
-- [x] Python completo, ftp-admin completo e integração PureDB real **sintética**.
-- [x] Worker, scheduler/mutex, retry/backoff, stale recovery, cancellation,
-  queue/claim e idempotência cobertos pelas suítes existentes. Equipamentos,
-  drivers de rede e dados reais não são alvos desses testes.
-- [x] FTP backup/file_server, receipts, quarentena, stale, paths e symlinks
-  cobertos em `HuaweiOltFtpTest`, `FtpAdminTest`, testes do receiver e storage.
-- [x] Retention dry-run, proteção do mais recente, hash/tamanho/inode e
-  download exercitados apenas com arquivos temporários. A suíte também
-  remove suas próprias fixtures; nenhum arquivo real é removido.
-- [x] Bug de download corrigido: o retorno agora é `BinaryFileResponse`.
-  Regressão reproduziu HTTP 500 antes; após correção, admin/operator/viewer
-  recebem 200/download, auditor recebe 403 e arquivo adulterado recebe 404.
-  Referência: [Laravel — file downloads](https://laravel.com/docs/13.x/responses#file-downloads)
-  e `ResponseFactory` da versão instalada.
-- [x] Bug de diagnóstico do scheduler corrigido: timestamp numérico recebido
-  como string do Redis é validado e interpretado. Antes havia tick recente
-  com UNKNOWN; depois, HEALTHY. Timestamp ausente/inválido continua UNKNOWN;
-  atraso continua WARNING/CRITICAL, sem mudar thresholds.
+| Blocker | Classificação | Evidência / próxima ação |
+| --- | --- | --- |
+| Migration/índice | **PENDENTE MANUAL** | Única pendente: `2026_09_27_000001_add_missing_index_to_backup_executions_ftp_account_id`; esperada, up/down passaram em SQLite e PostgreSQL isolado; comando limitado por --path preparado abaixo |
+| PHP-FPM/storage | **PENDENTE MANUAL** (correção preparada) | Pool candidato UID 65534/grupo 33 passou na sintaxe e leitura/escrita controlada; app real ainda usa UID 33 até recriação autorizada |
+| Backend 8081 | **PENDENTE MANUAL** (correção preparada) | Quem publica é o container nginx; Compose agora usa `127.0.0.1:8081:80`; binding real ainda 0.0.0.0/:: até recriação autorizada |
+| Redirect V1 | **PENDENTE MANUAL** | Candidato versionado transfere somente porta 80 para URL V2 :8443, preservando V1 :443; URL final e instalação/reload aguardam confirmação |
+| Headers/cookies | **RESOLVIDO em código/testes; PENDENTE MANUAL na ativação** | Proxy restrito por subnet, headers normalizados, cookies explicitamente Secure/HttpOnly/Lax e proxy com nosniff/referrer/frame policy/CSP compatível; falta aplicar Compose e proxy do host |
+| Backup pré-release | **PENDENTE MANUAL** | Script existente preservado; custom dump sintético, manifesto/hash/tamanho e pg_restore --list passaram; backup real exige autorização |
+| APP_KEY/config/artifacts/FTP externos | **PENDENTE EXTERNO** | Chave presente, recovery-check HEALTHY, fingerprint abaixo; operador precisa confirmar cofre/cópias independentes; nada foi copiado automaticamente |
 
-## Gates pendentes — produção
+## READY — correções e testes preparados
 
-- [ ] **Migration legítima pendente**:
-  `2026_09_27_000001_add_missing_index_to_backup_executions_ftp_account_id`.
-  As outras 25 constam como Ran. `up()` cria apenas um índice em
-  `backup_executions.ftp_account_id`; `down()` o remove. Não há migration
-  inesperada identificada. A criação normal do índice pode bloquear escritas:
-  escolher janela, validar backup e pedir confirmação manual antes de
-  `migrate --force`. Não foi aplicada no PostgreSQL real.
-- [ ] **Storage acessível ao usuário web**: `/data/backups` está em
-  `65534:65534`, modo 0700. Engine/scheduler (`nobody`) têm acesso;
-  PHP-FPM (`www-data`, UID 33) não tem leitura nem travessia. CLI root reporta
-  storage HEALTHY, mas isso **não homologa download/preview web real**.
-  Definir permissões/ACL ou identidade compartilhada com mínimo acesso;
-  validar primeiro com arquivo sintético usando UID 33, incluindo paths
-  internos, e garantir a mesma regra para novos arquivos do engine.
-  Não executar chmod/chown recursivo indiscriminado nem alterar artifacts
-  reais durante homologação. O bug PHP corrigido não resolve este gate.
-- [ ] **URL oficial e redirect**: configuração observada é
-  `https://backup.trevizamnetwork.com.br:8443`. HTTPS local com Host/SNI correto
-  responde 200; certificado validado, TLS 1.3, SAN correspondente, validade
-  até 07/12/2026. A porta 80 redireciona para `https://backup.trevizamnetwork.com.br/`
-  (`:443`, V1), não para o V2. Confirmar URL oficial e plano de convivência
-  antes de reconfigurar o proxy. Validação local não comprova DNS/rota externa.
-- [ ] **Backend HTTP exposto**: `8081` publica em `0.0.0.0` e `::`, responde
-  200 sem redirect e gera cookies sem Secure. Há `trustProxies('*')`:
-  o backend deve ficar restrito ao proxy confiável, com headers sobrescritos
-  por ele. Preparar bind loopback/ACL e confiança de proxy conforme topologia;
-  recriação de container/firewall somente após autorização.
-- [ ] **Sessão e headers**: HTTPS observado usa cookie de sessão
-  Secure/HttpOnly/SameSite=Lax; config `session.secure=null` depende do esquema
-  informado pelo proxy. Definir `SESSION_SECURE_COOKIE=true` para produção e
-  rever exposição HTTP. Proxy tem Permissions-Policy; não foram observados
-  HSTS, X-Content-Type-Options, X-Frame-Options ou Referrer-Policy no login.
-  Preparar headers básicos no proxy e validar antes de autorização de reload.
-  Não ativar HSTS incluindo o V1 sem revisar o domínio compartilhado.
-- [ ] **Backup pré-release e custódia da chave**: confirmar APP_KEY atual
-  em cofre independente e cópia protegida de config/artifacts/FTP. O diretório
-  existente contém quatro dumps antigos, de 23–24/09, sem manifestos: não
-  equivalem a backup pré-release verificável. Um backup real novo requer
-  confirmação explícita antes de executar `system-backup.sh`; ainda não foi
-  executado. Validar checksum/tamanho e `pg_restore --list`, sem restore.
+- PHP-FPM usa `docker/php/storage-pool.conf`: user=nobody (65534),
+  group=www-data (33). Mesma identidade dona dos artifacts, grupo do runtime
+  Laravel (logs/views/sessões/cache existentes também conferidos como writable).
+  Mantém diretórios 0700 e arquivos 0600 existentes e novos, sem
+  chmod 777, ACL global ou chown/chmod recursivo de dados reais. App continua
+  com código e FTP montados RO, storage/cache Laravel RW e backups RW para
+  as ações autorizadas; engine/scheduler não mudam de identidade. Compartilhar
+  o UID entre app/engine é intencional: app precisa verificar/download e
+  excluir artifacts autorizados; engine precisa publicá-los. Containers e
+  mounts continuam sendo a barreira de acesso ao FTP/código.
+- Probe no storage real, mas **somente fixtures exclusivas** `.release-1-1-UUID`:
+  UID 65534:33 escreveu/leu, engine escreveu/leu, runtime Laravel acessível;
+  diretório e arquivos temporários removidos. Nenhum artifact registrado
+  foi lido, alterado ou removido nesse probe. Pool real ainda não ativado.
+- Backend 8081 limitado ao loopback IPv4 no Compose; proxy do host já usa
+  `127.0.0.1:8081`. Nenhuma publicação IPv6 prevista. Postgres/Redis continuam
+  sem portas publicadas; sem mudança de firewall ou certificado.
+- `TRUSTED_PROXIES` deixa de ser `*`. Compose usa
+  `BACKUP_TRUSTED_PROXIES`, default `172.18.0.0/16`, conferido por inspeção
+  Docker. Bootstrap admite esse subnet e loopback como fallback; configurar
+  a variável se a rede Docker mudar. Confia somente For/Proto/Port,
+  não em X-Forwarded-Host ou Forwarded. Referência:
+  [Laravel — trusted proxies](https://laravel.com/docs/13.x/requests#configuring-trusted-proxies).
+- Proxy candidato `docker/nginx/host-v2.conf` usa Host/HTTPS/port 8443
+  canônicos, sobrescreve X-Forwarded-For com o IP observado e remove headers
+  Forwarded/X-Forwarded-Host enviados pelo cliente. TLS existente preservado.
+- Compose define SESSION_SECURE_COOKIE=true, SESSION_HTTP_ONLY=true,
+  SESSION_SAME_SITE=lax. Login/logout em HTTPS :8443, sessão segura e CSRF
+  válido/missing foram testados no kernel Laravel com bases sintéticas.
+- Proxy adiciona X-Content-Type-Options=nosniff,
+  Referrer-Policy=strict-origin-when-cross-origin, X-Frame-Options=SAMEORIGIN
+  e CSP `frame-ancestors 'self'`. Essa CSP não restringe scripts/estilos
+  existentes. HSTS **não habilitado**: é política do host inteiro, não de
+  :8443. Enquanto :443 servir V1, upgrade automático do navegador para :443
+  pode contornar o redirect V2; a política fica diferida para o cutover do domínio.
+- `nginx -t` do candidato com V1 :443 preservado passou. Proxy real isolado
+  em loopback 58080/58443 com backend sintético passou: redirect preserva
+  path/query; HTTPS/TLS verificado, headers corretos e spoofing descartado.
+  Ambos os processos sintéticos foram encerrados; nginx real não recarregado.
 
-## Produção / configuração revisada
+## Comandos reais — somente após confirmação explícita
 
-| Item | Observação read-only |
+Executar da raiz `/opt/backup-manager-v2`. Não usar um `migrate --force`
+sem --path; não executar down/rollback no PostgreSQL real nesta fase.
+Nenhum comando mutável desta seção foi executado sem confirmação.
+
+### 1. Custódia e backup, antes de migration/recriação
+
+Confirmar APP_KEY exata em cofre fora do host e cópias protegidas/off-host de
+config, artifacts, ftp-data e ftp-db. O dump não inclui esses volumes ou a
+chave. Não gerar outra chave nem copiá-la junto do dump.
+
+```bash
+umask 077
+bash scripts/system-backup.sh
+```
+
+O diretório `database/backups/` continua ignorado pelo Git. O script gera
+`.dump` custom e `.manifest.json`, SHA-256, tamanho, commit e fingerprint.
+A validação sintética também confirmou novos arquivos em modo 0600 sob
+umask 077. Dumps antigos 0644/0664 não foram modificados ou removidos.
+Após gerar o novo par, validar **esse par específico**, não um dump antigo:
+
+```bash
+python3 - <<'PY_VERIFY'
+from pathlib import Path
+import hashlib, json, subprocess
+root = Path('database/backups')
+manifest = max(root.glob('system-backup-*.manifest.json'), key=lambda p: p.stat().st_mtime_ns)
+record = json.loads(manifest.read_text())
+name = record['dump_file']
+assert Path(name).name == name and name.startswith('system-backup-') and name.endswith('.dump')
+dump = root / name
+with dump.open('rb') as stream:
+    assert stream.read(5) == b'PGDMP'
+assert dump.stat().st_size == record['size_bytes'] > 0
+with dump.open('rb') as stream:
+    assert hashlib.file_digest(stream, 'sha256').hexdigest() == record['sha256']
+assert record['app_key_fingerprint_sha256_16'] == '8f5f636f698c8ac6'
+with dump.open('rb') as stream:
+    subprocess.run(['docker', 'compose', 'exec', '-T', 'postgres', 'pg_restore', '--list'], stdin=stream, stdout=subprocess.DEVNULL, check=True)
+print('Backup custom, manifesto/checksum/tamanho e fingerprint conferidos.')
+PY_VERIFY
+```
+
+Se a chave/fingerprint mudar, parar e investigar; não editar o manifesto para
+aceitar uma chave diferente. Não se executa restore para verificar o dump.
+
+### 2. Somente a migration esperada
+
+```bash
+docker compose exec -T app php artisan migrate --database=pgsql --path=database/migrations/2026_09_27_000001_add_missing_index_to_backup_executions_ftp_account_id.php --force --no-interaction
+docker compose exec -T app php artisan migrate:status --no-interaction
+```
+
+`up()` cria `backup_executions_ftp_account_id_index`; `down()` remove apenas
+esse índice. Não muda rows/schema de negócio. CREATE INDEX normal pode
+bloquear escritas; escolher janela e revisar atividade antes da autorização.
+Reversibilidade e preservação de execução queued foram testadas em ambos os
+bancos; --path rollback/up também passaram em PostgreSQL isolado.
+
+### 3. Ativar pool, cookies e binding de backend
+
+```bash
+docker compose config --quiet
+docker compose up -d --no-deps app nginx
+```
+
+Recria somente containers que precisarem da configuração nova; possível
+interrupção curta de HTTP. Não reinicia engine/scheduler/FTP/DB/Redis.
+Não usar restart como substituto: ele não atualiza env, mounts ou portas.
+Sem config cache observado nesta instância; se aparecer cache antes da
+aplicação, revisar atualização controlada antes de prosseguir.
+Verificar pool por `/proc`/conf, cookies efetivos e probe temporário com o
+**usuário real** PHP-FPM, além de download com fixture sintética. Inspecionar
+binding 127.0.0.1 e ausência de [::]/0.0.0.0; não alterar firewall.
+
+### 4. Instalar proxy candidato, somente após confirmar URL V2 :8443
+
+Os caminhos reais dos sites são `/etc/nginx/sites-available/backup-manager-v2.conf`
+e `/etc/nginx/sites-available/backup-manager-local.conf`, com symlinks já
+presentes em sites-enabled. Fazer snapshot protegido dos dois arquivos antes
+de editá-los. Instalar `docker/nginx/host-v2.conf` no site V2; remover **somente**
+o primeiro bloco de porta 80 do site V1, cujo redirect hoje é:
+`return 301 https://backup.trevizamnetwork.com.br$request_uri;`.
+O servidor V1 porta 443 deve permanecer byte-for-byte. Não manter dois blocos
+com mesmo server_name/porta 80; candidato testado já considera essa remoção.
+
+```bash
+sudo python3 - <<'PY_HOST'
+from pathlib import Path
+import datetime, os, shutil
+os.umask(0o077)
+v1 = Path('/etc/nginx/sites-available/backup-manager-local.conf')
+v2 = Path('/etc/nginx/sites-available/backup-manager-v2.conf')
+old = '''server {
+    listen 80;
+    listen [::]:80;
+    server_name backup.trevizamnetwork.com.br;
+
+    return 301 https://backup.trevizamnetwork.com.br$request_uri;
+}
+
+'''
+text = v1.read_text()
+assert text.startswith(old), 'Config V1 mudou: parar e revisar, sem escrever.'
+candidate = Path('docker/nginx/host-v2.conf')
+assert candidate.is_file()
+snapshot = Path('/etc/nginx') / ('release-1-1-' + datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%d%H%M%S'))
+snapshot.mkdir(mode=0o700)
+for source in [v1, v2]:
+    shutil.copyfile(source, snapshot / source.name)
+    (snapshot / source.name).chmod(0o600)
+shutil.copyfile(candidate, v2)
+v1.write_text(text[len(old):])
+print('Snapshot:', snapshot)
+PY_HOST
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+Se nginx -t falhar, restaurar os dois snapshots e não recarregar. Validar
+HTTP→HTTPS :8443 em uma etapa, login/logout, path/query, URLs/form actions,
+Secure/HttpOnly/Lax, headers e ausência de loop. :443 continua servindo V1.
+Não emitir/reconfigurar certificados. Se a URL oficial passar a ser :443,
+revisar candidato e novos testes antes de qualquer aplicação.
+
+## APP_KEY / health / recheck
+
+Fingerprint atual não reversível: **`8f5f636f698c8ac6`**. Valor da APP_KEY não
+impresso/copiado. `system:recovery-check` HEALTHY sob CLI root confirma formato,
+DB/schema/storage/config, mas não comprova custódia externa ou acesso do pool
+real. Dados reais nunca foram alterados para forçar health HEALTHY.
+
+Recheck atual (antes da ativação): migration ainda pendente;
+engine:health/diagnose **UNKNOWN**, 13 HEALTHY e 2 UNKNOWN (worker ocioso,
+retention nunca executada); zero WARNING/CRITICAL nativos. Retention continua
+desabilitada, thresholds/timeouts/performance inalterados. A leitura de
+storage por root não resolve o gate de ativação do pool.
+Após operações autorizadas, repetir migrate:status, engine:health,
+engine:diagnose, recovery-check, storage/pool, downloads, smoke HTTP/RBAC,
+FTP/receipts, reports/CSV e audit. UNKNOWN legítimo permanece UNKNOWN.
+
+## Testes finais
+
+| Verificação | Resultado |
 | --- | --- |
-| Ambiente | `APP_ENV=production`, `APP_DEBUG=false` |
-| APP_KEY | Presente e plausível; valor nunca impresso; custódia externa não comprovada |
-| Timezone | App/DB timestamps UTC; instância `America/Sao_Paulo` |
-| PostgreSQL / Redis | `postgres:5432` e `redis:6379`, conectados, sem portas publicadas no host |
-| Cache / sessão / queue config | Redis / database / Redis; sessão JSON, HttpOnly, Lax, encrypt=false |
-| Queue do engine | Lifecycle em `backup_executions`/PostgreSQL; Python é o worker; nenhuma classe `ShouldQueue` de aplicação encontrada que exija `queue:work` adicional |
-| Scheduler | `schedule:work`; schedule:list confirma backups:schedule e recover-stale a cada minuto; mutex no database; tick Redis recente |
-| FTP efetivo | Endereço configurado e passivo coincidem; porta 21; 3 contas backup ativas e 1 file_server ativa; PureDB presente (0600) |
-| Receipts reais | 17 stored e 17 quarantined, sem processing no agregado; apenas contagens lidas, sem reprocessar |
-| Storage | Volume persistente backups; host cerca de 68 GiB livres em 93 GiB; health calculou 27% de uso; acesso web pendente |
-| Retention | Desabilitada; horário configurado 04:30; 4 políticas com 30 dias e 1 com count=1; nenhuma retenção real acionada |
-
-Thresholds mantidos: backlog warning/critical 6/21; scheduler 3/10 minutos;
-success rate 90/70% em 24h; storage 80/90%; freshness diária 30/48h e semanal
-192/240h; 3 falhas consecutivas; FTP processing stale 15min; cache health 30s.
-Engine: stale 300s, timeout 1800s, máximo 3 attempts. Sem recalibração.
-
-## Containers e listeners
-
-Os oito containers estão **running**, todos `restart: unless-stopped`.
-PostgreSQL e Redis têm healthcheck Docker **healthy**. App, engine, scheduler,
-nginx, ftp e ftp-admin não têm healthcheck Docker; running não prova saúde.
-Engine/scheduler usam `nobody`; app tem master root e pool PHP-FPM `www-data`.
-FTP/ftp-admin têm configuração de usuário default, necessária ao provisioning
-atual; rever endurecimento posteriormente. Nginx tem mounts read-only.
-App monta código RW, backups RW, FTP RO e snapshot compartilhado; **nenhum
-Docker socket montado no app**. Todos os volumes esperados estão presentes.
-
-| Porta no host | Serviço / avaliação |
-| --- | --- |
-| TCP 8443 | Proxy HTTPS V2 |
-| TCP 8081 | Nginx interno V2, publicado IPv4/IPv6; exposição desnecessária, gate acima |
-| TCP 21, 30000–30009 | Pure-FTPd V2, publicado IPv4/IPv6; FTP sem TLS conforme perfil atual |
-| TCP 80 / 443 | Proxy compartilhado / V1; redirect atual aponta para V1 |
-| TCP 22 | SSH do host; firewall IPv4 restringe origem administrativa |
-| UDP 69 | TFTP legado do host/V1; fora do V2, firewall restringe origem específica |
-| Loopback 8080, 6011, porta do Codex e 323 UDP | V1/local, sessão SSH, ferramenta e chrony; não alterados |
-
-UFW ativo: deny incoming/routed por padrão; 21 e faixa passiva liberados
-globalmente. A faixa permitida **30000–30100** é maior que a utilizada pelo
-V2 (**30000–30009**); revisar necessidade do V1 antes de estreitar. Docker
-mantém DNAT/forward para 8081: ausência de allow UFW 8081 não prova isolamento.
-Não se fez teste externo de alcançabilidade nem alteração de firewall.
-FTP público sem TLS exige decisão operacional de rede/origens confiáveis;
-FTPS medido em PERF não significa FTPS habilitado em produção.
-
-## HEALTH — classificação final
-
-`engine:health` e `engine:diagnose`: **UNKNOWN**, sem WARNING/CRITICAL nos
-checks nativos. O exit code 0 desses comandos não deve ser interpretado
-como "tudo saudável".
-
-| Classe | Checks |
-| --- | --- |
-| HEALTHY (13) | database, redis, engine, driver_registry, scheduler, queue, stale_jobs, retry, failure, devices, storage (CLI root), ftp, file_server |
-| WARNING (0) | Nenhum check nativo |
-| UNKNOWN (2) | worker: ocioso, sem execução running; retention: nunca executada |
-| CRITICAL (0 nativos) | Nenhum check nativo; acesso web ao storage é bloqueio operacional independente |
-
-`system:recovery-check`: **HEALTHY** nos cinco checks (app_key, database,
-schema, storage, config), sob CLI root. Não comprova cofre externo, backup
-recente, restore íntegro ou permissões de PHP-FPM.
-Diagnose não identifica commit dentro do container (`app_commit` desconhecido);
-usar o HEAD auditado acima e os commits desta fase como referência.
-
-## Smoke tests e verificações finais
-
-Os testes HTTP passam pelo kernel Laravel em bases sintéticas, sem login
-com credencial real. Cobertura: `RbacTest`, `AuditTest`, `SystemHealthTest`,
-testes de sites/devices/credentials/FTP/policies/executions/artifacts/users,
-`DashboardTimezoneTest`, `ReportsSmokeTest`, `ReportsAuthorizationTest` e
-`ReportExportTest`. Status 200/302/403 são verificados por permissão;
-download inválido usa 404 esperado. Login→dashboard→logout→guest foi validado
-com auditoria do logout. Não houve automação visual de navegador.
-
-| Verificação | Resultado final |
-| --- | --- |
-| Laravel SQLite completo | 359 testes, 2.186 assertions, passou |
-| Laravel PostgreSQL completo | 359 testes, 2.193 assertions, passou |
-| Python engine completo | 103 testes, passou |
+| Laravel SQLite completo | 364 testes, 2.218 assertions, passou |
+| Laravel PostgreSQL isolado completo | 364 testes, 2.225 assertions, passou |
+| Python completo | 103 testes, passou |
 | ftp-admin completo | 16 testes, passou, sem skips |
-| PureDB integração | login/chroot/upload sintético/limite/rotação/desativação passaram |
-| php -l | 150 arquivos PHP, sem erros (Blade validado pelos testes HTTP) |
-| py_compile | 35 arquivos Python, passou |
-| Pint | Aplicado somente aos 5 arquivos PHP alterados, sem alterações restantes de formato |
-| Bash / backup | bash -n passou; cópia do script gerou custom dump do DB sintético, manifesto/checksum/tamanho válidos; pg_restore --list passou; parser de fingerprint com fixture sintética |
-| Git / secrets | diff --check passou; scan de valores reais do .env e marcadores de chave privada passou; único marcador é fixture truncada em test_driver_contract.py, não uma chave utilizável |
+| PureDB integração | Login/chroot/upload sintético/limite/rotação/desativação passaram |
+| Migration up/down | SQLite e PostgreSQL; índice e dados conferidos; --path CLI testado no PG isolado |
+| php -l / py_compile | 151 PHP / 35 Python, passou |
+| Pint / git diff --check | PHP alterado formatado; diff sem erros |
+| Secret scan | Zero matches com secrets reais do .env; único marcador de chave privada é fixture truncada conhecida |
+| Backup sintético | Custom dump/manifesto/checksum/tamanho/0600 e pg_restore --list passaram |
+| Proxy / FPM candidatos | Sintaxe e testes isolados/controlados passaram |
 
-Laboratório exclusivo: `/tmp/bm-release-1`; PostgreSQL 17 com socket Unix
-exclusivo, porta lógica 55433, sem listener TCP; data_directory conferido
-antes de criação/migration/pg_dump. APP_KEY de teste sintética, caches,
-storage, FTP e views isolados; `.env` real não governa esses valores.
-PHP CLI de laboratório 8.4.23, produção 8.4.25; Paramiko host 3.5.1,
-engine de produção 4.0.0. Essa diferença limita equivalência de runtime;
-os testes de driver não autenticam em equipamento real.
-Evidência local, não versionada: `/tmp/bm-release-1/{sqlite,pgsql,python,ftp-admin,puredb}.log`,
-JUnit das suítes, health/diagnose/recovery JSON e inventário inicial do Git.
+Laboratório `/tmp/bm-release-1-1`, PostgreSQL exclusivo com socket Unix/porta
+lógica 55434, sem TCP; data_directory conferido antes de migrations/dump.
+Bancos, APP_KEY, caches, views e storage das suítes são sintéticos. PHP CLI
+8.4.23 versus produção 8.4.25; Paramiko host 3.5.1 versus engine 4.0.0,
+mesmas limitações de equivalência do RELEASE-1. Nenhum hardware usado.
+Evidência local: logs/JUnit, migration-up-down.log, backup-harness,
+proxy-test/result.json, fpm-test.log e secret-scan.json nesse laboratório.
 
-## Backup, DR e upgrade — revisão, sem execução real
+## WARNINGS / PÓS-RELEASE / V2.1
 
-`system-backup.sh` usa pg_dump custom, exige dump não vazio, calcula SHA-256,
-registra tamanho/formato/commit e fingerprint não reversível da APP_KEY.
-Não copia a chave ou os artifacts. `database/backups/` é ignorado pelo Git.
-O teste usa cópia do script e substitui somente suas chamadas Docker por
-um dump do banco sintético e resposta de recovery de fixture; isso valida
-o fluxo, sem certificar um backup real nem a custódia da chave.
-Executar backup real futuro com umask 077 e destinação protegida/off-host:
-os dumps antigos observados têm modos 0644/0664 e contêm dados sensíveis.
+Mantidos warnings de worker ocioso/retention nunca executada, FTP sem TLS,
+faixa passiva de firewall maior que perfil V2, seis containers sem healthcheck
+Docker e commit desconhecido em diagnose. Não são convertidos em HEALTHY.
+Após release: monitorar capacidade/freshness/receipts e ensaiar DR autorizado
+em destino independente. UI restante e dívida P2 ficam depois; V2.1 mantém
+escopo futuro do CORE_STATUS, sem novos recursos/tuning nesta fase.
 
-Ordem segura a seguir na recuperação: manter engine/scheduler/ftp-admin/FTP
-parados; restaurar config e APP_KEY exata; subir somente dependências de DB;
-validar checksum e restaurar DB; restaurar artifacts **e ftp-data/ftp-db**
-(incoming/processing/sidecars/quarantine e contas PureDB); conferir paths e
-permissões por UID; revisar migrate:status; recovery-check e smoke sintético;
-só então liberar os processos que escrevem/recebem jobs. Dumps não contêm
-os arquivos nem a chave. Preservar snapshots de config e volumes separados.
-O passo genérico de "subir a stack" do guia DR deve ser interpretado com
-essa ordem para não liberar workers antes da recuperação completa.
-Não se executou restore, key:generate ou teste contra equipamento.
-Upgrade com mudanças de Compose exige recriação (`up -d`), não simples
-restart; ambos ficam pendentes de autorização na instância real.
+## Git / integridade / decisão
 
-## WARNINGS
-
-- UNKNOWN de worker ocioso e retenção desabilitada mantidos como ausência
-  de evidência. Não criar jobs reais ou rodar retenção para "limpar" health.
-- FTP sem TLS, faixa de firewall maior que o perfil V2, ausência de probe
-  TCP FTP no health e ausência de healthchecks de seis containers.
-- Recovery/health sob root não verificam leitura por UID web; não substituem
-  os gates operacionais ou ensaio futuro de DR em destino independente.
-- Alterações preexistentes preservadas: `app/AGENTS.md`, trechos originais
-  em CORE_STATUS/DR/UPGRADE/UI_MODERNIZATION, `system-backup.sh`, três imagens
-  deletadas em `referencia/` e `docs/IDEIAS_FUTURAS.md` não rastreado. Não
-  foram incluídas nos commits desta fase. O worktree permanece sujo.
-
-## PÓS-RELEASE
-
-- Monitorar taxas/freshness, capacidade, receipts/quarantine e backlog com
-  dados reais; confirmar políticas e janela de retenção antes de habilitar.
-- Exercitar DR em destino independente com autorização e verificação de
-  custódia da chave/volumes, sem sobrescrever produção.
-- Registrar identidade da versão dentro dos diagnósticos e monitoramento
-  externo de containers; avaliar endurecimento de usuários/mounts.
-- Refinamentos visuais restantes e dívida P2 documentada no CORE_STATUS.
-
-## V2.1 / FUTURO
-
-Manter o escopo já documentado: órfãos/lixeira de artifacts, invalidação de
-sessões em reset administrativo, export/import da instância, metadata VRP,
-XLSX/PDF, notificações e MikroTik FTP Push. Nenhum desses itens foi criado
-nesta fase. Novo tuning somente com gargalo medido, conforme PERF-3.
-
-## Fechamento / tag
-
-Commits `fix:` separados para bugs e `chore: prepara backup manager v2 para release`
-para esta documentação. Stage explícito por arquivo/hunk, sem add . / add -A.
-Sem push. **Não recomendar nem criar `v2.0.0` enquanto os gates pendentes
-não forem resolvidos e o estado do Git não estiver reconciliado.**
-
-Confirmado: nenhum equipamento real alterado; nenhum backup ou artifact real
-removido; nenhum segredo exposto; nenhum restart/migration real/firewall/
-certificado executado sem autorização; nenhum restore, tag ou push.
+Stage nominal, sem add . / add -A. Alterações preexistentes preservadas e
+fora dos commits: AGENTS, trecho MikroTik de CORE_STATUS, DR/UPGRADE/UI,
+script de backup, três imagens removidas e IDEIAS_FUTURAS não rastreado.
+Corrigir código/config não limpa automaticamente esse worktree.
+Código/config/testes: `2ea1451` — `fix: remove bloqueios finais de producao`.
+Documentação em commit separado `docs: atualiza checklist final de release`.
+**READY somente após ativação técnica comprovada, backup real validado e
+confirmação da custódia externa obrigatória. Sem isso: NOT READY, sem tag.**
+Confirmado até aqui: nenhum equipamento real alterado; nenhum backup/artifact
+real removido; nenhum segredo exposto; nenhuma migration/recriação/reload/
+firewall/certificado/restore real executado sem autorização; nenhum push.

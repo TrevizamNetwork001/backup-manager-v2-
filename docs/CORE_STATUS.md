@@ -1,6 +1,34 @@
 # Estado do core — Backup Manager V2
 
-## RELEASE-1 — 28/09/2026
+## RELEASE-1.1 — 28/09/2026
+
+**NOT READY para `v2.0.0` enquanto a aplicação real e a custódia externa
+obrigatória não tiverem confirmação.** Correções de configuração e testes
+estão preparados em [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md).
+
+| Blocker | Estado |
+| --- | --- |
+| Índice ftp_account_id | PENDENTE MANUAL: migration esperada, up/down e --path homologados em PG isolado; real não aplicada |
+| Storage PHP-FPM | PENDENTE MANUAL: pool UID 65534/grupo www-data preparado e probe controlado passou, sem mudar artifacts 0700/0600; falta recriação autorizada |
+| 8081 público | PENDENTE MANUAL: Compose corrigido para 127.0.0.1; falta recriação do nginx |
+| Redirect V1 | PENDENTE MANUAL: candidato para V2 :8443 passou, V1 :443 preservado; confirmar URL e reload do host |
+| Headers/cookies/proxy | RESOLVIDO em código/testes; ativação em produção PENDENTE MANUAL |
+| Backup pré-release | PENDENTE MANUAL: script preservado e revalidado sinteticamente; gerar/validar dump real só após autorização |
+| Custódia APP_KEY/config/volumes | PENDENTE EXTERNO: APP_KEY presente, fingerprint 8f5f636f698c8ac6, cofre/cópias fora do host ainda não comprovados |
+
+Laravel completo: 364 testes em SQLite e 364 em PostgreSQL isolado; Python
+103, ftp-admin 16, PureDB, lint/compile/Pint, diff e secret scan passaram.
+Testes novos cobrem proxy confiável/não confiável, HTTPS :8443, cookies,
+login/logout/CSRF e reversibilidade do índice sem perder dados sintéticos.
+Health atual continua UNKNOWN (worker ocioso/retention nunca executada),
+scheduler HEALTHY, recovery-check HEALTHY sob root. Não apagar essa ausência
+de evidência nem confundir leitura CLI com pool web ainda não ativado.
+
+READY exige aplicação técnica e recheck, backup real validado e confirmação
+externa. Nenhum tuning, feature, tag ou push. PÓS-RELEASE/V2.1 mantidos abaixo;
+o relatório de RELEASE-1 seguinte é histórico.
+
+## RELEASE-1 — histórico de 28/09/2026
 
 **NOT READY para `v2.0.0` neste deployment.** Core funcional e performance
 PERF-1/2/3 fechados; a homologação sintética passou. A liberação depende dos
