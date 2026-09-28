@@ -20,7 +20,7 @@ Este documento registra as alterações feitas na tela `/login` a partir de `ref
 - A tela usa a imagem dos servidores como fundo, com marca e mensagem à esquerda, benefícios abaixo, formulário em painel à direita e rodapé com a identificação Trevizam Network. Os ícones são SVG inline; nenhuma biblioteca visual foi adicionada.
 - O formulário mantém CSRF, preenchimento anterior do identificador após erro, senha, opção **Lembrar-me** e envio para a rota `login.store`. O botão de olho alterna a visibilidade da senha e atualiza `aria-label` e `aria-pressed`.
 - Em UI-POLISH-1, o controle **Esqueceu sua senha?** foi removido porque não há fluxo público de redefinição; a ação administrativa existente fica em `users/{user}/reset-password`.
-- Em UI-POLISH-1, o rodapé foi reduzido a “Produto Trevizam Network · Backup Manager V2”, sem textos que pareciam links sem destino.
+- Após os ajustes visuais de 27/09/2026, o rodapé ocupa toda a largura da tela e apresenta, à esquerda, o ícone de conectividade, “Produto da Trevizam Network” e a frase “Infraestrutura e conectividade para um futuro mais seguro.”. Não há links de suporte, termos ou privacidade sem destino.
 - A URL do CSS na view recebe a data de modificação do arquivo como parâmetro para evitar que o navegador mantenha uma versão antiga após ajustes visuais.
 
 ## Responsividade
@@ -49,7 +49,17 @@ Em `docker/nginx/default.conf`, um `map` extrai apenas a porta numérica do `Hos
 
 A causa do contorno duplo era a combinação do destaque do wrapper `.login-input-wrap:focus-within` com regras globais de `:focus-visible` que também desenhavam um outline no input. O estado final concentra o destaque no wrapper: borda `#04c7fd` e sombra externa de 1 px com `rgba(4, 199, 253, .30)`. Nos inputs de usuário/e-mail e senha, os estados `:focus` e `:focus-visible` não acrescentam borda, outline ou sombra internos. Assim, o campo continua identificado visualmente ao receber foco por mouse ou teclado. O foco dos botões não foi alterado.
 
-## Verificações realizadas
+## Rodapé e símbolo da marca — ajustes de 27/09/2026
+
+A faixa do rodapé vai de uma borda à outra. Uma regra antiga de `.login-body`, `place-items: center`, continuava centralizando os elementos mesmo depois da mudança para Flexbox. O ajuste define `align-items: stretch` no body e `width: 100%; align-self: stretch` no rodapé. O conteúdo interno mantém margens laterais e alinhamento à esquerda; até 1000 px, a frase institucional passa para uma nova linha.
+
+O banco de dados dentro do escudo foi redesenhado em SVG com uma elipse e duas camadas preenchidas em ciano (`#06c6fa`). O fundo sólido do escudo (`#001629`) e os espaços entre as camadas melhoram a definição. As classes `.login-brand__shield` e `.login-brand__database` substituem os seletores por posição que misturavam preenchimento e contorno.
+
+Esses ajustes estão no commit `387f0df` — `style: ajusta rodape e icone da tela de login`, restrito à view de login e às regras CSS correspondentes.
+
+Validação dos ajustes: `ExampleTest` aprovado com **2 testes e 3 asserções**, compilação Blade concluída, página `/login` servida pelo Nginx local com o novo rodapé e `git diff --check` sem erros. Não houve captura automatizada em navegador.
+
+## Verificações da implementação inicial
 
 - `php artisan view:cache`: compilação das views concluída.
 - Testes direcionados de autenticação e RBAC após a correção da porta: **15 testes, 113 asserções**, aprovados, incluindo nome único e nome ambíguo.

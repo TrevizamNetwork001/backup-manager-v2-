@@ -1,6 +1,6 @@
 @extends('layouts.app')
-@section('title', 'Saúde dos backups — Backup Manager')
-@section('page-title', 'Saúde dos backups')
+@section('title', 'Status dos backups — Backup Manager')
+@section('page-title', 'Status dos backups')
 @section('page-description', 'Situação dos backups dos equipamentos ativos.')
 @section('content')
 @php

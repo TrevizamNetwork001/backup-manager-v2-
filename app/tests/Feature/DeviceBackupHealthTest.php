@@ -154,7 +154,7 @@ class DeviceBackupHealthTest extends TestCase
 
         $this->actingAs(User::factory()->viewer()->create());
         $this->get(route('dashboard'))->assertOk()
-            ->assertSee('Saúde dos backups')
+            ->assertSee('Status dos backups')
             ->assertDontSee('Precisam de acompanhamento')
             ->assertViewMissing('backupHealth');
 

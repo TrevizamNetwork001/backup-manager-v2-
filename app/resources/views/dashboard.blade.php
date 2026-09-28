@@ -7,34 +7,39 @@
     <div class="dashboard-date">{{ ucfirst($localNow->locale('pt_BR')->isoFormat('dddd, D [de] MMMM [de] YYYY')) }} <span>◷ {{ $localNow->format('H:i') }}</span></div>
     <div class="dashboard-kpis">
         @foreach ([
-            ['Sites / POPs', $siteCount, 'Total cadastrados', 'sites.index', 'server', 'blue'],
+            ['Sites / POPs', $siteCount, 'Total cadastrados', 'sites.index', 'server', 'purple'],
             ['Equipamentos', $deviceCount, 'Total cadastrados', 'devices.index', 'server', 'sky'],
             ['Backups (24h)', $successCount, 'Execuções concluídas', 'backup-executions.index', 'file', 'green'],
             ['Falhas (24h)', $failureCount, 'Execuções com erro', 'backup-executions.index', 'error', 'red'],
-            ['Artefatos', $artifactCount, 'Arquivos armazenados', 'backup-artifacts.index', 'folder', 'slate']
+            ['Artefatos', $artifactCount, 'Arquivos armazenados', 'backup-artifacts.index', 'folder', 'amber']
         ] as [$label, $value, $detail, $route, $icon, $color])
             <a class="reference-stat" href="{{ route($route) }}"><span class="reference-stat__icon {{ $color }}"><x-icon :name="$icon" /></span><span><small>{{ $label }}</small><strong>{{ number_format($value, 0, ',', '.') }}</strong><em>{{ $detail }}</em></span></a>
         @endforeach
     </div>
     <div class="dashboard-overview">
         <section class="reference-panel chart-panel">
-            <h2>Execuções de backup <small>{{ $chartLabel }}</small></h2>
-            <form method="GET" action="{{ route('dashboard') }}" class="chart-filters">
-                <label>Período
-                    <select name="period" aria-label="Período do gráfico">
-                        <option value="7d" @selected(old('period', $period) === '7d')>Últimos 7 dias</option>
-                        <option value="14d" @selected(old('period', $period) === '14d')>Últimos 14 dias</option>
-                        <option value="30d" @selected(old('period', $period) === '30d')>Últimos 30 dias</option>
-                        <option value="custom" @selected(old('period', $period) === 'custom')>Datas específicas</option>
-                    </select>
-                </label>
-                <label>De <input type="date" name="start_date" value="{{ old('start_date', $chartStart->format('Y-m-d')) }}" onchange="this.form.elements.period.value='custom'"></label>
-                <label>Até <input type="date" name="end_date" value="{{ old('end_date', $chartEnd->format('Y-m-d')) }}" onchange="this.form.elements.period.value='custom'"></label>
-                <button type="submit">Aplicar</button>
-            </form>
-            @error('period') <p class="chart-filters__error">{{ $message }}</p> @enderror
-            @error('start_date') <p class="chart-filters__error">{{ $message }}</p> @enderror
-            @error('end_date') <p class="chart-filters__error">{{ $message }}</p> @enderror
+            <div class="chart-heading">
+                <h2>Execuções de backup</h2>
+                <details class="chart-filter-menu" @if ($errors->hasAny(['period', 'start_date', 'end_date'])) open @endif>
+                    <summary>{{ $chartLabel }} <span aria-hidden="true">⌄</span></summary>
+                    <form method="GET" action="{{ route('dashboard') }}" class="chart-filters">
+                        <label>Período
+                            <select name="period" aria-label="Período do gráfico">
+                                <option value="7d" @selected(old('period', $period) === '7d')>Últimos 7 dias</option>
+                                <option value="14d" @selected(old('period', $period) === '14d')>Últimos 14 dias</option>
+                                <option value="30d" @selected(old('period', $period) === '30d')>Últimos 30 dias</option>
+                                <option value="custom" @selected(old('period', $period) === 'custom')>Datas específicas</option>
+                            </select>
+                        </label>
+                        <label>De <input type="date" name="start_date" value="{{ old('start_date', $chartStart->format('Y-m-d')) }}" onchange="this.form.elements.period.value='custom'"></label>
+                        <label>Até <input type="date" name="end_date" value="{{ old('end_date', $chartEnd->format('Y-m-d')) }}" onchange="this.form.elements.period.value='custom'"></label>
+                        <button type="submit">Aplicar</button>
+                        @error('period') <p class="chart-filters__error">{{ $message }}</p> @enderror
+                        @error('start_date') <p class="chart-filters__error">{{ $message }}</p> @enderror
+                        @error('end_date') <p class="chart-filters__error">{{ $message }}</p> @enderror
+                    </form>
+                </details>
+            </div>
             <div class="backup-chart-scroll"><div class="backup-chart" role="img" aria-label="Execuções de backup de {{ $chartStart->format('d/m/Y') }} até {{ $chartEnd->format('d/m/Y') }}" style="--chart-days: {{ $days->count() }}">
                 @foreach ($days as $day)
                     @php $total = $day['success'] + $day['failure'] + $day['other']; @endphp
@@ -71,7 +76,7 @@
         <section class="reference-panel">
             <div class="reference-panel__heading"><h2>Últimas execuções</h2><a href="{{ route('backup-executions.index') }}">Ver todas →</a></div>
             <div class="table-shell"><table class="data-table">
-                <thead><tr><th>Início</th><th>Equipamento</th><th>Tipo</th><th>Status</th><th>Duração</th><th>Ação</th></tr></thead>
+                <thead><tr><th>Início</th><th>Equipamento</th><th>Tipo</th><th>Status</th><th>Duração</th></tr></thead>
                 <tbody>
                 @forelse ($recentExecutions as $execution)
                     @php
@@ -85,10 +90,9 @@
                         <td data-label="Tipo">{{ $execution->origin === 'ftp_received' ? 'FTP' : 'Backup' }}</td>
                         <td data-label="Status"><span class="badge badge--{{ $execution->status === 'succeeded' ? 'success' : (in_array($execution->status, ['failed', 'timed_out']) ? 'danger' : 'neutral') }}">{{ ['succeeded' => 'Concluído', 'failed' => 'Erro', 'timed_out' => 'Tempo esgotado', 'running' => 'Em andamento', 'queued' => 'Na fila', 'pending' => 'Pendente', 'retry_wait' => 'Nova tentativa', 'cancelled' => 'Cancelado'][$execution->status] ?? $execution->status }}</span></td>
                         <td data-label="Duração" class="duration-cell">{{ $durationSeconds === null ? '—' : (intdiv($durationSeconds, 3600) ? intdiv($durationSeconds, 3600).'h ' : '').intdiv($durationSeconds % 3600, 60).'m '.($durationSeconds % 60).'s' }}</td>
-                        <td data-label="Ação"><a class="row-action" href="{{ route('backup-executions.show', $execution) }}" aria-label="Abrir execução"><x-icon name="more-horizontal" /></a></td>
                     </tr>
                 @empty
-                    <tr><td colspan="6" class="empty-table">Nenhuma execução registrada.</td></tr>
+                    <tr><td colspan="5" class="empty-table">Nenhuma execução registrada.</td></tr>
                 @endforelse
                 </tbody>
             </table></div>
@@ -96,10 +100,15 @@
         <section class="reference-panel">
             <div class="reference-panel__heading"><h2>Recebimentos FTP recentes</h2><a href="{{ route('ftp.index') }}">Ver todas →</a></div>
             <div class="table-shell"><table class="data-table">
-                <thead><tr><th>Data/Hora</th><th>Conta</th><th>Arquivo</th><th>Tamanho</th><th>Status</th><th aria-label="Ações"></th></tr></thead>
+                <thead><tr><th>Data/Hora</th><th>Arquivo</th><th>Tamanho</th><th>Status</th></tr></thead>
                 <tbody>
                 @forelse ($recentReceipts as $receipt)
                     @php
+                        $filename = $receipt->original_filename;
+                        $extensionPosition = strrpos($filename, '.');
+                        $hasExtension = $extensionPosition !== false && $extensionPosition > 0 && $extensionPosition < strlen($filename) - 1;
+                        $filenameStem = $hasExtension ? substr($filename, 0, $extensionPosition) : $filename;
+                        $filenameExtension = $hasExtension ? substr($filename, $extensionPosition) : '';
                         $bytes = $receipt->size_bytes;
                         $size = $bytes === null ? '—' : ($bytes < 1024
                             ? number_format($bytes, 0, ',', '.').' B'
@@ -111,14 +120,12 @@
                     @endphp
                     <tr>
                         <td data-label="Data/Hora">{{ \Illuminate\Support\Carbon::parse($receipt->received_at, 'UTC')->setTimezone($instanceTimezone)->format('d/m/Y H:i') }}</td>
-                        <td data-label="Conta"><a href="{{ route('ftp.show', $receipt->account_id) }}">{{ $receipt->username }}</a></td>
-                        <td data-label="Arquivo" class="filename-cell"><span class="filename-short" title="{{ $receipt->original_filename }}">{{ $receipt->original_filename }}</span></td>
+                        <td data-label="Arquivo" class="filename-cell"><span class="filename-short" title="{{ $filename }}"><span class="filename-stem">{{ $filenameStem }}</span><span class="filename-extension">{{ $filenameExtension }}</span></span></td>
                         <td data-label="Tamanho" class="size-cell">{{ $size }}</td>
                         <td data-label="Status"><span class="badge badge--{{ $receipt->status === 'stored' ? 'success' : 'neutral' }}">{{ $receipt->status === 'stored' ? 'Armazenado' : ucfirst($receipt->status) }}</span></td>
-                        <td data-label="Ação"><a class="row-action" href="{{ route('ftp.show', $receipt->account_id) }}" aria-label="Abrir conta FTP {{ $receipt->username }}"><x-icon name="more-horizontal" /></a></td>
                     </tr>
                 @empty
-                    <tr><td colspan="6" class="empty-table">Nenhum arquivo recebido recentemente.</td></tr>
+                    <tr><td colspan="4" class="empty-table">Nenhum arquivo recebido recentemente.</td></tr>
                 @endforelse
                 </tbody>
             </table></div>

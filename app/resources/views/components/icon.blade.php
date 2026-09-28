@@ -7,6 +7,10 @@
         @case('site')
             <circle cx="12" cy="12" r="8" /><circle cx="12" cy="12" r="3" />
             @break
+        @case('site-location')
+            <path d="M20 10c0 6-8 12-8 12S4 16 4 10a8 8 0 0 1 16 0Z" />
+            <circle cx="12" cy="10" r="3" />
+            @break
         @case('server')
             <rect x="3" y="3" width="18" height="8" rx="2" /><rect x="3" y="13" width="18" height="8" rx="2" /><path d="M7 7h.01M7 17h.01M11 7h6M11 17h6" />
             @break
@@ -19,6 +23,31 @@
             @break
         @case('file')
             <path d="M6 2h8l5 5v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1zM14 2v6h5M8 13h8M8 17h8" />
+            @break
+        @case('report')
+            <path d="M6 2h8l5 5v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1zM14 2v6h5" />
+            <path d="M8 18v-3m4 3v-7m4 7v-5" />
+            @break
+        @case('system-health')
+            <rect x="3" y="3" width="18" height="15" rx="2" />
+            <path d="M3 11h4l2-4 4 8 2-4h6M12 18v3M8 21h8" />
+            @break
+        @case('users')
+            <circle cx="9" cy="8" r="3" /><circle cx="17" cy="9" r="2.5" />
+            <path d="M3 20v-2a6 6 0 0 1 12 0v2M17 14a4 4 0 0 1 4 4v2" />
+            @break
+        @case('policy')
+            <path d="M9 5H6a1 1 0 0 0-1 1v15a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1h-3M9 11h6M9 15h6M9 19h4" />
+            <rect x="9" y="2" width="6" height="5" rx="1" />
+            @break
+        @case('backup-status')
+            <ellipse cx="10" cy="5" rx="7" ry="3" />
+            <path d="M3 5v11c0 1.7 3.1 3 7 3M17 5v5M3 10c0 1.7 3.1 3 7 3M3 15c0 1.7 3.1 3 7 3" />
+            <circle cx="17" cy="17" r="5" /><path d="M17 14v3l2 1" />
+            @break
+        @case('execution')
+            <rect x="3" y="3" width="18" height="18" rx="2" />
+            <path d="M7 7h10M7 11h4M7 15h4m4-4 4 3-4 3v-6Z" />
             @break
         @case('error')
             <circle cx="12" cy="12" r="9" /><path d="m9 9 6 6m0-6-6 6" />

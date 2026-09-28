@@ -26,7 +26,7 @@
         <div class="card__body"><p class="card__description">Erros agrupados por código, com equipamentos mais afetados.</p></div>
     </a>
     <a class="card" href="{{ route('backup-health.index') }}">
-        <div class="card__header"><h2 class="card__title">Saúde dos backups</h2></div>
+        <div class="card__header"><h2 class="card__title">Status dos backups</h2></div>
         <div class="card__body"><p class="card__description">Mesmo serviço do health do engine — saudável, atenção, crítico e sem histórico por equipamento.</p></div>
     </a>
     <a class="card" href="{{ route('reports.artifacts') }}">

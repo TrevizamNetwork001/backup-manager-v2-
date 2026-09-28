@@ -34,7 +34,7 @@
                     href="{{ route('sites.index') }}"
                     class="nav-link {{ request()->routeIs('sites.*') ? 'active' : '' }}"
                 >
-                    <span class="nav-icon"><x-icon name="site" /></span>
+                    <span class="nav-icon"><x-icon name="site-location" /></span>
                     Sites / POPs
                 </a>
             @endcan
@@ -51,7 +51,7 @@
 
             @can('credentials.view')
                 <a href="{{ route('credentials.index') }}" class="nav-link {{ request()->routeIs('credentials.*') ? 'active' : '' }}">
-                    <span class="nav-icon"><x-icon name="layers" /></span>
+                    <span class="nav-icon"><x-icon name="key" /></span>
                     Credenciais
                 </a>
             @endcan
@@ -67,35 +67,35 @@
 
             @can('dashboard.view')
                 <a href="{{ route('backup-health.index') }}" class="nav-link {{ request()->routeIs('backup-health.*') ? 'active' : '' }}">
-                    <span class="nav-icon"><x-icon name="check-circle" /></span>
-                    Saúde dos backups
+                    <span class="nav-icon"><x-icon name="backup-status" /></span>
+                    Status dos backups
                 </a>
             @endcan
 
             @can('backup_policies.view')
                 <a href="{{ route('backup-policies.index') }}" class="nav-link {{ request()->routeIs('backup-policies.*') ? 'active' : '' }}">
-                    <span class="nav-icon"><x-icon name="clock" /></span>
+                    <span class="nav-icon"><x-icon name="policy" /></span>
                     Políticas
                 </a>
             @endcan
 
             @can('backup_executions.view')
                 <a href="{{ route('backup-executions.index') }}" class="nav-link {{ request()->routeIs('backup-executions.*') ? 'active' : '' }}">
-                    <span class="nav-icon"><x-icon name="refresh" /></span>
-                    Execuções
+                    <span class="nav-icon"><x-icon name="execution" /></span>
+                    Execuções de backup
                 </a>
             @endcan
 
             @can('backup_artifacts.view')
                 <a href="{{ route('backup-artifacts.index') }}" class="nav-link {{ request()->routeIs('backup-artifacts.*') ? 'active' : '' }}">
-                    <span class="nav-icon"><x-icon name="archive" /></span>
+                    <span class="nav-icon"><x-icon name="folder" /></span>
                     Artefatos
                 </a>
             @endcan
 
             @can('reports.view')
                 <a href="{{ route('reports.index') }}" class="nav-link {{ request()->routeIs('reports.*') ? 'active' : '' }}">
-                    <span class="nav-icon"><x-icon name="check" /></span>
+                    <span class="nav-icon"><x-icon name="report" /></span>
                     Relatórios
                 </a>
             @endcan
@@ -104,7 +104,7 @@
                 <div class="nav-section">Administração</div>
                 @can('system_health.view')
                     <a href="{{ route('system-health.index') }}" class="nav-link {{ request()->routeIs('system-health.*') ? 'active' : '' }}">
-                        <span class="nav-icon"><x-icon name="check" /></span>
+                        <span class="nav-icon"><x-icon name="system-health" /></span>
                         Saúde do sistema
                     </a>
                 @endcan
@@ -122,7 +122,7 @@
                 @endcan
                 @can('users.view')
                     <a href="{{ route('users.index') }}" class="nav-link {{ request()->routeIs('users.*') ? 'active' : '' }}">
-                        <span class="nav-icon"><x-icon name="site" /></span>
+                        <span class="nav-icon"><x-icon name="users" /></span>
                         Usuários
                     </a>
                 @endcan
