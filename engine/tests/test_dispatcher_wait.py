@@ -36,7 +36,7 @@ class DispatcherWaitTest(unittest.TestCase):
         with patch.dict(os.environ, {'BACKUP_FTP_ROOT': ''}), \
                 patch.object(backup_engine, 'HEALTH_SNAPSHOT_PATH', ''), \
                 patch.object(backup_engine, 'WORKERS', 4), \
-                patch.object(backup_engine, 'command', side_effect=command), \
+                patch.object(backup_engine.ArtisanSession, 'command', side_effect=command), \
                 patch.object(backup_engine, 'execute', side_effect=execute), \
                 patch.object(backup_engine.time, 'sleep') as sleep:
             with self.assertRaises(Finished):

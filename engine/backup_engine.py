@@ -143,7 +143,7 @@ def execute(job):
 
 
 def main():
-    with ThreadPoolExecutor(max_workers=WORKERS) as pool:
+    with ThreadPoolExecutor(max_workers=WORKERS) as pool, ArtisanSession(ARTISAN) as dispatcher:
         active = set()
         orphan_observed = {}
         spontaneous_observed = {}
@@ -189,7 +189,7 @@ def main():
                 wait(active, timeout=1, return_when=FIRST_COMPLETED)
                 continue
             try:
-                job = json.loads(command('engine:claim', WORKER_ID))
+                job = json.loads(dispatcher.command('engine:claim', WORKER_ID))
                 if job:
                     active.add(pool.submit(execute, job))
                 else:

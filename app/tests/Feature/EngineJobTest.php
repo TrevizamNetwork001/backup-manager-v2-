@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Console\Commands\EngineSession;
 use App\Models\BackupExecution;
 use App\Models\BackupPolicy;
 use App\Models\Credential;
@@ -49,6 +50,22 @@ class EngineJobTest extends TestCase
         $engine->fail($job->id, 'SSH_AUTH_FAILED');
         $this->assertSame('SSH_TIMEOUT', $job->fresh()->error_code);
         $this->assertNull($engine->claim());
+    }
+
+    public function test_session_claim_keeps_ownership_and_never_returns_the_secret(): void
+    {
+        $job = $this->queued();
+        $worker = str_repeat('c', 32);
+        $session = new EngineSession;
+        $response = $session->dispatch(['command' => 'engine:claim', 'args' => [$worker]]);
+        $payload = json_decode($response['output'], true);
+        $this->assertTrue($response['ok']);
+        $this->assertSame($job->id, $payload['id']);
+        $this->assertArrayNotHasKey('secret', $payload);
+        $this->assertStringNotContainsString('senha-super-secreta', $response['output']);
+        $this->assertSame($worker, $job->fresh()->worker_id);
+        $repeat = $session->dispatch(['command' => 'engine:claim', 'args' => [$worker]]);
+        $this->assertNull(json_decode($repeat['output'], true));
     }
 
     public function test_ssh_negotiation_error_uses_fixed_message(): void

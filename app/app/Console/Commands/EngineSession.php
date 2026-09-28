@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Services\InstanceTimezone;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Artisan;
 use Symfony\Component\Console\Output\BufferedOutput;
@@ -10,9 +11,9 @@ class EngineSession extends Command
 {
     protected $signature = 'engine:session';
 
-    protected $description = 'Execute bounded local receiver requests over stdin/stdout';
+    protected $description = 'Execute bounded local engine and receiver requests over stdin/stdout';
 
-    private const COMMANDS = ['ftp:expected', 'ftp:accounts', 'ftp:receive', 'ftp:receipt', 'engine:complete', 'engine:fail'];
+    private const COMMANDS = ['ftp:expected', 'ftp:accounts', 'ftp:receive', 'ftp:receipt', 'engine:claim', 'engine:complete', 'engine:fail'];
 
     public function handle(): int
     {
@@ -53,6 +54,8 @@ class EngineSession extends Command
                 throw new \InvalidArgumentException('Invalid receiver argument.');
             }
         }
+        clearstatcache(true);
+        app()->forgetInstance(InstanceTimezone::class);
         $output = new BufferedOutput;
         $code = Artisan::call($request['command'], array_combine($arguments, $request['args']), $output);
 

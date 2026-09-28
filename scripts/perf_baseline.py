@@ -139,6 +139,9 @@ def engine_load(php, count, delay, same_device=False, workers=4):
         return original_popen(args, *positional, **kwargs)
 
     def session_command(session, *args):
+        if args[0] == 'engine:claim' and (len(ended) >= count or
+                (len(started) >= count and not active) or time.monotonic() - epoch > 180):
+            raise Finished()
         tick = time.monotonic()
         value = original_session_command(session, *args)
         with lock:
