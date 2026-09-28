@@ -6,6 +6,7 @@ import secrets
 import subprocess
 import threading
 import time
+from contextlib import ExitStack
 from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 
 from errors import BackupError
@@ -26,6 +27,7 @@ ARTISAN = ['php', '/var/www/html/artisan']
 WORKER_ID = secrets.token_hex(16)
 HEARTBEAT_SECONDS = max(1, int(os.environ.get('BACKUP_ENGINE_HEARTBEAT_SECONDS', '30')))
 WORKERS = min(4, max(1, int(os.environ.get('BACKUP_ENGINE_WORKERS', '4'))))
+WORKER_SESSION = threading.local()
 # ENGINE-3: see docs/ENGINE_HEALTH.md — Laravel's `app` container has no
 # access to this process (no shared venv, /engine not mounted), so it can
 # only learn the engine's state by reading this file, atomically refreshed
@@ -35,6 +37,10 @@ HEALTH_SNAPSHOT_SECONDS = max(5, int(os.environ.get('BACKUP_ENGINE_HEALTH_SNAPSH
 
 
 def command(*args, env=None, pass_fds=()):
+    session = getattr(WORKER_SESSION, 'session', None)
+    if session is not None and env is None and not pass_fds and args[0] in (
+            'engine:complete', 'engine:fail', 'engine:observe-host-key', 'engine:cancel-ack'):
+        return session.command(*args)
     result = subprocess.run(ARTISAN + list(map(str, args)), capture_output=True,
                             env=env, pass_fds=pass_fds, timeout=45, check=False)
     if result.returncode:
@@ -142,8 +148,16 @@ def execute(job):
                              'error_code': code, 'duration_seconds': round(time.monotonic() - start, 2)}))
 
 
+def execute_with_session(job, stack, session_lock):
+    if not hasattr(WORKER_SESSION, 'session'):
+        with session_lock:
+            WORKER_SESSION.session = stack.enter_context(ArtisanSession(ARTISAN))
+    execute(job)
+
+
 def main():
-    with ThreadPoolExecutor(max_workers=WORKERS) as pool, ArtisanSession(ARTISAN) as dispatcher:
+    session_lock = threading.Lock()
+    with ExitStack() as stack, ThreadPoolExecutor(max_workers=WORKERS) as pool, ArtisanSession(ARTISAN) as dispatcher:
         active = set()
         orphan_observed = {}
         spontaneous_observed = {}
@@ -191,7 +205,7 @@ def main():
             try:
                 job = json.loads(dispatcher.command('engine:claim', WORKER_ID))
                 if job:
-                    active.add(pool.submit(execute, job))
+                    active.add(pool.submit(execute_with_session, job, stack, session_lock))
                 else:
                     if active:
                         wait(active, timeout=1, return_when=FIRST_COMPLETED)

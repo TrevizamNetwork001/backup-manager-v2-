@@ -145,8 +145,9 @@ def engine_load(php, count, delay, same_device=False, workers=4):
         tick = time.monotonic()
         value = original_session_command(session, *args)
         with lock:
-            operations[args[0]] += 1
-            commands.append(time.monotonic() - tick)
+            if args[0] in ('engine:claim', 'ftp:expected', 'ftp:accounts'):
+                operations[args[0]] += 1
+                commands.append(time.monotonic() - tick)
         return value
 
     def run(*args, **kwargs):

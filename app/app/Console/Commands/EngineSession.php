@@ -13,7 +13,7 @@ class EngineSession extends Command
 
     protected $description = 'Execute bounded local engine and receiver requests over stdin/stdout';
 
-    private const COMMANDS = ['ftp:expected', 'ftp:accounts', 'ftp:receive', 'ftp:receipt', 'engine:claim', 'engine:complete', 'engine:fail'];
+    private const COMMANDS = ['ftp:expected', 'ftp:accounts', 'ftp:receive', 'ftp:receipt', 'engine:claim', 'engine:complete', 'engine:fail', 'engine:observe-host-key', 'engine:cancel-ack'];
 
     public function handle(): int
     {
