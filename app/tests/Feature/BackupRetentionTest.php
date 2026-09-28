@@ -13,6 +13,7 @@ use App\Models\User;
 use App\Services\BackupRetention;
 use App\Services\EngineJobService;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Events\TransactionCommitted;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -185,6 +186,50 @@ class BackupRetentionTest extends TestCase
         $this->assertSame('deleted', $old->fresh()->status);
         $this->assertSame('available', $new->fresh()->status);
         $this->assertFileExists($this->path($new));
+    }
+
+    public function test_policy_change_between_pages_stops_further_deletion(): void
+    {
+        $source = $this->source(count: 1);
+        $oldest = $this->artifact($source, 40);
+        for ($index = 0; $index < 500; $index++) {
+            $this->artifact($source, 40);
+        }
+        $changed = false;
+        app('events')->listen(TransactionCommitted::class,
+            function () use ($source, &$changed): void {
+                if (! $changed) {
+                    $changed = true;
+                    $source->backupPolicy->update(['retention_count' => 1000]);
+                }
+            });
+        $result = $this->retention(true);
+        $this->assertTrue($changed);
+        $this->assertSame(499, $result['deleted']);
+        $this->assertFileExists($this->path($oldest));
+        $this->assertSame('available', $oldest->fresh()->status);
+        $this->assertSame(0, $this->retention(true)['deleted']);
+    }
+
+    public function test_losing_protected_backup_between_pages_stops_further_deletion(): void
+    {
+        $source = $this->source(count: 1);
+        $oldest = $this->artifact($source, 40);
+        for ($index = 0; $index < 500; $index++) {
+            $latest = $this->artifact($source, 40);
+        }
+        $changed = false;
+        app('events')->listen(TransactionCommitted::class,
+            function () use ($latest, &$changed): void {
+                if (! $changed) {
+                    $changed = true;
+                    unlink($this->path($latest));
+                }
+            });
+        $this->assertSame(499, $this->retention(true)['deleted']);
+        $this->assertFileExists($this->path($oldest));
+        $this->assertSame('available', $oldest->fresh()->status);
+        $this->assertSame(0, $this->retention(true)['deleted']);
     }
 
     public function test_existing_rsc_remains_retirable_after_vendor_correction(): void
