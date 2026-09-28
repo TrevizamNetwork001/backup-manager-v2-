@@ -68,20 +68,34 @@ def control(php, mode, count):
     return json.loads(output)
 
 
-def engine_load(php, count, delay, same_device=False):
+def engine_load(php, count, delay, same_device=False, workers=4):
     control(php, 'same_device' if same_device else 'jobs', count)
     result = {'scenario': 'engine_same_device' if same_device else 'engine_queue', 'jobs': count,
-              'driver_delay_seconds': delay, 'control_plane': 'real Artisan/' + os.environ['DB_CONNECTION'], 'workers': 4}
+              'driver_delay_seconds': delay, 'control_plane': 'real Artisan/' + os.environ['DB_CONNECTION'], 'workers': workers}
     started, ended, durations, queues = {}, {}, [], []
     operations = collections.Counter()
     commands = []
     subprocess_errors = collections.Counter()
+    processes = collections.Counter()
     active = set()
     peak = 0
     overlap = 0
     lock = threading.Lock()
+    monitor = None
+    workspace = Path(os.environ['PERF_WORKSPACE'])
+    if os.environ['DB_CONNECTION'] == 'pgsql':
+        monitor = subprocess.Popen([php, str(PROJECT / 'scripts/perf_monitor.php')],
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        deadline = time.monotonic() + 10
+        while not (workspace / 'monitor-ready').exists():
+            if monitor.poll() is not None or time.monotonic() > deadline:
+                monitor.kill()
+                raise RuntimeError('Isolated PostgreSQL sampler did not start')
+            time.sleep(.01)
     original = backup_engine.command
     original_run = subprocess.run
+    original_popen = subprocess.Popen
+    original_session_command = backup_engine.ArtisanSession.command
     epoch = time.monotonic()
 
     def command(*args, **kwargs):
@@ -119,6 +133,19 @@ def engine_load(php, count, delay, same_device=False):
         return b'# synthetic RouterOS\n/interface bridge\nadd name=perf\n'
 
     original_execute = backup_engine.execute
+    def popen(args, *positional, **kwargs):
+        if isinstance(args, list) and args[:2] == [php, str(PROJECT / 'app/artisan')]:
+            processes[args[2]] += 1
+        return original_popen(args, *positional, **kwargs)
+
+    def session_command(session, *args):
+        tick = time.monotonic()
+        value = original_session_command(session, *args)
+        with lock:
+            operations[args[0]] += 1
+            commands.append(time.monotonic() - tick)
+        return value
+
     def run(*args, **kwargs):
         value = original_run(*args, **kwargs)
         if value.returncode:
@@ -126,18 +153,29 @@ def engine_load(php, count, delay, same_device=False):
             subprocess_errors['database_locked' if b'database is locked' in text else 'other'] += 1
         return value
     with patch.object(backup_engine, 'ARTISAN', [php, str(PROJECT / 'app/artisan')]), \
+            patch.object(backup_engine, 'WORKERS', workers, create=True), \
             patch.object(backup_engine, 'command', side_effect=command), \
             patch.object(backup_engine, 'execute', side_effect=execute), \
+            patch.object(backup_engine.ArtisanSession, 'command', session_command), \
+            patch.object(subprocess, 'Popen', side_effect=popen), \
             patch.object(backup_engine.subprocess, 'run', side_effect=run), \
             patch.object(mikrotik_ssh, 'export_config', side_effect=export), measured(result):
         try:
             backup_engine.main()
         except Finished:
             pass
+        finally:
+            if monitor:
+                (workspace / 'monitor-stop').touch()
+                output, errors = monitor.communicate(timeout=10)
+                if monitor.returncode:
+                    raise RuntimeError('Isolated PostgreSQL sampler failed')
+                result['database_activity'] = json.loads(output)
     status = control(php, 'status', count)
     result.update(throughput_jobs_min=60 * status['statuses'].get('succeeded', 0) / result['seconds'], latency=distribution(list(ended.values())),
                   execution=distribution(durations), queue=distribution(queues), command=distribution(commands),
-                  artisan_operations=dict(operations), peak_active_devices=peak, device_overlap=overlap,
+                  artisan_operations=dict(operations), subprocess_count=sum(processes.values()),
+                  subprocess_commands=dict(processes), peak_active_devices=peak, device_overlap=overlap,
                   failure_rate=1 - status['statuses'].get('succeeded', 0) / count, database_result=status,
                   subprocess_errors=dict(subprocess_errors))
     result['attempted_jobs'] = len(started)
@@ -214,7 +252,8 @@ def main():
     parser.add_argument('--php', required=True)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--only', choices=['engine', 'control', 'ftp', 'secret'])
-    parser.add_argument('--engine-cases', choices=['all', 'remaining'], default='all')
+    parser.add_argument('--engine-cases', choices=['all', 'remaining', 'quick'], default='all')
+    parser.add_argument('--workers', type=int, choices=[1, 2, 4], default=4)
     parser.add_argument('--pg-socket', type=Path)
     parser.add_argument('--pg-bin', type=Path)
     args = parser.parse_args()
@@ -228,8 +267,10 @@ def main():
     if args.only == 'secret':
         scenarios += [('control', 'secret', 100)]
     if args.only in (None, 'engine'):
-        scenarios += [('engine', n, .02, False) for n in ((100,) if args.engine_cases == 'remaining' else (20, 50, 100))]
-        scenarios += [('engine', 20, 2., False), ('engine', 5, .1, True)]
+        counts = (20,) if args.engine_cases == 'quick' else ((100,) if args.engine_cases == 'remaining' else (20, 50, 100))
+        scenarios += [('engine', n, .02, False, args.workers) for n in counts]
+        if args.engine_cases != 'quick':
+            scenarios += [('engine', 20, 2., False, args.workers), ('engine', 5, .1, True, args.workers)]
     if args.only in (None, 'control'):
         scenarios += [('control', mode, n) for mode, n in [('scheduler', 100), ('scheduler', 1000),
                       ('retention', 1000), ('retention', 10000), ('stale', 1000), ('retry', 100), ('cancel', 100)]]

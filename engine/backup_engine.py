@@ -6,7 +6,7 @@ import secrets
 import subprocess
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 
 from errors import BackupError
 from artisan_session import ArtisanSession
@@ -25,6 +25,7 @@ logging.getLogger('paramiko').setLevel(logging.WARNING)
 ARTISAN = ['php', '/var/www/html/artisan']
 WORKER_ID = secrets.token_hex(16)
 HEARTBEAT_SECONDS = max(1, int(os.environ.get('BACKUP_ENGINE_HEARTBEAT_SECONDS', '30')))
+WORKERS = min(4, max(1, int(os.environ.get('BACKUP_ENGINE_WORKERS', '4'))))
 # ENGINE-3: see docs/ENGINE_HEALTH.md — Laravel's `app` container has no
 # access to this process (no shared venv, /engine not mounted), so it can
 # only learn the engine's state by reading this file, atomically refreshed
@@ -142,7 +143,7 @@ def execute(job):
 
 
 def main():
-    with ThreadPoolExecutor(max_workers=4) as pool:
+    with ThreadPoolExecutor(max_workers=WORKERS) as pool:
         active = set()
         orphan_observed = {}
         spontaneous_observed = {}
@@ -184,15 +185,18 @@ def main():
                 except Exception:
                     logging.error(json.dumps({'status': 'ftp_orphan_scan_failed'}))
             active = {future for future in active if not future.done()}
-            if len(active) >= 4:
-                time.sleep(1)
+            if len(active) >= WORKERS:
+                wait(active, timeout=1, return_when=FIRST_COMPLETED)
                 continue
             try:
                 job = json.loads(command('engine:claim', WORKER_ID))
                 if job:
                     active.add(pool.submit(execute, job))
                 else:
-                    time.sleep(5)
+                    if active:
+                        wait(active, timeout=1, return_when=FIRST_COMPLETED)
+                    else:
+                        time.sleep(5)
             except Exception:
                 logging.error(json.dumps({'status': 'claim_failed'}))
                 time.sleep(5)
