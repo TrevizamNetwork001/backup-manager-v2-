@@ -10,7 +10,7 @@ from contextlib import ExitStack
 from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 
 from errors import BackupError
-from artisan_session import ArtisanSession
+from artisan_session import ArtisanSession, ThreadSessions
 from contexts import BackupContext
 from driver_base import RECEIVED_PAYLOAD
 from registry_setup import registry
@@ -28,6 +28,7 @@ WORKER_ID = secrets.token_hex(16)
 HEARTBEAT_SECONDS = max(1, int(os.environ.get('BACKUP_ENGINE_HEARTBEAT_SECONDS', '30')))
 WORKERS = min(4, max(1, int(os.environ.get('BACKUP_ENGINE_WORKERS', '4'))))
 WORKER_SESSION = threading.local()
+FTP_SCAN_WORKERS = min(2, max(1, int(os.environ.get('BACKUP_FTP_SCAN_WORKERS', '2'))))
 # ENGINE-3: see docs/ENGINE_HEALTH.md — Laravel's `app` container has no
 # access to this process (no shared venv, /engine not mounted), so it can
 # only learn the engine's state by reading this file, atomically refreshed
@@ -148,6 +149,32 @@ def execute(job):
                              'error_code': code, 'duration_seconds': round(time.monotonic() - start, 2)}))
 
 
+def scan_ftp(spontaneous_observed, orphan_observed, preserved_uploads):
+    try:
+        with ThreadSessions(ARTISAN) as session:
+            expected = json.loads(session.command('ftp:expected'))
+            accounts = json.loads(session.command('ftp:accounts'))
+            scan_spontaneous(os.environ['BACKUP_FTP_ROOT'], os.environ['BACKUP_STORAGE_ROOT'],
+                             int(os.environ.get('BACKUP_FTP_STABLE_SECONDS', '5')),
+                             spontaneous_observed, expected,
+                             lambda device, token, filename, received: json.loads(session.command(
+                                 'ftp:receive', device, token,
+                                 'n' + base64.urlsafe_b64encode(filename.encode('utf-8')).decode('ascii'),
+                                 received, WORKER_ID)),
+                             lambda job_id, relative: session.command('engine:complete', job_id, relative, WORKER_ID),
+                             lambda job_id, code: session.command('engine:fail', job_id, code, WORKER_ID),
+                             accounts,
+                             lambda account, token, filename, received, status, size, digest, path, error: session.command(
+                                 'ftp:receipt', account, token,
+                                 'n' + base64.urlsafe_b64encode(filename.encode('utf-8')).decode('ascii'),
+                                 received, status, size, digest, path, error), workers=FTP_SCAN_WORKERS)
+            scan_orphans(os.environ['BACKUP_FTP_ROOT'], expected,
+                         int(os.environ.get('BACKUP_FTP_STABLE_SECONDS', '5')), orphan_observed,
+                         preserved_uploads, accounts)
+    except Exception:
+        logging.error(json.dumps({'status': 'ftp_orphan_scan_failed'}))
+
+
 def execute_with_session(job, stack, session_lock):
     if not hasattr(WORKER_SESSION, 'session'):
         with session_lock:
@@ -157,12 +184,14 @@ def execute_with_session(job, stack, session_lock):
 
 def main():
     session_lock = threading.Lock()
-    with ExitStack() as stack, ThreadPoolExecutor(max_workers=WORKERS) as pool, ArtisanSession(ARTISAN) as dispatcher:
+    with ExitStack() as stack, ThreadPoolExecutor(max_workers=WORKERS) as pool, \
+            ThreadPoolExecutor(max_workers=1) as scanner, ArtisanSession(ARTISAN) as dispatcher:
         active = set()
         orphan_observed = {}
         spontaneous_observed = {}
         ftp_root = os.environ.get('BACKUP_FTP_ROOT')
         preserved_uploads = existing_files(ftp_root) if ftp_root else {}
+        scan_future = None
         last_orphan_scan = 0
         last_health_snapshot = 0
         while True:
@@ -173,31 +202,9 @@ def main():
                     write_snapshot(HEALTH_SNAPSHOT_PATH, snapshot)
                 except Exception:
                     logging.error(json.dumps({'status': 'health_snapshot_failed'}))
-            if time.monotonic() - last_orphan_scan >= 5 and os.environ.get('BACKUP_FTP_ROOT'):
+            if time.monotonic() - last_orphan_scan >= 5 and os.environ.get('BACKUP_FTP_ROOT') and (scan_future is None or scan_future.done()):
                 last_orphan_scan = time.monotonic()
-                try:
-                    with ArtisanSession(ARTISAN) as session:
-                        expected = json.loads(session.command('ftp:expected'))
-                        accounts = json.loads(session.command('ftp:accounts'))
-                        scan_spontaneous(os.environ['BACKUP_FTP_ROOT'], os.environ['BACKUP_STORAGE_ROOT'],
-                                         int(os.environ.get('BACKUP_FTP_STABLE_SECONDS', '5')),
-                                         spontaneous_observed, expected,
-                                         lambda device, token, filename, received: json.loads(session.command(
-                                             'ftp:receive', device, token,
-                                             'n' + base64.urlsafe_b64encode(filename.encode('utf-8')).decode('ascii'),
-                                             received, WORKER_ID)),
-                                         lambda job_id, relative: session.command('engine:complete', job_id, relative, WORKER_ID),
-                                         lambda job_id, code: session.command('engine:fail', job_id, code, WORKER_ID),
-                                         accounts,
-                                         lambda account, token, filename, received, status, size, digest, path, error: session.command(
-                                             'ftp:receipt', account, token,
-                                             'n' + base64.urlsafe_b64encode(filename.encode('utf-8')).decode('ascii'),
-                                             received, status, size, digest, path, error))
-                        scan_orphans(os.environ['BACKUP_FTP_ROOT'], expected,
-                                     int(os.environ.get('BACKUP_FTP_STABLE_SECONDS', '5')), orphan_observed,
-                                     preserved_uploads, accounts)
-                except Exception:
-                    logging.error(json.dumps({'status': 'ftp_orphan_scan_failed'}))
+                scan_future = scanner.submit(scan_ftp, spontaneous_observed, orphan_observed, preserved_uploads)
             active = {future for future in active if not future.done()}
             if len(active) >= WORKERS:
                 wait(active, timeout=1, return_when=FIRST_COMPLETED)

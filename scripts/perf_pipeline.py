@@ -4,12 +4,18 @@ from concurrent.futures import ThreadPoolExecutor
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'engine'))
 from ftp_spontaneous import scan
-from artisan_session import ArtisanSession, ArtisanTransportError
+from artisan_session import ArtisanSession, ArtisanTransportError, ThreadSessions
 import argparse
 parser=argparse.ArgumentParser(description='Synthetic FTPS/receiver/PostgreSQL PERF comparison; isolated PERF-1 runtime required.')
 parser.add_argument('--session',action='store_true')
+parser.add_argument('--local-files',action='store_true')
+parser.add_argument('--uploads',type=int,default=40)
+parser.add_argument('--file-server-only',action='store_true')
+parser.add_argument('--workers',type=int,choices=[1,2],default=1)
 parser.add_argument('--output',type=Path,required=True)
 args=parser.parse_args()
+if not 2 <= args.uploads <= 1000: parser.error('uploads must be between 2 and 1000')
+backup_uploads=0 if args.file_server_only else args.uploads//2
 PHP='/tmp/perf-1-runtime/bin/php';BIN='/tmp/perf-1-runtime/usr/lib/postgresql/17/bin';PG=['-h','/tmp/bm-perf-1-services/socket','-p','55432','-U','perf'];worker='c'*32;out={}
 with tempfile.TemporaryDirectory(prefix='bm-perf-1-') as name:
  r=Path(name);r.chmod(0o755)
@@ -44,11 +50,14 @@ Artisan::call('ftp:accounts');echo Artisan::output();
   time.sleep(.3);assert server.poll() is None
   payload=b'# synthetic config\n'+b'x'*4077;lat=[];upload_epoch=time.monotonic()
   def upload(i):
-   purpose='backup' if i<20 else 'file_server';start=time.monotonic()
+   purpose='backup' if i<backup_uploads else 'file_server';start=time.monotonic()
+   if args.local_files:
+    home=Path(next(a['home'] for a in accounts if a['purpose']==purpose))
+    (home/('upload-'+str(i)+'.cfg')).write_bytes(payload);lat.append(time.monotonic()-start);return
    with ftplib.FTP_TLS(context=ctx) as c:
     c.connect('127.0.0.1',52121,timeout=20);c.login('perf_'+purpose,password);c.prot_p();c.storbinary('STOR upload-'+str(i)+'.cfg',io.BytesIO(payload))
    lat.append(time.monotonic()-start)
-  with ThreadPoolExecutor(max_workers=4) as pool:list(pool.map(upload,range(40)))
+  with ThreadPoolExecutor(max_workers=4) as pool:list(pool.map(upload,range(args.uploads)))
   upload_seconds=time.monotonic()-upload_epoch
   encode=lambda s:'n'+base64.urlsafe_b64encode(s.encode()).decode()
   receive=lambda device,token,filename,received:json.loads(cmd('ftp:receive',device,token,encode(filename),received,worker))
@@ -57,20 +66,35 @@ Artisan::call('ftp:accounts');echo Artisan::output();
   receipt_lat=[];receipt_ack=[]
   def receipt(a,token,filename,received,status,size,digest,path,error):
    start=time.monotonic();cmd('ftp:receipt',a,token,encode(filename),received,status,size,digest,path,error);receipt_lat.append(time.monotonic()-start);receipt_ack.append(time.monotonic()-upload_epoch)
-  observed={};tick=time.monotonic()
-  session=ArtisanSession([PHP,str(ROOT/'app/artisan')],env=env) if args.session else None
+  observed={}
+  monitor=subprocess.Popen([PHP,str(ROOT/'scripts/perf_monitor.php')],env=env,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+  deadline=time.monotonic()+10
+  while not (r/'monitor-ready').exists():
+   if monitor.poll() is not None or time.monotonic()>deadline: raise RuntimeError('monitor did not start')
+   time.sleep(.01)
+  original_popen=subprocess.Popen;receiver_spawns=[]
+  def counted_popen(command,*positional,**kwargs):
+   if command[:2]==[PHP,str(ROOT/'app/artisan')]:receiver_spawns.append(command[2])
+   return original_popen(command,*positional,**kwargs)
+  subprocess.Popen=counted_popen
+  tick=time.monotonic()
+  session=(ThreadSessions if args.workers>1 else ArtisanSession)([PHP,str(ROOT/'app/artisan')],env=env) if args.session else None
   if session:
    cmd=lambda *a:session.command(*a).decode()
-  for _ in range(3):scan(str(r/'ftp'),str(r/'backups'),0,observed,[],receive,complete,fail,accounts,receipt)
+  for _ in range(3):scan(str(r/'ftp'),str(r/'backups'),0,observed,[],receive,complete,fail,accounts,receipt,workers=args.workers)
   scan_seconds=time.monotonic()-tick
   if session:session.close()
-  out.update(session=args.session,receiver_subprocesses=1 if args.session else 100,uploads=40,backup_uploads=20,file_server_uploads=20,bytes_each=len(payload),sessions=4,upload_seconds=upload_seconds,upload_files_per_second=40/upload_seconds,scan_seconds=scan_seconds,scan_files_per_second=40/scan_seconds,end_to_end_seconds=time.monotonic()-upload_epoch,end_to_end_files_per_second=40/(time.monotonic()-upload_epoch),upload_session_p95_seconds=sorted(lat)[math.ceil(len(lat)*.95)-1],receipt_command_p95_seconds=sorted(receipt_lat)[math.ceil(len(receipt_lat)*.95)-1],batch_receipt_p95_seconds=sorted(receipt_ack)[math.ceil(len(receipt_ack)*.95)-1],batch_receipt_mean_seconds=sum(receipt_ack)/len(receipt_ack))
+  subprocess.Popen=original_popen
+  (r/'monitor-stop').touch();monitor_output,monitor_errors=monitor.communicate(timeout=10)
+  assert monitor.returncode==0,monitor_errors
+  out['database_activity']=json.loads(monitor_output)
+  out.update(session=args.session,receiver_subprocesses=len(receiver_spawns),scanner_workers=args.workers,transport="synthetic filesystem" if args.local_files else "FTPS",uploads=args.uploads,backup_uploads=backup_uploads,file_server_uploads=args.uploads-backup_uploads,bytes_each=len(payload),sessions=4,upload_seconds=upload_seconds,upload_files_per_second=args.uploads/upload_seconds,scan_seconds=scan_seconds,scan_files_per_second=args.uploads/scan_seconds,end_to_end_seconds=time.monotonic()-upload_epoch,end_to_end_files_per_second=args.uploads/(time.monotonic()-upload_epoch),upload_session_p95_seconds=sorted(lat)[math.ceil(len(lat)*.95)-1],receipt_command_p95_seconds=sorted(receipt_lat)[math.ceil(len(receipt_lat)*.95)-1],batch_receipt_p95_seconds=sorted(receipt_ack)[math.ceil(len(receipt_ack)*.95)-1],batch_receipt_mean_seconds=sum(receipt_ack)/len(receipt_ack))
   out['db_counts']={'executions':int(sql('select count(*) from backup_executions')),'succeeded':int(sql("select count(*) from backup_executions where status='succeeded'")),'artifacts':int(sql('select count(*) from backup_artifacts')),'receipts':int(sql('select count(*) from ftp_received_files'))}
-  assert out['db_counts']=={'executions':20,'succeeded':20,'artifacts':20,'receipts':40}
+  assert out['db_counts']=={'executions':backup_uploads,'succeeded':backup_uploads,'artifacts':backup_uploads,'receipts':args.uploads}
   rows=sql("select relative_path||'|'||sha256||'|'||size_bytes from ftp_received_files where status='stored'").splitlines()
   for row in rows:
    path,digest,size=row.rsplit('|',2);p=r/'backups'/path;assert p.stat().st_size==int(size) and hashlib.sha256(p.read_bytes()).hexdigest()==digest
-  out['unique_tokens']=int(sql('select count(distinct claim_token) from ftp_received_files'));out['processing_files']=len(list((r/'ftp/processing').iterdir()));assert out['unique_tokens']==40 and out['processing_files']==0
+  out['unique_tokens']=int(sql('select count(distinct claim_token) from ftp_received_files'));out['processing_files']=len(list((r/'ftp/processing').iterdir()));assert out['unique_tokens']==args.uploads and out['processing_files']==0
   out['deadlocks']=int(sql('select deadlocks from pg_stat_database where datname=current_database()'))
   print(json.dumps(out),flush=True)
   # A real database outage after publication must retain the durable sidecar.
@@ -94,15 +118,15 @@ Artisan::call('ftp:accounts');echo Artisan::output();
   scan(str(r/'ftp'),str(r/'backups'),0,observed,[],receive,interrupted_complete,fail,accounts,receipt)
   assert outage==[True]
   after_outage_files=sum(p.is_file() for p in (r/'backups').rglob('*'))
-  assert after_outage_files==41
-  assert int(sql('select count(*) from backup_artifacts'))==20
+  assert after_outage_files==args.uploads+1
+  assert int(sql('select count(*) from backup_artifacts'))==backup_uploads
   assert any((r/'ftp/processing').iterdir())
   scan(str(r/'ftp'),str(r/'backups'),0,{},[],receive,complete,fail,accounts,receipt)
-  assert int(sql('select count(*) from backup_artifacts'))==21
-  assert int(sql('select count(*) from ftp_received_files'))==41
-  assert sum(p.is_file() for p in (r/'backups').rglob('*'))==41
+  assert int(sql('select count(*) from backup_artifacts'))==backup_uploads+1
+  assert int(sql('select count(*) from ftp_received_files'))==args.uploads+1
+  assert sum(p.is_file() for p in (r/'backups').rglob('*'))==args.uploads+1
   assert not any((r/'ftp/processing').iterdir())
-  out['publication_postgres_outage']={'offline_completion_rejected':True,'files_after_outage':41,'files_after_restart':41,'artifacts_after_restart':21,'unique_receipts_after_restart':41,'processing_after_restart':0}
+  out['publication_postgres_outage']={'offline_completion_rejected':True,'files_after_outage':args.uploads+1,'files_after_restart':args.uploads+1,'artifacts_after_restart':backup_uploads+1,'unique_receipts_after_restart':args.uploads+1,'processing_after_restart':0}
  finally:
   if 'session' in locals() and session:session.close()
   if server:server.terminate();server.wait(timeout=10)

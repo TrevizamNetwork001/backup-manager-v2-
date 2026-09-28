@@ -68,10 +68,30 @@ def control(php, mode, count):
     return json.loads(output)
 
 
-def engine_load(php, count, delay, same_device=False, workers=4):
+def engine_load(php, count, delay, same_device=False, workers=4, scanner_files=0):
     control(php, 'same_device' if same_device else 'jobs', count)
+    scanner_files = scanner_files if count >= 100 else 0
+    if scanner_files:
+        root = Path(os.environ['PERF_WORKSPACE'])
+        probe = root / 'scanner.php'
+        probe.write_text('''<?php
+require '/opt/backup-manager-v2/app/vendor/autoload.php';$app=require '/opt/backup-manager-v2/app/bootstrap/app.php';$app->make(Illuminate\\Contracts\\Console\\Kernel::class)->bootstrap();
+use Illuminate\\Support\\Facades\\DB;use Illuminate\\Support\\Facades\\Artisan;
+if(getenv('APP_ENV')!=='testing'||DB::selectOne('SHOW data_directory')->data_directory!=='/tmp/bm-perf-1-services/pgdata')throw new RuntimeException('not isolated');
+if($argv[1]==='seed') {
+ $a=new App\\Models\\FtpAccount(['device_id'=>null,'account_uuid'=>(string)Illuminate\\Support\\Str::uuid(),'purpose'=>'file_server','home_layout'=>'account','username'=>'perf_scanner','is_active'=>true]);$a->secret='synthetic-only';$a->save();DB::table('ftp_accounts')->where('id',$a->id)->update(['provisioned_at'=>now(),'sync_error'=>null]);
+ Artisan::call('ftp:accounts');echo Artisan::output();
+} else {echo json_encode(DB::table('ftp_received_files')->get(['claim_token','relative_path','size_bytes','sha256','status']));}
+''')
+        accounts = json.loads(subprocess.check_output([php, str(probe), 'seed']))
+        home = Path(accounts[0]['home'])
+        assert home.is_relative_to(root / 'ftp')
+        home.mkdir(parents=True)
+        for index in range(scanner_files):
+            (home / f'upload-{index}.cfg').write_bytes(b'x' * 4096)
     result = {'scenario': 'engine_same_device' if same_device else 'engine_queue', 'jobs': count,
-              'driver_delay_seconds': delay, 'control_plane': 'real Artisan/' + os.environ['DB_CONNECTION'], 'workers': workers}
+              'driver_delay_seconds': delay, 'control_plane': 'real Artisan/' + os.environ['DB_CONNECTION'], 'workers': workers,
+              'scanner_files': scanner_files}
     started, ended, durations, queues = {}, {}, [], []
     operations = collections.Counter()
     commands = []
@@ -176,6 +196,17 @@ def engine_load(php, count, delay, same_device=False, workers=4):
                     raise RuntimeError('Isolated PostgreSQL sampler failed')
                 result['database_activity'] = json.loads(output)
     status = control(php, 'status', count)
+    if scanner_files:
+        receipts = json.loads(subprocess.check_output([php, str(probe), 'verify']))
+        assert len(receipts) == scanner_files
+        assert len({receipt['claim_token'] for receipt in receipts}) == scanner_files
+        for receipt in receipts:
+            assert receipt['status'] == 'stored'
+            path = root / 'backups' / receipt['relative_path']
+            assert path.stat().st_size == receipt['size_bytes']
+            assert hashlib.sha256(path.read_bytes()).hexdigest() == receipt['sha256']
+        assert not list((root / 'ftp/processing').iterdir())
+        result['scanner_receipts_verified'] = len(receipts)
     result.update(throughput_jobs_min=60 * status['statuses'].get('succeeded', 0) / result['seconds'], latency=distribution(list(ended.values())),
                   execution=distribution(durations), queue=distribution(queues), command=distribution(commands),
                   artisan_operations=dict(operations), subprocess_count=sum(processes.values()),
@@ -258,6 +289,7 @@ def main():
     parser.add_argument('--only', choices=['engine', 'control', 'ftp', 'secret'])
     parser.add_argument('--engine-cases', choices=['all', 'remaining', 'quick'], default='all')
     parser.add_argument('--workers', type=int, choices=[1, 2, 4], default=4)
+    parser.add_argument('--scanner-files', type=int, choices=[0, 1000], default=0)
     parser.add_argument('--pg-socket', type=Path)
     parser.add_argument('--pg-bin', type=Path)
     args = parser.parse_args()
@@ -266,15 +298,17 @@ def main():
             or not args.pg_socket.parent.name.startswith('bm-perf-1-')):
         parser.error('PostgreSQL requires --pg-bin and /tmp/bm-perf-1-*/socket')
     logging.getLogger().setLevel(logging.CRITICAL)
+    if args.scanner_files and not args.pg_socket:
+        parser.error('--scanner-files requires isolated PostgreSQL')
     results = []
     scenarios = []
     if args.only == 'secret':
         scenarios += [('control', 'secret', 100)]
     if args.only in (None, 'engine'):
         counts = (20,) if args.engine_cases == 'quick' else ((100,) if args.engine_cases == 'remaining' else (20, 50, 100))
-        scenarios += [('engine', n, .02, False, args.workers) for n in counts]
+        scenarios += [('engine', n, .02, False, args.workers, args.scanner_files) for n in counts]
         if args.engine_cases != 'quick':
-            scenarios += [('engine', 20, 2., False, args.workers), ('engine', 5, .1, True, args.workers)]
+            scenarios += [('engine', 20, 2., False, args.workers, 0), ('engine', 5, .1, True, args.workers, 0)]
     if args.only in (None, 'control'):
         scenarios += [('control', mode, n) for mode, n in [('scheduler', 100), ('scheduler', 1000),
                       ('retention', 1000), ('retention', 10000), ('stale', 1000), ('retry', 100), ('cancel', 100)]]
@@ -297,7 +331,8 @@ def main():
                            'QUEUE_CONNECTION': 'sync', 'VIEW_COMPILED_PATH': str(root / 'views'),
                            'APP_CONFIG_CACHE': str(root / 'config.php'),
                            'BACKUP_STORAGE_ROOT': str(root / 'backups'), 'BACKUP_FTP_ROOT': str(root / 'ftp'),
-                           'BACKUP_FTP_MAX_BYTES': str(64*1024*1024), 'BACKUP_ENGINE_HEALTH_SNAPSHOT_PATH': ''}
+                           'BACKUP_FTP_MAX_BYTES': str(64*1024*1024), 'BACKUP_ENGINE_HEALTH_SNAPSHOT_PATH': '',
+                           'BACKUP_FTP_STABLE_SECONDS': '0'}
             database = 'bm_perf_1_' + root.name.removeprefix('bm-perf-1-')
             pg_args = ['-h', str(args.pg_socket), '-p', '55432', '-U', 'perf']
             if args.pg_socket:

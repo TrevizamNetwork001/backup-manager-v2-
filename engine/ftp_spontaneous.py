@@ -1,6 +1,8 @@
 """Receive autonomous OLT uploads. The chroot directory, never the filename, identifies the device."""
 
 import json
+import fcntl
+from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 import logging
 import os
 import re
@@ -292,10 +294,10 @@ def process_file_server(root_name, storage_root, staged, metadata, record, recei
     metadata.unlink()
 
 
-def scan(root_name, storage_root, stable_seconds, observed, expected, receive, complete, fail, accounts=None, receipt=None):
+def _scan(root_name, storage_root, stable_seconds, observed, expected, receive, complete, fail, accounts, receipt, homes, processor):
     root = Path(root_name).resolve(strict=True)
     stage = stage_directory(root_name)
-    for metadata in stage.iterdir():
+    for metadata in list(stage.iterdir()):
         if not TOKEN.fullmatch(metadata.name) or metadata.is_symlink():
             continue
         staged = stage / metadata.stem
@@ -304,7 +306,7 @@ def scan(root_name, storage_root, stable_seconds, observed, expected, receive, c
             continue
         try:
             record = json.loads(metadata.read_text(encoding='utf-8'))
-            process(root_name, storage_root, staged, metadata, record, receive, complete, fail, receipt)
+            processor(root_name, storage_root, staged, metadata, record, receive, complete, fail, receipt)
         except Exception as error:
             if 'record' in locals() and isinstance(record, dict):
                 remember_failure(root_name, staged, metadata, record, error, receipt)
@@ -317,26 +319,8 @@ def scan(root_name, storage_root, stable_seconds, observed, expected, receive, c
         finally:
             record = None
     now = time.monotonic()
-    sources = accounts if accounts is not None else [
-        {'device_id': int(item.name), 'home_layout': 'legacy', 'home': str(item / 'incoming'), 'purpose': 'backup'}
-        for item in root.iterdir() if item.name.isdecimal() and item.is_dir() and not item.is_symlink()]
-    for account in sources:
-        if not account.get('is_active', True):
-            continue
-        if account.get('purpose') == 'file_server' and not account.get('ready_for_receive', False):
-            continue
+    for account, home in homes:
         device_id = account.get('device_id')
-        home = Path(account['home']) if accounts is not None else directory(root_name, device_id)
-        if not home.is_relative_to(root) or home.is_symlink() or home.parent.is_symlink():
-            continue
-        if account.get('home_layout') == 'account' and (
-            not re.fullmatch(r'[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}', str(account.get('account_uuid'))) or
-            home != root / 'accounts' / account['account_uuid'] / 'incoming' or (root / 'accounts').is_symlink()):
-            continue
-        if account.get('home_layout') == 'legacy' and home != root / str(device_id) / 'incoming':
-            continue
-        if not home.is_dir():
-            continue
         for path in home.iterdir():
             key = (str(home), path.name)
             if account.get('purpose') == 'backup' and RESERVED.fullmatch(path.name):
@@ -365,6 +349,93 @@ def scan(root_name, storage_root, stable_seconds, observed, expected, receive, c
                 continue
             if claimed:
                 try:
-                    process(root_name, storage_root, *claimed, receive, complete, fail, receipt)
+                    processor(root_name, storage_root, *claimed, receive, complete, fail, receipt)
                 except Exception as error:
                     remember_failure(root_name, claimed[0], claimed[1], claimed[2], error, receipt)
+
+
+def account_homes(root_name, root, accounts):
+    sources = accounts if accounts is not None else [
+        {'device_id': int(item.name), 'home_layout': 'legacy', 'home': str(item / 'incoming'), 'purpose': 'backup'}
+        for item in root.iterdir() if item.name.isdecimal() and item.is_dir() and not item.is_symlink()]
+    for account in sources:
+        if not account.get('is_active', True):
+            continue
+        if account.get('purpose') == 'file_server' and not account.get('ready_for_receive', False):
+            continue
+        device_id = account.get('device_id')
+        home = Path(account['home']) if accounts is not None else directory(root_name, device_id)
+        if not home.is_relative_to(root) or home.is_symlink() or home.parent.is_symlink():
+            continue
+        if account.get('home_layout') == 'account' and (
+            not re.fullmatch(r'[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}', str(account.get('account_uuid'))) or
+            home != root / 'accounts' / account['account_uuid'] / 'incoming' or (root / 'accounts').is_symlink()):
+            continue
+        if account.get('home_layout') == 'legacy' and home != root / str(device_id) / 'incoming':
+            continue
+        if not home.is_dir():
+            continue
+        yield account, home
+
+
+def scan(root_name, storage_root, stable_seconds, observed, expected, receive, complete, fail,
+         accounts=None, receipt=None, workers=1):
+    root = Path(root_name).resolve(strict=True)
+    stage = stage_directory(root_name)
+    stage_fd = os.open(stage, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        try:
+            fcntl.flock(stage_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return
+        homes = list(account_homes(root_name, root, accounts))
+        workers = min(2, max(1, workers))
+        # Small batches amortize PHP bootstrap better on one transport.
+        if workers > 1:
+            count = sum(1 for metadata in stage.iterdir() if TOKEN.fullmatch(metadata.name))
+            count += sum(1 for account, home in homes for path in home.iterdir()
+                         if not path.name.lower().endswith(IN_PROGRESS_SUFFIXES)
+                         and not (account.get('purpose') == 'backup' and RESERVED.fullmatch(path.name)))
+            parallel_sources = any(a.get('purpose') == 'file_server' for a, _ in homes) or len(homes) > 1
+            if count < 256 or not parallel_sources:
+                workers = 1
+        if workers == 1:
+            return _scan(root_name, storage_root, stable_seconds, observed, expected, receive,
+                         complete, fail, accounts, receipt, homes, process)
+        pending = {}
+        errors = []
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            def drain(futures):
+                for key, future in list(pending.items()):
+                    if future in futures:
+                        error = future.exception()
+                        if error is not None:
+                            errors.append(error)
+                        del pending[key]
+
+            def run(*arguments):
+                try:
+                    process(*arguments)
+                except Exception as error:
+                    remember_failure(arguments[0], arguments[2], arguments[3], arguments[4], error, arguments[8])
+
+            def enqueue(*arguments):
+                record = arguments[4]
+                key = ('backup', record['device_id']) if record.get('purpose', 'backup') == 'backup' else ('file_server', arguments[2].name)
+                if key in pending:
+                    done, _ = wait([pending[key]])
+                    drain(done)
+                if len(pending) >= workers:
+                    done, _ = wait(pending.values(), return_when=FIRST_COMPLETED)
+                    drain(done)
+                pending[key] = pool.submit(run, *arguments)
+
+            _scan(root_name, storage_root, stable_seconds, observed, expected, receive,
+                  complete, fail, accounts, receipt, homes, enqueue)
+            if pending:
+                done, _ = wait(pending.values())
+                drain(done)
+            if errors:
+                raise errors[0]
+    finally:
+        os.close(stage_fd)

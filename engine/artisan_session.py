@@ -4,9 +4,37 @@ import os
 import select
 import subprocess
 import time
+import threading
 
 class ArtisanTransportError(RuntimeError):
     """Unavailable control plane; preserve the receiver sidecar for retry."""
+
+
+class ThreadSessions:
+    """One independent transport per caller thread, closed after workers join."""
+    def __init__(self, artisan, env=None):
+        self.artisan = artisan
+        self.env = env
+        self.local = threading.local()
+        self.sessions = []
+        self.lock = threading.Lock()
+
+    def __enter__(self):
+        return self
+
+    def command(self, *args):
+        if not hasattr(self.local, 'session'):
+            with self.lock:
+                self.local.session = ArtisanSession(self.artisan, env=self.env)
+                self.sessions.append(self.local.session)
+        return self.local.session.command(*args)
+
+    def close(self):
+        for session in self.sessions:
+            session.close()
+
+    def __exit__(self, *args):
+        self.close()
 
 
 class ArtisanSession:

@@ -1,11 +1,29 @@
 import json
 import sys
 import unittest
+import threading
+from concurrent.futures import ThreadPoolExecutor
 
-from artisan_session import ArtisanSession, ArtisanTransportError
+from artisan_session import ArtisanSession, ArtisanTransportError, ThreadSessions
 
 
 class ArtisanSessionTest(unittest.TestCase):
+    def test_thread_sessions_isolate_children_and_close_them_after_join(self):
+        code = "import sys,json,os\nfor line in sys.stdin:\n print(json.dumps({'ok':True,'output':str(os.getpid())}),flush=True)"
+        barrier = threading.Barrier(2)
+        with ThreadSessions([sys.executable, '-u', '-c', code]) as sessions:
+            def request(_):
+                barrier.wait(timeout=2)
+                first = sessions.command('ftp:accounts')
+                return first, sessions.command('ftp:accounts')
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                results = list(pool.map(request, range(2)))
+            children = [session.process for session in sessions.sessions]
+            self.assertEqual(2, len(children))
+            self.assertTrue(all(first == second for first, second in results))
+            self.assertNotEqual(results[0][0], results[1][0])
+        self.assertTrue(all(child.poll() is not None for child in children))
+
     def session(self, code, timeout=2):
         # The trailing engine:session argument is ignored by this test child.
         return ArtisanSession([sys.executable, '-u', '-c', code], timeout=timeout)
