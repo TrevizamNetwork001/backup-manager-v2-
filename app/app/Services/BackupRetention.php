@@ -12,9 +12,7 @@ use Illuminate\Support\Facades\Schema;
 
 class BackupRetention
 {
-    public function __construct(private ArtifactStorage $storage)
-    {
-    }
+    public function __construct(private ArtifactStorage $storage) {}
 
     public function run(bool $apply = false, ?CarbonInterface $now = null): array
     {
@@ -24,67 +22,13 @@ class BackupRetention
         DeviceBackupPolicy::query()->with('backupPolicy')->orderBy('id')->chunkById(100,
             function ($associations) use ($apply, $nowUtc, &$totals) {
                 foreach ($associations as $association) {
-                    // The association row serializes retention workers for one logical source.
-                    DB::transaction(function () use ($association, $apply, $nowUtc, &$totals) {
-                        $source = DeviceBackupPolicy::query()->with('backupPolicy')->lockForUpdate()->find($association->id);
-                        if (! $source || ! $source->backupPolicy) return;
-                        $policy = $source->backupPolicy;
-                        if (! $policy->retention_days && ! $policy->retention_count) return;
-                        $artifacts = BackupArtifact::query()->with('backupExecution')
-                            ->where('status', 'available')->whereHas('backupExecution', fn ($q) => $q
-                                ->where('device_backup_policy_id', $source->id)->where('status', 'succeeded'))
-                            ->whereNotNull('validated_at')->orderByDesc('created_at')->orderByDesc('id')
-                            ->lockForUpdate()->get();
-                        $valid = [];
-                        foreach ($artifacts as $artifact) {
-                            $totals['scanned']++;
-                            $check = $this->storage->verify($artifact);
-                            if ($check['result'] === 'missing') {
-                                $totals['missing']++;
-                                $this->audit($artifact, 'missing', null, $apply);
-                                if ($apply) {
-                                    $artifact->status = 'missing';
-                                    $artifact->missing_at = $nowUtc;
-                                    $artifact->save();
-                                }
-                            } elseif ($check['result'] !== 'valid') {
-                                $totals['anomalies']++;
-                                $this->audit($artifact, $check['result'], null, $apply);
-                            } else {
-                                $valid[] = [$artifact, $check];
-                            }
-                        }
-                        foreach ($valid as $index => [$artifact, $check]) {
-                            $days = $policy->retention_days && $artifact->created_at->lt($nowUtc->subDays($policy->retention_days));
-                            $count = $policy->retention_count && $index >= $policy->retention_count;
-                            if (! $days && ! $count) continue;
-                            if ($index === 0) {
-                                $totals['protected_latest']++;
-                                continue;
-                            }
-                            $reason = $days && $count ? 'retention_days_and_count' : ($days ? 'retention_days' : 'retention_count');
-                            $totals['candidates']++;
-                            if (! $apply) continue;
-                            // The primitive rechecks (TOCTOU) and unlinks in one step, while the row is locked.
-                            $removal = $this->storage->remove($artifact, $check['inode']);
-                            if ($removal['result'] === 'changed_file') {
-                                $totals['anomalies']++;
-                                $this->audit($artifact, 'changed_before_delete', $reason, true);
-                                continue;
-                            }
-                            if ($removal['result'] !== 'deleted') {
-                                $totals['errors']++;
-                                $this->audit($artifact, 'unlink_failed', $reason, true);
-                                continue;
-                            }
-                            $artifact->status = 'deleted';
-                            $artifact->deleted_at = $nowUtc;
-                            $artifact->deletion_reason = $reason;
-                            $artifact->save();
-                            $totals['deleted']++;
-                            $this->audit($artifact, 'deleted', $reason, true);
-                        }
-                    });
+                    if ($apply) {
+                        DB::transaction(function () use ($association, $apply, $nowUtc, &$totals) {
+                            $this->retainSource($association->id, $apply, $nowUtc, $totals);
+                        });
+                    } else {
+                        $this->retainSource($association->id, $apply, $nowUtc, $totals);
+                    }
                 }
             });
 
@@ -97,6 +41,99 @@ class BackupRetention
         }
 
         return $totals;
+    }
+
+    private function retainSource(int $sourceId, bool $apply, CarbonImmutable $nowUtc, array &$totals): void
+    {
+        $sourceQuery = DeviceBackupPolicy::query()->with('backupPolicy');
+        if ($apply) {
+            $sourceQuery->lockForUpdate();
+        }
+        $source = $sourceQuery->find($sourceId);
+        if (! $source || ! $source->backupPolicy) {
+            return;
+        }
+        $policy = $source->backupPolicy;
+        if (! $policy->retention_days && ! $policy->retention_count) {
+            return;
+        }
+        $ids = BackupArtifact::query()->where('status', 'available')
+            ->whereHas('backupExecution', fn ($q) => $q
+                ->where('device_backup_policy_id', $source->id)->where('status', 'succeeded'))
+            ->whereNotNull('validated_at')->orderByDesc('created_at')->orderByDesc('id')->pluck('id');
+        $validCount = 0;
+        foreach ($ids->chunk(500) as $batch) {
+            $query = BackupArtifact::query()->with('backupExecution:id,device_id,backup_policy_id')
+                ->whereIn('id', $batch)
+                ->where('status', 'available')->whereHas('backupExecution', fn ($q) => $q
+                ->where('device_backup_policy_id', $source->id)->where('status', 'succeeded'))
+                ->whereNotNull('validated_at')->orderByDesc('created_at')->orderByDesc('id');
+            if ($apply) {
+                $query->lockForUpdate();
+            }
+            $artifacts = $query->get();
+            $missing = [];
+            $deleted = [];
+            foreach ($artifacts as $artifact) {
+                $totals['scanned']++;
+                $check = $this->storage->verify($artifact);
+                if ($check['result'] === 'missing') {
+                    $totals['missing']++;
+                    $this->audit($artifact, 'missing', null, $apply);
+                    $missing[] = $artifact->id;
+
+                    continue;
+                }
+                if ($check['result'] !== 'valid') {
+                    $totals['anomalies']++;
+                    $this->audit($artifact, $check['result'], null, $apply);
+
+                    continue;
+                }
+                $index = $validCount++;
+                $days = $policy->retention_days && $artifact->created_at->lt($nowUtc->subDays($policy->retention_days));
+                $count = $policy->retention_count && $index >= $policy->retention_count;
+                if (! $days && ! $count) {
+                    continue;
+                }
+                if ($index === 0) {
+                    $totals['protected_latest']++;
+
+                    continue;
+                }
+                $reason = $days && $count ? 'retention_days_and_count' : ($days ? 'retention_days' : 'retention_count');
+                $totals['candidates']++;
+                if (! $apply) {
+                    continue;
+                }
+                $removal = $this->storage->remove($artifact, $check['inode']);
+                if ($removal['result'] === 'changed_file') {
+                    $totals['anomalies']++;
+                    $this->audit($artifact, 'changed_before_delete', $reason, true);
+
+                    continue;
+                }
+                if ($removal['result'] !== 'deleted') {
+                    $totals['errors']++;
+                    $this->audit($artifact, 'unlink_failed', $reason, true);
+
+                    continue;
+                }
+                $deleted[$reason][] = $artifact->id;
+                $totals['deleted']++;
+                $this->audit($artifact, 'deleted', $reason, true);
+            }
+            if ($apply && $missing) {
+                BackupArtifact::query()->whereIn('id', $missing)->update([
+                    'status' => 'missing', 'missing_at' => $nowUtc, 'updated_at' => now(),
+                ]);
+            }
+            foreach ($deleted as $reason => $ids) {
+                BackupArtifact::query()->whereIn('id', $ids)->update([
+                    'status' => 'deleted', 'deleted_at' => $nowUtc, 'deletion_reason' => $reason, 'updated_at' => now(),
+                ]);
+            }
+        }
     }
 
     private function audit(BackupArtifact $artifact, string $result, ?string $reason, bool $apply): void

@@ -13,6 +13,7 @@ use App\Models\User;
 use App\Services\BackupRetention;
 use App\Services\EngineJobService;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -24,6 +25,7 @@ class BackupRetentionTest extends TestCase
     use RefreshDatabase;
 
     private string $root;
+
     private CarbonImmutable $clock;
 
     protected function setUp(): void
@@ -38,7 +40,9 @@ class BackupRetentionTest extends TestCase
     protected function tearDown(): void
     {
         $files = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($this->root, \FilesystemIterator::SKIP_DOTS), \RecursiveIteratorIterator::CHILD_FIRST);
-        foreach ($files as $file) $file->isDir() && ! $file->isLink() ? rmdir($file->getPathname()) : unlink($file->getPathname());
+        foreach ($files as $file) {
+            $file->isDir() && ! $file->isLink() ? rmdir($file->getPathname()) : unlink($file->getPathname());
+        }
         rmdir($this->root);
         parent::tearDown();
     }
@@ -51,6 +55,7 @@ class BackupRetentionTest extends TestCase
         $credential = new Credential(['device_id' => $device->id, 'name' => 'SSH', 'type' => 'ssh', 'username' => 'backup', 'is_active' => true]);
         $credential->secret = 'secret-never-display';
         $credential->save();
+
         return DeviceBackupPolicy::create(['device_id' => $device->id, 'backup_policy_id' => $policy->id, 'credential_id' => $credential->id, 'is_active' => true]);
     }
 
@@ -67,7 +72,9 @@ class BackupRetentionTest extends TestCase
             $relative = substr($relative, 0, strrpos($relative, '.')).'-exec-'.$job->id.'.'.pathinfo($relative, PATHINFO_EXTENSION);
         }
         $path = $this->root.'/'.$relative;
-        if (! is_dir(dirname($path))) mkdir(dirname($path), 0700, true);
+        if (! is_dir(dirname($path))) {
+            mkdir(dirname($path), 0700, true);
+        }
         $content = "/interface bridge\nadd name=bridge{$job->id}\n";
         file_put_contents($path, $content);
         $artifact = BackupArtifact::create(['backup_execution_id' => $job->id, 'device_id' => $job->device_id,
@@ -76,11 +83,19 @@ class BackupRetentionTest extends TestCase
             'size_bytes' => strlen($content), 'sha256' => hash('sha256', $content),
             'validated_at' => $validated ? $date : null]);
         DB::table('backup_artifacts')->where('id', $artifact->id)->update(['created_at' => $date]);
+
         return $artifact->fresh();
     }
 
-    private function retention(bool $apply = false): array { return app(BackupRetention::class)->run($apply, $this->clock); }
-    private function path(BackupArtifact $artifact): string { return $this->root.'/'.$artifact->relative_path; }
+    private function retention(bool $apply = false): array
+    {
+        return app(BackupRetention::class)->run($apply, $this->clock);
+    }
+
+    private function path(BackupArtifact $artifact): string
+    {
+        return $this->root.'/'.$artifact->relative_path;
+    }
 
     public function test_days_keep_in_window_and_protect_last_valid_backup(): void
     {
@@ -124,6 +139,38 @@ class BackupRetentionTest extends TestCase
         $this->assertNotNull($old->fresh()->deleted_at);
         $this->assertFileExists($this->path($middle));
         $this->assertFileExists($this->path($new));
+        $this->assertSame(0, $this->retention(true)['deleted']);
+    }
+
+    public function test_pages_preserve_valid_rank_with_tied_dates_and_group_updates(): void
+    {
+        $source = $this->source(count: 3);
+        $artifacts = [];
+        for ($index = 0; $index < 505; $index++) {
+            $artifacts[] = $this->artifact($source, 40);
+        }
+        unlink($this->path($artifacts[504]));
+        file_put_contents($this->path($artifacts[503]), str_repeat('X', $artifacts[503]->size_bytes));
+        $queries = [];
+        DB::listen(function ($query) use (&$queries): void {
+            $queries[] = $query->sql;
+        });
+        $preview = $this->retention();
+        $this->assertSame(500, $preview['candidates']);
+        $this->assertFalse(collect($queries)->contains(fn ($sql) => str_contains(strtolower($sql), 'for update')));
+        $queries = [];
+        $result = $this->retention(true);
+        $this->assertSame(505, $result['scanned']);
+        $this->assertSame(500, $result['deleted']);
+        $this->assertSame(1, $result['missing']);
+        $this->assertSame(1, $result['anomalies']);
+        $this->assertLessThan(30, count($queries));
+        foreach ([500, 501, 502] as $index) {
+            $this->assertSame('available', $artifacts[$index]->fresh()->status);
+            $this->assertFileExists($this->path($artifacts[$index]));
+        }
+        $this->assertSame('missing', $artifacts[504]->fresh()->status);
+        $this->assertSame('available', $artifacts[503]->fresh()->status);
         $this->assertSame(0, $this->retention(true)['deleted']);
     }
 
@@ -176,7 +223,9 @@ class BackupRetentionTest extends TestCase
         $b = $this->artifact($second, 40);
         $c = $this->artifact($third, 40);
         $this->assertSame(3, $this->retention(true)['protected_latest']);
-        foreach ([$a, $b, $c] as $artifact) $this->assertFileExists($this->path($artifact));
+        foreach ([$a, $b, $c] as $artifact) {
+            $this->assertFileExists($this->path($artifact));
+        }
     }
 
     public function test_dry_run_and_default_command_never_change_files_or_lifecycle(): void
@@ -226,7 +275,9 @@ class BackupRetentionTest extends TestCase
             $this->assertSame('sentinel', file_get_contents($outsidePath));
             $this->assertSame('available', $hash->fresh()->status);
             $this->assertSame('available', $traversal->fresh()->status);
-        } finally { unlink($outsidePath); }
+        } finally {
+            unlink($outsidePath);
+        }
     }
 
     public function test_non_succeeded_artifacts_are_ignored(): void
@@ -242,7 +293,7 @@ class BackupRetentionTest extends TestCase
     public function test_schema_rejects_an_artifact_without_validation(): void
     {
         $source = $this->source(30);
-        $this->expectException(\Illuminate\Database\QueryException::class);
+        $this->expectException(QueryException::class);
         $this->artifact($source, 40, validated: false);
     }
 
