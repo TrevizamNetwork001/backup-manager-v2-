@@ -17,12 +17,15 @@ class BackupExecution extends Model
     // separate "claimed" state was introduced because claim() already moves
     // straight to 'running' atomically (see EngineJobService::claim()).
     public const STATUSES = ['pending', 'queued', 'running', 'succeeded', 'failed', 'retry_wait', 'timed_out', 'cancelled'];
+
     // A device with an execution in any of these statuses is "busy" — used to
     // reject a second concurrent execution for the same device (manual or
     // scheduled). Lesson from V1 (backup_manager/jobs.py queue_run): reject
     // the duplicate at creation time, not only at claim time.
     public const LIVE_STATUSES = ['pending', 'queued', 'running', 'retry_wait'];
+
     public const ORIGINS = ['manual', 'scheduler', 'ftp_received'];
+
     private const TRANSITIONS = [
         'pending' => ['queued', 'cancelled'],
         'queued' => ['running', 'cancelled'],
@@ -38,6 +41,17 @@ class BackupExecution extends Model
         'ftp_account_id', 'ftp_claim_token', 'received_filename', 'received_at', 'processing_at',
         'claimed_at', 'heartbeat_at', 'worker_id', 'next_attempt_at', 'cancellation_requested_at',
     ];
+
+    protected static function booted(): void
+    {
+        static::saved(function (self $execution): void {
+            if (in_array($execution->status, ['queued', 'retry_wait'], true) &&
+                $execution->isDirty('status') && $execution->origin !== 'ftp_received' &&
+                $execution->getConnection()->getDriverName() === 'pgsql') {
+                $execution->getConnection()->statement('NOTIFY backup_engine_queue');
+            }
+        });
+    }
 
     protected function casts(): array
     {
@@ -76,7 +90,9 @@ class BackupExecution extends Model
     {
         return DB::transaction(function () use ($association) {
             $relations = ['backupPolicy:id,is_active,method,schedule_type', 'device', 'credential:id,is_active'];
-            if (Schema::hasTable('ftp_accounts')) $relations[] = 'device.ftpAccount';
+            if (Schema::hasTable('ftp_accounts')) {
+                $relations[] = 'device.ftpAccount';
+            }
             $association = DeviceBackupPolicy::query()->with($relations)
                 ->lockForUpdate()->findOrFail($association->id);
             if (! $association->is_active || ! $association->backupPolicy->is_active ||

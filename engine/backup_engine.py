@@ -217,7 +217,7 @@ def main():
                     if active:
                         wait(active, timeout=1, return_when=FIRST_COMPLETED)
                     else:
-                        time.sleep(5)
+                        dispatcher.command('engine:wait', 5000)
             except Exception:
                 logging.error(json.dumps({'status': 'claim_failed'}))
                 time.sleep(5)

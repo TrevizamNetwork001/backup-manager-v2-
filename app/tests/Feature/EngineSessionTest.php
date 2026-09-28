@@ -43,4 +43,18 @@ class EngineSessionTest extends TestCase
         $this->expectException(\InvalidArgumentException::class);
         (new EngineSession)->dispatch(['command' => 'ftp:receipt', 'args' => []]);
     }
+
+    public function test_idle_wait_is_bounded_and_keeps_transaction_level(): void
+    {
+        $level = DB::transactionLevel();
+        $this->assertSame(['ok' => true, 'output' => 'null'],
+            (new EngineSession)->dispatch(['command' => 'engine:wait', 'args' => ['1']]));
+        $this->assertSame($level, DB::transactionLevel());
+    }
+
+    public function test_idle_wait_rejects_unbounded_timeout(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        (new EngineSession)->dispatch(['command' => 'engine:wait', 'args' => ['5001']]);
+    }
 }

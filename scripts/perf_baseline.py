@@ -64,6 +64,11 @@ def measured(result):
 
 
 def control(php, mode, count):
+    if mode == 'enqueue':
+        with backup_engine.ArtisanSession([php, str(PROJECT / 'app/artisan')]) as listener:
+            listener.command('engine:wait', 1)
+            output = subprocess.check_output([php, str(PROJECT / 'scripts/perf_control.php'), mode, str(count)])
+        return json.loads(output)
     output = subprocess.check_output([php, str(PROJECT / 'scripts/perf_control.php'), mode, str(count)])
     return json.loads(output)
 
@@ -286,13 +291,16 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--php', required=True)
     parser.add_argument('--output', type=Path, required=True)
-    parser.add_argument('--only', choices=['engine', 'control', 'ftp', 'secret'])
+    parser.add_argument('--only', choices=['engine', 'control', 'ftp', 'secret', 'enqueue'])
     parser.add_argument('--engine-cases', choices=['all', 'remaining', 'quick'], default='all')
     parser.add_argument('--workers', type=int, choices=[1, 2, 4], default=4)
     parser.add_argument('--scanner-files', type=int, choices=[0, 1000], default=0)
+    parser.add_argument('--execution-model', type=Path)
     parser.add_argument('--pg-socket', type=Path)
     parser.add_argument('--pg-bin', type=Path)
     args = parser.parse_args()
+    if args.execution_model and (args.only != 'enqueue' or not str(args.execution_model).startswith('/tmp/perf-3-')):
+        parser.error('--execution-model is a PERF-3 copy for enqueue only')
     if args.pg_socket and (not args.pg_bin or args.pg_socket.name != 'socket'
             or args.pg_socket.parent.parent != Path('/tmp')
             or not args.pg_socket.parent.name.startswith('bm-perf-1-')):
@@ -304,6 +312,8 @@ def main():
     scenarios = []
     if args.only == 'secret':
         scenarios += [('control', 'secret', 100)]
+    if args.only == 'enqueue':
+        scenarios += [('control', 'enqueue', 1000)]
     if args.only in (None, 'engine'):
         counts = (20,) if args.engine_cases == 'quick' else ((100,) if args.engine_cases == 'remaining' else (20, 50, 100))
         scenarios += [('engine', n, .02, False, args.workers, args.scanner_files) for n in counts]
@@ -333,6 +343,7 @@ def main():
                            'BACKUP_STORAGE_ROOT': str(root / 'backups'), 'BACKUP_FTP_ROOT': str(root / 'ftp'),
                            'BACKUP_FTP_MAX_BYTES': str(64*1024*1024), 'BACKUP_ENGINE_HEALTH_SNAPSHOT_PATH': '',
                            'BACKUP_FTP_STABLE_SECONDS': '0'}
+            environment['PERF_EXECUTION_MODEL_FILE'] = str(args.execution_model) if args.execution_model else ''
             database = 'bm_perf_1_' + root.name.removeprefix('bm-perf-1-')
             pg_args = ['-h', str(args.pg_socket), '-p', '55432', '-U', 'perf']
             if args.pg_socket:

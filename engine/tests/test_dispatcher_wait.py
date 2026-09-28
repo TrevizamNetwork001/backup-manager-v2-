@@ -12,6 +12,25 @@ class Finished(BaseException):
 
 
 class DispatcherWaitTest(unittest.TestCase):
+    def test_idle_delegates_bounded_wait_without_sleep_or_busy_loop(self):
+        calls = []
+
+        def command(*args):
+            calls.append(args)
+            if len(calls) == 3:
+                raise Finished()
+            return b'null'
+
+        with patch.dict(os.environ, {'BACKUP_FTP_ROOT': ''}), \
+                patch.object(backup_engine, 'HEALTH_SNAPSHOT_PATH', ''), \
+                patch.object(backup_engine.ArtisanSession, 'command', side_effect=command), \
+                patch.object(backup_engine.time, 'sleep') as sleep:
+            with self.assertRaises(Finished):
+                backup_engine.main()
+        self.assertEqual('engine:wait', calls[1][0])
+        self.assertEqual(5000, calls[1][1])
+        sleep.assert_not_called()
+
     def test_slow_scanner_does_not_block_claim_or_spawn_overlapping_scans(self):
         started, release, finished = threading.Event(), threading.Event(), threading.Event()
         observations = []

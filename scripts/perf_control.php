@@ -30,6 +30,13 @@ if (! is_string($root) || ! preg_match('~\A/tmp/bm-perf-1-[a-zA-Z0-9_-]+\z~D', $
     throw new RuntimeException('PERF requires an isolated temporary database and workspace.');
 }
 require __DIR__.'/../app/vendor/autoload.php';
+$executionModelFile = getenv('PERF_EXECUTION_MODEL_FILE');
+if ($executionModelFile) {
+    if (! str_starts_with($executionModelFile, '/tmp/perf-3-')) {
+        throw new RuntimeException('Comparison model must be a PERF-3 copy.');
+    }
+    require $executionModelFile;
+}
 $app = require __DIR__.'/../app/bootstrap/app.php';
 $app->make(Kernel::class)->bootstrap();
 if (config('database.default') !== getenv('DB_CONNECTION')
@@ -43,7 +50,7 @@ if ($postgres && (config('database.connections.pgsql.host') !== $socket
     throw new RuntimeException('PostgreSQL is not the isolated PERF cluster.');
 }
 $mode = $argv[1] ?? 'jobs';
-if (! in_array($mode, ['jobs', 'same_device', 'status', 'scheduler', 'retention', 'retention_apply', 'stale', 'retry', 'cancel', 'secret'], true)) {
+if (! in_array($mode, ['jobs', 'same_device', 'status', 'scheduler', 'retention', 'retention_apply', 'stale', 'retry', 'cancel', 'secret', 'enqueue'], true)) {
     throw new InvalidArgumentException('Unknown PERF scenario.');
 }
 $retention = in_array($mode, ['retention', 'retention_apply'], true);
@@ -84,7 +91,7 @@ if ($mode !== 'scheduler') {
         $association = $associations[$i % count($associations)];
         $job = BackupExecution::create(['device_backup_policy_id' => $association->id, 'backup_policy_id' => $policy->id,
             'device_id' => $association->device_id, 'credential_id' => $association->credential_id,
-            'origin' => 'manual', 'status' => $retention ? 'succeeded' : 'queued', 'attempt' => 1,
+            'origin' => 'manual', 'status' => $retention ? 'succeeded' : ($mode === 'enqueue' ? 'pending' : 'queued'), 'attempt' => 1,
             'max_attempts' => 3]);
         if ($retention) {
             DB::table('backup_executions')->where('id', $job->id)->update(['created_at' => $clock->subSeconds($count - $i)]);
@@ -121,7 +128,15 @@ DB::listen(function ($event) use (&$queries): void {
 });
 $start = hrtime(true);
 $result = null;
-if ($mode === 'secret') {
+if ($mode === 'enqueue') {
+    foreach ($jobs as $id) {
+        BackupExecution::findOrFail($id)->transitionTo('queued');
+    }
+    $result = ['queued' => BackupExecution::where('status', 'queued')->count()];
+    if ($result['queued'] !== $count) {
+        throw new RuntimeException('Enqueue baseline mismatch.');
+    }
+} elseif ($mode === 'secret') {
     foreach ($jobs as $id) {
         $engine->secret($id, $worker);
     }
