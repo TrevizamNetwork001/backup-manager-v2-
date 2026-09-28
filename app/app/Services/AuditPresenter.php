@@ -17,6 +17,7 @@ class AuditPresenter
         'auth.login' => 'Acesso realizado',
         'auth.login_failed' => 'Tentativa de acesso inválida',
         'auth.logout' => 'Sessão encerrada',
+        'report.exported' => 'Exportação de relatório',
         'ftp.account.create' => 'Criação de conta FTP',
         'ftp.account.delete' => 'Excluir conta FTP',
         'ftp.account.delete_with_data' => 'Excluir conta FTP + dados',
@@ -59,6 +60,7 @@ class AuditPresenter
         'backup_execution' => 'Execução de backup',
         'backup_artifact' => 'Artefato de backup',
         'user' => 'Usuário',
+        'report' => 'Relatório',
     ];
 
     private const MODE_LABELS = [
@@ -74,7 +76,7 @@ class AuditPresenter
         'device_name' => 'Equipamento',
         'purpose' => 'Finalidade',
         'account_uuid' => 'UUID da conta',
-        'home_layout' => 'Layout do diretório',
+        'home_layout' => 'Organização do diretório',
         'chroot' => 'Chroot',
         'mode' => 'Modo',
         'physical' => 'Inspeção física',
@@ -87,7 +89,7 @@ class AuditPresenter
         'executions_removed' => 'Execuções removidas',
         'artifacts_removed' => 'Artefatos removidos',
         'error' => 'Erro',
-        'rollback' => 'Rollback',
+        'rollback' => 'Reversão',
         'error_code' => 'Código de erro',
         'retry' => 'Nova tentativa',
         'paths_physical_pending' => 'Caminhos físicos pendentes',
@@ -108,10 +110,14 @@ class AuditPresenter
         'old_status' => 'Status anterior',
         'new_status' => 'Novo status',
         'execution_id' => 'ID da execução',
-        'relative_path' => 'Path relativo',
+        'relative_path' => 'Caminho relativo',
         'file_existed' => 'Arquivo existia',
         'preserved_execution' => 'Execução preservada',
         'size_bytes' => 'Tamanho',
+        'report_type' => 'Tipo de relatório',
+        'filters' => 'Filtros',
+        'row_count' => 'Quantidade de linhas',
+        'format' => 'Formato',
     ];
 
     private const BYTE_KEYS = ['bytes_removed', 'ftp_bytes_removed', 'size_bytes'];
@@ -122,6 +128,7 @@ class AuditPresenter
     ];
 
     private const ROLE_VALUE_KEYS = ['old_role', 'new_role'];
+
     private const STATUS_VALUE_KEYS = ['old_status', 'new_status'];
 
     public function actionLabel(string $action): string
@@ -160,6 +167,7 @@ class AuditPresenter
         foreach ($metadata as $key => $value) {
             if (is_string($key) && $this->isSensitiveKey($key)) {
                 $sanitized[$key] = '[REDACTED]';
+
                 continue;
             }
             $sanitized[$key] = is_array($value) ? $this->sanitizeMetadata($value) : $value;
@@ -198,6 +206,7 @@ class AuditPresenter
                 } else {
                     $rows = array_merge($rows, $this->metadataRows($value, $label));
                 }
+
                 continue;
             }
 

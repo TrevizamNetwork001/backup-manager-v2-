@@ -19,8 +19,9 @@ class CredentialController extends Controller
             ->with('device:id,name')
             ->orderBy('name')
             ->paginate(20);
+        $devices = Device::query()->orderBy('name')->get(['id', 'name']);
 
-        return view('credentials.index', compact('credentials'));
+        return view('credentials.index', compact('credentials', 'devices'));
     }
 
     public function create(): View

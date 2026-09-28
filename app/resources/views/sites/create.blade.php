@@ -6,17 +6,17 @@
 
 @section('content')
 
-<div class="page-width">
+<div class="modern-form-page stack">
 
-    <article class="panel form-panel">
-        <div class="panel-header">
+    <article class="card">
+        <div class="card__header">
             <div>
-                <h2>Dados do Site / POP</h2>
-                <p>Defina a identificação básica desta localização.</p>
+                <h2 class="card__title">Dados do Site / POP</h2>
+                <p class="card__description">Defina a identificação básica desta localização.</p>
             </div>
         </div>
 
-        <form method="POST" action="{{ route('sites.store') }}">
+        <form class="card__body" method="POST" action="{{ route('sites.store') }}">
             @include('sites._form')
         </form>
     </article>

@@ -4,12 +4,16 @@
     @method('PUT')
 @endif
 
-<div class="form-grid">
+@if($createModal ?? false)
+    <div class="modal__body form-create-modal__body">
+@endif
 
-    <div class="field form-span-2">
-        <label for="name">Nome *</label>
+<div class="form-create-grid">
 
-        <input
+    <div class="form-field form-span-2">
+        <label class="form-label" for="name">Nome *</label>
+
+        <input class="form-control"
             id="name"
             name="name"
             type="text"
@@ -20,14 +24,14 @@
         >
 
         @error('name')
-            <span class="field-error">{{ $message }}</span>
+            <span class="form-error">{{ $message }}</span>
         @enderror
     </div>
 
-    <div class="field">
-        <label for="code">Código</label>
+    <div class="form-field">
+        <label class="form-label" for="code">Código</label>
 
-        <input
+        <input class="form-control"
             id="code"
             name="code"
             type="text"
@@ -37,14 +41,14 @@
         >
 
         @error('code')
-            <span class="field-error">{{ $message }}</span>
+            <span class="form-error">{{ $message }}</span>
         @enderror
     </div>
 
-    <div class="field">
-        <label for="location">Localização</label>
+    <div class="form-field">
+        <label class="form-label" for="location">Localização</label>
 
-        <input
+        <input class="form-control"
             id="location"
             name="location"
             type="text"
@@ -54,14 +58,14 @@
         >
 
         @error('location')
-            <span class="field-error">{{ $message }}</span>
+            <span class="form-error">{{ $message }}</span>
         @enderror
     </div>
 
-    <div class="field form-span-2">
-        <label for="description">Descrição</label>
+    <div class="form-field form-span-2">
+        <label class="form-label" for="description">Descrição</label>
 
-        <textarea
+        <textarea class="form-control"
             id="description"
             name="description"
             rows="5"
@@ -70,11 +74,11 @@
         >{{ old('description', $site->description ?? '') }}</textarea>
 
         @error('description')
-            <span class="field-error">{{ $message }}</span>
+            <span class="form-error">{{ $message }}</span>
         @enderror
     </div>
 
-    <div class="field form-span-2">
+    <div class="form-field form-span-2">
         <input type="hidden" name="is_active" value="0">
 
         <label class="switch-row">
@@ -94,12 +98,18 @@
 
 </div>
 
-<div class="form-actions">
-    <a href="{{ route('sites.index') }}" class="secondary-button">
-        Cancelar
-    </a>
+@if($createModal ?? false)
+    </div>
+@endif
 
-    <button type="submit" class="primary-button inline-button">
+<div class="form-actions {{ ($createModal ?? false) ? 'modal__footer form-create-modal__footer' : '' }}">
+    @if($createModal ?? false)
+        <button type="button" class="btn btn--ghost" data-close-site-create>Cancelar</button>
+    @else
+        <a href="{{ route('sites.index') }}" class="btn btn--ghost">Cancelar</a>
+    @endif
+
+    <button type="submit" class="btn btn--primary">
         {{ isset($site) ? 'Salvar alterações' : 'Cadastrar Site / POP' }}
     </button>
 </div>

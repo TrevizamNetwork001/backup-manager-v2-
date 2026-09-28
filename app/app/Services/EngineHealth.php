@@ -27,9 +27,7 @@ class EngineHealth
 
     private bool $engineSnapshotLoaded = false;
 
-    public function __construct(private readonly DeviceBackupHealth $deviceHealth)
-    {
-    }
+    public function __construct(private readonly DeviceBackupHealth $deviceHealth) {}
 
     public function snapshot(): array
     {
@@ -150,22 +148,22 @@ class EngineHealth
         $snapshot = $this->engineSnapshot();
         if ($snapshot === null) {
             return HealthCheckResult::make('engine', HealthStatus::Unknown, 'no_snapshot',
-                'Nenhum snapshot do engine foi encontrado ainda.', []);
+                'Ainda não foi encontrado um registro de estado do motor de backup.', []);
         }
         $generatedAt = $snapshot['generated_at'] ?? null;
         if (! is_int($generatedAt)) {
             return HealthCheckResult::make('engine', HealthStatus::Unknown, 'invalid_snapshot',
-                'Snapshot do engine sem timestamp válido.', []);
+                'Registro de estado do motor de backup sem data válida.', []);
         }
         $ageSeconds = now()->timestamp - $generatedAt;
         $staleThreshold = (int) config('backup.engine_health_snapshot_stale_seconds');
         if ($ageSeconds > $staleThreshold) {
             return HealthCheckResult::make('engine', HealthStatus::Critical, 'stale_snapshot',
-                'O engine não atualiza seu snapshot há mais tempo que o esperado — provavelmente parado.',
+                'O motor de backup não atualiza seu estado há mais tempo que o esperado — provavelmente parado.',
                 ['age_seconds' => $ageSeconds]);
         }
 
-        return HealthCheckResult::make('engine', HealthStatus::Healthy, 'alive', 'Engine ativo e reportando.', [
+        return HealthCheckResult::make('engine', HealthStatus::Healthy, 'alive', 'Motor de backup ativo e reportando.', [
             'age_seconds' => $ageSeconds,
             'engine_version' => $snapshot['engine_version'] ?? null,
             'python_version' => $snapshot['python_version'] ?? null,
@@ -207,12 +205,12 @@ class EngineHealth
         $stale = $running->filter(fn ($job) => ($job->heartbeat_at ?? $job->started_at)?->lt($staleCutoff) ?? true)->count();
         if ($stale > 0) {
             return HealthCheckResult::make('worker', HealthStatus::Critical, 'stale_heartbeat',
-                'Existem execuções em andamento sem heartbeat recente.',
+                'Existem execuções em andamento sem sinal de atividade recente.',
                 ['running' => $running->count(), 'stale' => $stale]);
         }
 
         return HealthCheckResult::make('worker', HealthStatus::Healthy, 'ok',
-            'Heartbeat das execuções em andamento está em dia.', ['running' => $running->count()]);
+            'O sinal de atividade das execuções em andamento está em dia.', ['running' => $running->count()]);
     }
 
     private function checkScheduler(): HealthCheckResult
@@ -221,11 +219,11 @@ class EngineHealth
             $lastTick = Cache::store('redis')->get('health:scheduler:last_tick');
         } catch (\Throwable $e) {
             return HealthCheckResult::make('scheduler', HealthStatus::Unknown, 'redis_unavailable',
-                'Não foi possível ler o heartbeat do scheduler (Redis indisponível).', []);
+                'Não foi possível ler o sinal de atividade do agendador (Redis indisponível).', []);
         }
         if (! is_int($lastTick)) {
             return HealthCheckResult::make('scheduler', HealthStatus::Unknown, 'never_ticked',
-                'O scheduler ainda não registrou nenhuma execução.', []);
+                'O agendador ainda não registrou nenhuma execução.', []);
         }
         $ageMinutes = abs(now()->diffInMinutes(CarbonImmutable::createFromTimestamp($lastTick)));
         $warn = (int) config('health.scheduler_warning_minutes');
@@ -233,7 +231,7 @@ class EngineHealth
         $status = $ageMinutes >= $crit ? HealthStatus::Critical : ($ageMinutes >= $warn ? HealthStatus::Warning : HealthStatus::Healthy);
 
         return HealthCheckResult::make('scheduler', $status, 'tick_age',
-            $status === HealthStatus::Healthy ? 'Scheduler executando normalmente.' : 'O scheduler está atrasado ou parado.',
+            $status === HealthStatus::Healthy ? 'Agendador executando normalmente.' : 'O agendador está atrasado ou parado.',
             ['age_minutes' => $ageMinutes]);
     }
 
@@ -430,18 +428,38 @@ class EngineHealth
         $status = fn (string $name) => $byName[$name]->status ?? HealthStatus::Unknown;
         $alerts = [];
 
-        if ($status('engine') === HealthStatus::Critical) $alerts[] = AlertCondition::EngineDown->value;
-        if ($status('worker') === HealthStatus::Critical) $alerts[] = AlertCondition::WorkerStale->value;
-        if (in_array($status('scheduler'), [HealthStatus::Warning, HealthStatus::Critical], true)) $alerts[] = AlertCondition::SchedulerStale->value;
-        if (in_array($status('queue'), [HealthStatus::Warning, HealthStatus::Critical], true)) $alerts[] = AlertCondition::QueueBacklog->value;
-        if ($status('stale_jobs') !== HealthStatus::Healthy) $alerts[] = AlertCondition::StaleJobs->value;
-        if ($status('storage') === HealthStatus::Warning) $alerts[] = AlertCondition::StorageWarning->value;
-        if ($status('storage') === HealthStatus::Critical) $alerts[] = AlertCondition::StorageCritical->value;
-        if ($status('ftp') !== HealthStatus::Healthy || $status('file_server') !== HealthStatus::Healthy) $alerts[] = AlertCondition::FtpProcessingStale->value;
-        if ($status('retention') === HealthStatus::Warning) $alerts[] = AlertCondition::RetentionFailed->value;
+        if ($status('engine') === HealthStatus::Critical) {
+            $alerts[] = AlertCondition::EngineDown->value;
+        }
+        if ($status('worker') === HealthStatus::Critical) {
+            $alerts[] = AlertCondition::WorkerStale->value;
+        }
+        if (in_array($status('scheduler'), [HealthStatus::Warning, HealthStatus::Critical], true)) {
+            $alerts[] = AlertCondition::SchedulerStale->value;
+        }
+        if (in_array($status('queue'), [HealthStatus::Warning, HealthStatus::Critical], true)) {
+            $alerts[] = AlertCondition::QueueBacklog->value;
+        }
+        if ($status('stale_jobs') !== HealthStatus::Healthy) {
+            $alerts[] = AlertCondition::StaleJobs->value;
+        }
+        if ($status('storage') === HealthStatus::Warning) {
+            $alerts[] = AlertCondition::StorageWarning->value;
+        }
+        if ($status('storage') === HealthStatus::Critical) {
+            $alerts[] = AlertCondition::StorageCritical->value;
+        }
+        if ($status('ftp') !== HealthStatus::Healthy || $status('file_server') !== HealthStatus::Healthy) {
+            $alerts[] = AlertCondition::FtpProcessingStale->value;
+        }
+        if ($status('retention') === HealthStatus::Warning) {
+            $alerts[] = AlertCondition::RetentionFailed->value;
+        }
         $repeatedFailures = collect($byName['devices']->metadata['problem_devices'] ?? [])
             ->contains(fn ($d) => $d['reason'] === 'consecutive_failures');
-        if ($repeatedFailures) $alerts[] = AlertCondition::RepeatedDeviceFailures->value;
+        if ($repeatedFailures) {
+            $alerts[] = AlertCondition::RepeatedDeviceFailures->value;
+        }
 
         return $alerts;
     }

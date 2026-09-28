@@ -7,11 +7,11 @@
     <div class="dashboard-date">{{ ucfirst($localNow->locale('pt_BR')->isoFormat('dddd, D [de] MMMM [de] YYYY')) }} <span>◷ {{ $localNow->format('H:i') }}</span></div>
     <div class="dashboard-kpis">
         @foreach ([
-            ['Sites / POPs', $siteCount, 'Total cadastrados', 'sites.index', 'server', 'purple'],
-            ['Equipamentos', $deviceCount, 'Total cadastrados', 'devices.index', 'server', 'sky'],
-            ['Backups (24h)', $successCount, 'Execuções concluídas', 'backup-executions.index', 'file', 'green'],
-            ['Falhas (24h)', $failureCount, 'Execuções com erro', 'backup-executions.index', 'error', 'red'],
-            ['Artefatos', $artifactCount, 'Arquivos armazenados', 'backup-artifacts.index', 'folder', 'amber']
+            ['Sites / POPs', $siteCount, 'Total cadastrados', 'sites.index', 'dashboard-sites', 'purple'],
+            ['Equipamentos', $deviceCount, 'Total cadastrados', 'devices.index', 'dashboard-devices', 'sky'],
+            ['Backups (24h)', $successCount, 'Execuções concluídas', 'backup-executions.index', 'dashboard-backups', 'green'],
+            ['Falhas (24h)', $failureCount, 'Execuções com erro', 'backup-executions.index', 'dashboard-failures', 'red'],
+            ['Artefatos', $artifactCount, 'Arquivos armazenados', 'backup-artifacts.index', 'dashboard-artifacts', 'amber']
         ] as [$label, $value, $detail, $route, $icon, $color])
             <a class="reference-stat" href="{{ route($route) }}"><span class="reference-stat__icon {{ $color }}"><x-icon :name="$icon" /></span><span><small>{{ $label }}</small><strong>{{ number_format($value, 0, ',', '.') }}</strong><em>{{ $detail }}</em></span></a>
         @endforeach
@@ -88,7 +88,7 @@
                         <td data-label="Início">{{ ($execution->started_at ?? $execution->created_at)?->setTimezone($instanceTimezone)->format('d/m/Y H:i') }}</td>
                         <td data-label="Equipamento">{{ $execution->device?->name ?? '—' }}</td>
                         <td data-label="Tipo">{{ $execution->origin === 'ftp_received' ? 'FTP' : 'Backup' }}</td>
-                        <td data-label="Status"><span class="badge badge--{{ $execution->status === 'succeeded' ? 'success' : (in_array($execution->status, ['failed', 'timed_out']) ? 'danger' : 'neutral') }}">{{ ['succeeded' => 'Concluído', 'failed' => 'Erro', 'timed_out' => 'Tempo esgotado', 'running' => 'Em andamento', 'queued' => 'Na fila', 'pending' => 'Pendente', 'retry_wait' => 'Nova tentativa', 'cancelled' => 'Cancelado'][$execution->status] ?? $execution->status }}</span></td>
+                        <td data-label="Status"><span class="badge badge--{{ $execution->status === 'succeeded' ? 'success' : (in_array($execution->status, ['failed', 'timed_out']) ? 'danger' : 'neutral') }}">{{ \App\Support\OperationalLabels::EXECUTION_STATUSES[$execution->status] ?? $execution->status }}</span></td>
                         <td data-label="Duração" class="duration-cell">{{ $durationSeconds === null ? '—' : (intdiv($durationSeconds, 3600) ? intdiv($durationSeconds, 3600).'h ' : '').intdiv($durationSeconds % 3600, 60).'m '.($durationSeconds % 60).'s' }}</td>
                     </tr>
                 @empty
@@ -122,7 +122,7 @@
                         <td data-label="Data/Hora">{{ \Illuminate\Support\Carbon::parse($receipt->received_at, 'UTC')->setTimezone($instanceTimezone)->format('d/m/Y H:i') }}</td>
                         <td data-label="Arquivo" class="filename-cell"><span class="filename-short" title="{{ $filename }}"><span class="filename-stem">{{ $filenameStem }}</span><span class="filename-extension">{{ $filenameExtension }}</span></span></td>
                         <td data-label="Tamanho" class="size-cell">{{ $size }}</td>
-                        <td data-label="Status"><span class="badge badge--{{ $receipt->status === 'stored' ? 'success' : 'neutral' }}">{{ $receipt->status === 'stored' ? 'Armazenado' : ucfirst($receipt->status) }}</span></td>
+                        <td data-label="Status"><span class="badge badge--{{ $receipt->status === 'stored' ? 'success' : 'neutral' }}">{{ \App\Support\OperationalLabels::FTP_STATUSES[$receipt->status] ?? $receipt->status }}</span></td>
                     </tr>
                 @empty
                     <tr><td colspan="4" class="empty-table">Nenhum arquivo recebido recentemente.</td></tr>

@@ -4,12 +4,16 @@
     @method('PUT')
 @endif
 
-<div class="form-grid">
+@if($createModal ?? false)
+    <div class="modal__body form-create-modal__body">
+@endif
 
-    <div class="field form-span-2">
-        <label for="site_id">Site / POP *</label>
+<div class="form-create-grid">
 
-        <select id="site_id" name="site_id" required>
+    <div class="form-field form-span-2">
+        <label class="form-label" for="site_id">Site / POP *</label>
+
+        <select class="form-control" id="site_id" name="site_id" required>
             <option value="">Selecione...</option>
 
             @foreach($sites as $site)
@@ -26,14 +30,14 @@
         </select>
 
         @error('site_id')
-            <span class="field-error">{{ $message }}</span>
+            <span class="form-error">{{ $message }}</span>
         @enderror
     </div>
 
-    <div class="field form-span-2">
-        <label for="name">Nome *</label>
+    <div class="form-field form-span-2">
+        <label class="form-label" for="name">Nome *</label>
 
-        <input
+        <input class="form-control"
             id="name"
             name="name"
             type="text"
@@ -44,14 +48,14 @@
         >
 
         @error('name')
-            <span class="field-error">{{ $message }}</span>
+            <span class="form-error">{{ $message }}</span>
         @enderror
     </div>
 
-    <div class="field">
-        <label for="hostname">Hostname</label>
+    <div class="form-field">
+        <label class="form-label" for="hostname">Nome do host</label>
 
-        <input
+        <input class="form-control"
             id="hostname"
             name="hostname"
             type="text"
@@ -61,14 +65,14 @@
         >
 
         @error('hostname')
-            <span class="field-error">{{ $message }}</span>
+            <span class="form-error">{{ $message }}</span>
         @enderror
     </div>
 
-    <div class="field">
-        <label for="management_ip">IP de gerenciamento *</label>
+    <div class="form-field">
+        <label class="form-label" for="management_ip">IP de gerenciamento *</label>
 
-        <input
+        <input class="form-control"
             id="management_ip"
             name="management_ip"
             type="text"
@@ -79,14 +83,14 @@
         >
 
         @error('management_ip')
-            <span class="field-error">{{ $message }}</span>
+            <span class="form-error">{{ $message }}</span>
         @enderror
     </div>
 
-    <div class="field">
-        <label for="vendor">Vendor *</label>
+    <div class="form-field">
+        <label class="form-label" for="vendor">Fabricante *</label>
 
-        <input
+        <input class="form-control"
             id="vendor"
             name="vendor"
             type="text"
@@ -97,18 +101,18 @@
         >
 
         @error('vendor')
-            <span class="field-error">{{ $message }}</span>
+            <span class="form-error">{{ $message }}</span>
         @enderror
     </div>
-    <div class="field"><label for="platform">Tipo *</label><select id="platform" name="platform" required>
+    <div class="form-field"><label class="form-label" for="platform">Tipo *</label><select class="form-control" id="platform" name="platform" required>
         <option value="network" @selected(old('platform', $device->platform ?? 'network') === 'network')>Roteador / switch</option>
         <option value="olt" @selected(old('platform', $device->platform ?? 'network') === 'olt')>OLT</option>
-    </select>@error('platform') <span class="field-error">{{ $message }}</span> @enderror</div>
+    </select>@error('platform') <span class="form-error">{{ $message }}</span> @enderror</div>
 
-    <div class="field">
-        <label for="model">Modelo</label>
+    <div class="form-field">
+        <label class="form-label" for="model">Modelo</label>
 
-        <input
+        <input class="form-control"
             id="model"
             name="model"
             type="text"
@@ -118,14 +122,14 @@
         >
 
         @error('model')
-            <span class="field-error">{{ $message }}</span>
+            <span class="form-error">{{ $message }}</span>
         @enderror
     </div>
 
-    <div class="field form-span-2">
-        <label for="os_version">Versão / OS</label>
+    <div class="form-field form-span-2">
+        <label class="form-label" for="os_version">Versão / OS</label>
 
-        <input
+        <input class="form-control"
             id="os_version"
             name="os_version"
             type="text"
@@ -135,14 +139,14 @@
         >
 
         @error('os_version')
-            <span class="field-error">{{ $message }}</span>
+            <span class="form-error">{{ $message }}</span>
         @enderror
     </div>
 
-    <div class="field form-span-2">
-        <label for="notes">Observações</label>
+    <div class="form-field form-span-2">
+        <label class="form-label" for="notes">Observações</label>
 
-        <textarea
+        <textarea class="form-control"
             id="notes"
             name="notes"
             rows="4"
@@ -151,11 +155,11 @@
         >{{ old('notes', $device->notes ?? '') }}</textarea>
 
         @error('notes')
-            <span class="field-error">{{ $message }}</span>
+            <span class="form-error">{{ $message }}</span>
         @enderror
     </div>
 
-    <div class="field form-span-2">
+    <div class="form-field form-span-2">
         <input type="hidden" name="is_active" value="0">
 
         <label class="switch-row">
@@ -178,12 +182,18 @@
 
 </div>
 
-<div class="form-actions">
-    <a href="{{ route('devices.index') }}" class="secondary-button">
-        Cancelar
-    </a>
+@if($createModal ?? false)
+    </div>
+@endif
 
-    <button type="submit" class="primary-button inline-button">
+<div class="form-actions {{ ($createModal ?? false) ? 'modal__footer form-create-modal__footer' : '' }}">
+    @if($createModal ?? false)
+        <button type="button" class="btn btn--ghost" data-close-device-create>Cancelar</button>
+    @else
+        <a href="{{ route('devices.index') }}" class="btn btn--ghost">Cancelar</a>
+    @endif
+
+    <button type="submit" class="btn btn--primary">
         {{ isset($device) ? 'Salvar alterações' : 'Cadastrar equipamento' }}
     </button>
 </div>

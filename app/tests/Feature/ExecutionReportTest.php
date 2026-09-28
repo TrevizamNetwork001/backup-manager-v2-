@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\AuditEvent;
 use App\Models\BackupExecution;
 use App\Models\BackupPolicy;
 use App\Models\Credential;
@@ -10,7 +11,9 @@ use App\Models\DeviceBackupPolicy;
 use App\Models\Site;
 use App\Models\User;
 use App\Reports\ExecutionReportQuery;
+use App\Services\InstanceTimezone;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 class ExecutionReportTest extends TestCase
@@ -79,11 +82,11 @@ class ExecutionReportTest extends TestCase
     public function test_view_respects_instance_timezone(): void
     {
         $this->execution($this->association(), 'succeeded');
-        \Illuminate\Support\Facades\DB::table('application_settings')->where('id', 1)->update(['timezone' => 'America/Manaus']);
-        $this->app->forgetInstance(\App\Services\InstanceTimezone::class);
+        DB::table('application_settings')->where('id', 1)->update(['timezone' => 'America/Manaus']);
+        $this->app->forgetInstance(InstanceTimezone::class);
 
         $execution = BackupExecution::firstOrFail();
-        $localHour = app(\App\Services\InstanceTimezone::class)->format($execution->created_at, 'H:i');
+        $localHour = app(InstanceTimezone::class)->format($execution->created_at, 'H:i');
         $this->actingAs(User::factory()->admin()->create());
         $this->get(route('reports.executions'))->assertOk()->assertSee($localHour);
     }
@@ -98,6 +101,10 @@ class ExecutionReportTest extends TestCase
         $content = ob_get_clean();
         $this->assertStringNotContainsString('segredo-nunca-exportado', $content);
         $this->assertStringContainsString('Data/Hora', $content);
+        $this->assertStringContainsString('Concluído', $content);
+        $this->assertStringContainsString('Coleta via SSH', $content);
+        $this->assertStringNotContainsString('succeeded', $content);
+        $this->assertStringNotContainsString('ssh_pull', $content);
     }
 
     public function test_export_is_audited_without_the_row_content(): void
@@ -112,7 +119,7 @@ class ExecutionReportTest extends TestCase
         $this->assertDatabaseHas('audit_events', [
             'action' => 'report.exported', 'resource_type' => 'report', 'resource_id' => 'executions',
         ]);
-        $event = \App\Models\AuditEvent::where('action', 'report.exported')->first();
+        $event = AuditEvent::where('action', 'report.exported')->first();
         $metadata = is_string($event->metadata) ? json_decode($event->metadata, true) : $event->metadata;
         $this->assertSame('csv', $metadata['format']);
         $this->assertSame(1, $metadata['row_count']);

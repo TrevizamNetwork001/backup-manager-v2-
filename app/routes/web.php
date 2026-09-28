@@ -2,21 +2,21 @@
 
 use App\Http\Controllers\AuditController;
 use App\Http\Controllers\AuthController;
-use App\Http\Controllers\BackupExecutionController;
 use App\Http\Controllers\BackupArtifactController;
+use App\Http\Controllers\BackupExecutionController;
 use App\Http\Controllers\BackupPolicyController;
-use App\Http\Controllers\DeviceBackupPolicyController;
-use App\Http\Controllers\DeviceBackupHealthController;
-use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\CredentialController;
+use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\DeviceBackupHealthController;
+use App\Http\Controllers\DeviceBackupPolicyController;
 use App\Http\Controllers\DeviceController;
 use App\Http\Controllers\FtpAccountController;
 use App\Http\Controllers\FtpAdminController;
-use App\Http\Controllers\SiteController;
-use App\Http\Controllers\SystemHealthController;
 use App\Http\Controllers\InstanceSettingsController;
 use App\Http\Controllers\OltFtpWizardController;
 use App\Http\Controllers\ReportController;
+use App\Http\Controllers\SiteController;
+use App\Http\Controllers\SystemHealthController;
 use App\Http\Controllers\UserController;
 use Illuminate\Support\Facades\Route;
 
@@ -91,6 +91,7 @@ Route::middleware(['auth', 'active'])->group(function () {
     Route::post('backup-policies/{backup_policy}/associations/{association}/executions', [BackupExecutionController::class, 'storeManual'])->name('backup-policies.associations.executions.store');
 
     Route::get('backup-executions', [BackupExecutionController::class, 'index'])->name('backup-executions.index');
+    Route::get('backup-executions/{backup_execution}/status', [BackupExecutionController::class, 'status'])->name('backup-executions.status');
     Route::get('backup-executions/{backup_execution}', [BackupExecutionController::class, 'show'])->name('backup-executions.show');
     Route::post('backup-executions/{backup_execution}/queue', [BackupExecutionController::class, 'queue'])->name('backup-executions.queue');
     Route::post('backup-executions/{backup_execution}/cancel', [BackupExecutionController::class, 'cancel'])->name('backup-executions.cancel');

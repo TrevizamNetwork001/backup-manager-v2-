@@ -7,6 +7,7 @@ use App\Models\BackupPolicy;
 use App\Models\Device;
 use App\Models\DeviceBackupPolicy;
 use App\Services\EngineJobService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -49,7 +50,16 @@ class BackupExecutionController extends Controller
                 ->orderByDesc('id')->first();
             $contentAnalysis = $event ? json_decode($event->metadata, true) : null;
         }
+
         return view('backup-executions.show', compact('backupExecution', 'contentAnalysis'));
+    }
+
+    public function status(BackupExecution $backupExecution): JsonResponse
+    {
+        $this->authorize('backup_executions.view');
+
+        return response()->json(['status' => $backupExecution->status])
+            ->header('Cache-Control', 'no-store, private');
     }
 
     public function storeManual(BackupPolicy $backupPolicy, DeviceBackupPolicy $association): RedirectResponse
@@ -65,8 +75,11 @@ class BackupExecutionController extends Controller
     public function queue(BackupExecution $backupExecution): RedirectResponse
     {
         $this->authorize('backup_executions.run');
+        $backupExecution->transitionTo('queued');
 
-        return $this->transition($backupExecution, 'queued');
+        return redirect()->route('backup-executions.show', $backupExecution)
+            ->with('success', 'Execução adicionada à fila. O backup começará automaticamente quando houver disponibilidade para processamento.')
+            ->with('success_persistent', true);
     }
 
     public function cancel(BackupExecution $backupExecution, EngineJobService $engine): RedirectResponse
@@ -78,13 +91,5 @@ class BackupExecutionController extends Controller
             : 'Cancelamento solicitado. A execução será interrompida pelo engine em andamento.';
 
         return redirect()->route('backup-executions.show', $backupExecution)->with('success', $message);
-    }
-
-    private function transition(BackupExecution $execution, string $status): RedirectResponse
-    {
-        $execution->transitionTo($status);
-
-        return redirect()->route('backup-executions.show', $execution)
-            ->with('success', 'Estado da execução atualizado para '.strtoupper($status).'.');
     }
 }

@@ -34,7 +34,9 @@ class ReportExportTest extends TestCase
         })();
 
         $response = app(CsvExporter::class)->stream('large.csv', ['Número', 'Valor'], $rows,
-            function (int $count) use (&$completed): void { $completed = $count; });
+            function (int $count) use (&$completed): void {
+                $completed = $count;
+            });
 
         $this->assertSame(0, $generated);
         $this->assertNull($completed);
@@ -57,7 +59,9 @@ class ReportExportTest extends TestCase
             if (false) {
                 yield ['nunca'];
             }
-        })(), function (int $count) use (&$completed): void { $completed = $count; });
+        })(), function (int $count) use (&$completed): void {
+            $completed = $count;
+        });
 
         ob_start();
         try {
@@ -113,7 +117,7 @@ class ReportExportTest extends TestCase
             $this->fail('A falha do gerador deveria interromper o stream.');
         } catch (RuntimeException $exception) {
             $this->assertSame('Falha durante o stream', $exception->getMessage());
-            $this->assertStringContainsString('succeeded', ob_get_contents());
+            $this->assertStringContainsString('Concluído', ob_get_contents());
         } finally {
             ob_end_clean();
         }

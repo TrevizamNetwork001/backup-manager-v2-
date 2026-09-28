@@ -16,7 +16,7 @@
 
             <div>
                 <strong>Backup Manager</strong>
-                <span>Infrastructure Backup</span>
+                <span>Backup de infraestrutura</span>
             </div>
         </div>
 
@@ -235,6 +235,8 @@
         dismiss.textContent = '×';
         dismiss.addEventListener('click', () => notice.remove());
         notice.appendChild(dismiss);
+
+        if (notice.dataset.persist === 'true') return;
 
         let timer = window.setTimeout(() => notice.remove(), 6000);
         notice.addEventListener('mouseenter', () => window.clearTimeout(timer));

@@ -12,7 +12,7 @@
     </div>
     <div class="page-header__actions">
         @can('sites.manage')
-            <a href="{{ route('sites.create') }}" class="btn btn--primary"><x-icon name="add" size="sm" /> Novo Site / POP</a>
+            <button type="button" class="btn btn--primary" data-open-site-create><x-icon name="add" size="sm" /> Novo Site / POP</button>
         @endcan
     </div>
 </header>
@@ -50,7 +50,7 @@
             </p>
 
             @can('sites.manage')
-            <div class="empty-state__actions"><a href="{{ route('sites.create') }}" class="btn btn--secondary">Cadastrar primeiro Site / POP</a></div>
+            <div class="empty-state__actions"><button type="button" class="btn btn--secondary" data-open-site-create>Cadastrar primeiro Site / POP</button></div>
             @endcan
         </div>
 
@@ -72,7 +72,7 @@
                 <tbody>
                     @foreach($sites as $site)
                         <tr data-list-row="sites-rows" data-search="{{ mb_strtolower($site->name.' '.$site->code.' '.$site->location.' '.$site->description) }}">
-                            <td>
+                            <td data-label="Nome">
                                 <div class="entity-cell">
                                     <span class="entity-cell__title">{{ $site->name }}</span>
                                     @if($site->description)
@@ -81,15 +81,15 @@
                                 </div>
                             </td>
 
-                            <td>
+                            <td data-label="Código">
                                 @if($site->code)<span class="tech-value">{{ $site->code }}</span>@else<span class="table-muted">—</span>@endif
                             </td>
 
-                            <td>
+                            <td data-label="Localização">
                                 {{ $site->location ?: '—' }}
                             </td>
 
-                            <td>
+                            <td data-label="Status">
                                 @if($site->is_active)
                                     <span class="badge badge--success">Ativo</span>
                                 @else
@@ -97,7 +97,8 @@
                                 @endif
                             </td>
 
-                            <td>
+                            <td data-label="Ações">
+                                @canany(['sites.manage', 'sites.delete'])
                                 <details class="row-menu"><summary>Ações</summary><div class="table-actions">
                                     @can('sites.manage')
                                     <a href="{{ route('sites.edit', $site) }}" class="btn btn--ghost btn--sm">Editar</a>
@@ -115,6 +116,7 @@
                                     </form>
                                     @endcan
                                 </div></details>
+                                @endcanany
                             </td>
                         </tr>
                     @endforeach
@@ -133,5 +135,26 @@
     @endif
 
 </div>
-
+@can('sites.manage')
+<dialog class="modal form-create-modal" id="site-create-dialog" aria-labelledby="site-create-title">
+    <div class="modal__surface">
+        <div class="modal__header">
+            <div><h2 class="modal__title" id="site-create-title">Novo Site / POP</h2><p class="modal__description">Cadastre uma localização lógica ou física da infraestrutura.</p></div>
+            <button type="button" class="modal__close" data-close-site-create aria-label="Fechar"><x-icon name="close" /></button>
+        </div>
+        <form method="POST" action="{{ route('sites.store') }}">
+            @include('sites._form', ['createModal' => true])
+        </form>
+    </div>
+</dialog>
+<script>
+(() => {
+    const dialog = document.getElementById('site-create-dialog');
+    document.querySelectorAll('[data-open-site-create]').forEach(button => button.addEventListener('click', () => dialog.showModal()));
+    dialog.querySelectorAll('[data-close-site-create]').forEach(button => button.addEventListener('click', () => dialog.close()));
+    dialog.addEventListener('click', event => { if (event.target === dialog) dialog.close(); });
+    @if ($errors->any()) dialog.showModal(); @endif
+})();
+</script>
+@endcan
 @endsection

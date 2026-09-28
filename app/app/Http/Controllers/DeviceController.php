@@ -7,9 +7,9 @@ use App\Models\Site;
 use App\Services\DeviceBackupHealth;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
@@ -25,8 +25,9 @@ class DeviceController extends Controller
         $healthByDevice = collect($backupHealth->rows())
             ->whereIn('device_id', $devices->pluck('id')->all())
             ->keyBy('device_id');
+        $sites = Site::query()->where('is_active', true)->orderBy('name')->get();
 
-        return view('devices.index', compact('devices', 'healthByDevice'));
+        return view('devices.index', compact('devices', 'healthByDevice', 'sites'));
     }
 
     public function create(): View
@@ -64,7 +65,9 @@ class DeviceController extends Controller
         ]);
 
         if (! Schema::hasColumn('devices', 'platform')) {
-            if ($validated['platform'] !== 'network') throw ValidationException::withMessages(['platform' => 'Atualização do banco pendente.']);
+            if ($validated['platform'] !== 'network') {
+                throw ValidationException::withMessages(['platform' => 'Atualização do banco pendente.']);
+            }
             unset($validated['platform']);
         }
         Device::create($validated);
@@ -113,7 +116,9 @@ class DeviceController extends Controller
         ]);
 
         if (! Schema::hasColumn('devices', 'platform')) {
-            if ($validated['platform'] !== 'network') throw ValidationException::withMessages(['platform' => 'Atualização do banco pendente.']);
+            if ($validated['platform'] !== 'network') {
+                throw ValidationException::withMessages(['platform' => 'Atualização do banco pendente.']);
+            }
             unset($validated['platform']);
         }
         DB::transaction(function () use ($device, $validated) {
@@ -145,6 +150,7 @@ class DeviceController extends Controller
             $locked->ssh_host_key_trusted_by = $request->user()->id;
             $locked->save();
         });
+
         return redirect()->route('devices.edit', $device)->with('success', 'Chave SSH confiada.');
     }
 

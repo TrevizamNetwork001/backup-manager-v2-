@@ -9,6 +9,7 @@ use App\Models\Device;
 use App\Models\DeviceBackupPolicy;
 use App\Models\Site;
 use App\Models\User;
+use App\Services\EngineJobService;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -43,6 +44,7 @@ class BackupExecutionTest extends TestCase
         $execution = BackupExecution::createManual($association);
         $this->get(route('backup-executions.index'))->assertRedirect('/login');
         $this->get(route('backup-executions.show', $execution))->assertRedirect('/login');
+        $this->get(route('backup-executions.status', $execution))->assertRedirect('/login');
         $this->post(route('backup-policies.associations.executions.store', [$association->backup_policy_id, $association]))->assertRedirect('/login');
         $this->post(route('backup-executions.queue', $execution))->assertRedirect('/login');
     }
@@ -131,10 +133,10 @@ class BackupExecutionTest extends TestCase
         // reopening guard, not the ENGINE-2 retry policy (see EngineRetryTest).
         $execution->update(['max_attempts' => 1]);
         $execution->transitionTo('queued');
-        app(\App\Services\EngineJobService::class)->claim();
+        app(EngineJobService::class)->claim();
         $execution->refresh();
         $this->assertNotNull($execution->started_at);
-        app(\App\Services\EngineJobService::class)->fail($execution->id, 'ENGINE_FAILED');
+        app(EngineJobService::class)->fail($execution->id, 'ENGINE_FAILED');
         $execution->refresh();
         $this->assertNotNull($execution->finished_at);
         $this->expectException(ValidationException::class);
@@ -145,13 +147,21 @@ class BackupExecutionTest extends TestCase
     {
         $execution = BackupExecution::createManual($this->association());
         foreach (['running', 'succeeded', 'failed'] as $status) {
-            try { $execution->transitionTo($status); $this->fail('Transition accepted'); }
-            catch (ValidationException) { $this->assertSame('pending', $execution->fresh()->status); }
+            try {
+                $execution->transitionTo($status);
+                $this->fail('Transition accepted');
+            } catch (ValidationException) {
+                $this->assertSame('pending', $execution->fresh()->status);
+            }
         }
         $execution->transitionTo('cancelled');
         $this->assertNotNull($execution->finished_at);
-        try { $execution->transitionTo('running'); $this->fail('Terminal state reopened'); }
-        catch (ValidationException) { $this->assertSame('cancelled', $execution->fresh()->status); }
+        try {
+            $execution->transitionTo('running');
+            $this->fail('Terminal state reopened');
+        } catch (ValidationException) {
+            $this->assertSame('cancelled', $execution->fresh()->status);
+        }
 
         $queued = BackupExecution::createManual($this->association('2'));
         $queued->transitionTo('queued');
@@ -164,8 +174,8 @@ class BackupExecutionTest extends TestCase
         $this->actingAs(User::factory()->create());
         $execution = BackupExecution::createManual($this->association());
         $execution->transitionTo('queued');
-        app(\App\Services\EngineJobService::class)->claim();
-        app(\App\Services\EngineJobService::class)->fail($execution->id, 'SSH_AUTH_FAILED');
+        app(EngineJobService::class)->claim();
+        app(EngineJobService::class)->fail($execution->id, 'SSH_AUTH_FAILED');
         $execution->refresh();
         $this->assertSame('SSH_AUTH_FAILED', $execution->error_code);
         $this->assertNotNull($execution->finished_at);
@@ -183,12 +193,30 @@ class BackupExecutionTest extends TestCase
         $this->get(route('backup-executions.show', $execution))->assertOk()->assertSee('Execução manual');
         $this->post('/backup-executions/'.$execution->id.'/start')->assertNotFound();
         $this->assertSame('pending', $execution->fresh()->status);
-        $this->post(route('backup-executions.queue', $execution), ['status' => 'succeeded'])->assertRedirect();
+        $this->post(route('backup-executions.queue', $execution), ['status' => 'succeeded'])
+            ->assertRedirect()
+            ->assertSessionHas('success', 'Execução adicionada à fila. O backup começará automaticamente quando houver disponibilidade para processamento.')
+            ->assertSessionHas('success_persistent', true);
         $this->assertSame('queued', $execution->fresh()->status);
-        app(\App\Services\EngineJobService::class)->claim();
+        app(EngineJobService::class)->claim();
         $this->assertSame('running', $execution->fresh()->status);
         $this->post('/backup-executions/'.$execution->id.'/succeed')->assertNotFound();
         $this->assertSame('running', $execution->fresh()->status);
+    }
+
+    public function test_execution_detail_translates_status_and_exposes_polling_endpoint(): void
+    {
+        $this->actingAs(User::factory()->create());
+        $execution = BackupExecution::createManual($this->association());
+        $execution->transitionTo('queued');
+
+        $this->get(route('backup-executions.show', $execution))->assertOk()
+            ->assertSee('Na fila')
+            ->assertSee(route('backup-executions.status', $execution), false)
+            ->assertDontSee('>QUEUED<', false);
+        $this->get(route('backup-executions.status', $execution))->assertOk()
+            ->assertExactJson(['status' => 'queued'])
+            ->assertHeader('Cache-Control', 'no-store, private');
     }
 
     public function test_filters_and_history_restrictions(): void
@@ -204,8 +232,12 @@ class BackupExecutionTest extends TestCase
         $this->delete(route('backup-policies.associations.destroy', [$association->backup_policy_id, $association]))->assertSessionHas('warning');
         $this->assertDatabaseHas('device_backup_policies', ['id' => $association->id]);
         foreach (['device_backup_policies' => $association->id, 'backup_policies' => $association->backup_policy_id, 'devices' => $association->device_id, 'credentials' => $association->credential_id] as $table => $id) {
-            try { DB::table($table)->where('id', $id)->delete(); $this->fail('Historical FK deleted'); }
-            catch (QueryException) { $this->assertDatabaseHas('backup_executions', ['id' => $execution->id]); }
+            try {
+                DB::table($table)->where('id', $id)->delete();
+                $this->fail('Historical FK deleted');
+            } catch (QueryException) {
+                $this->assertDatabaseHas('backup_executions', ['id' => $execution->id]);
+            }
         }
     }
 }

@@ -7,11 +7,12 @@ use App\Models\FtpAccount;
 use App\Models\Site;
 use App\Models\User;
 use App\Services\FtpAccountManager;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
-use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 class FtpAdminTest extends TestCase
@@ -26,6 +27,7 @@ class FtpAdminTest extends TestCase
     private function device(string $name = 'OLT'): Device
     {
         $site = Site::firstOrCreate(['name' => 'Lab'], ['is_active' => true]);
+
         return Device::create(['site_id' => $site->id, 'name' => $name, 'management_ip' => '192.0.2.'.($name === 'OLT' ? '10' : '11'), 'vendor' => 'Huawei', 'platform' => 'olt', 'is_active' => true]);
     }
 
@@ -156,7 +158,7 @@ class FtpAdminTest extends TestCase
         $this->assertDatabaseHas('ftp_received_files', ['claim_token' => str_repeat('a', 32), 'status' => 'stored']);
         $this->assertDatabaseCount('ftp_received_files', 1);
         $this->get(route('ftp.show', $account))->assertOk()->assertSee('sample.bin')
-            ->assertSee('4 bytes')->assertDontSee($password);
+            ->assertSee('4 bytes')->assertSeeText('Armazenado')->assertDontSee($password);
         $this->get(route('ftp.index'))->assertOk()->assertSee('receivefiles');
         $this->assertDatabaseCount('backup_executions', 0);
     }
@@ -165,7 +167,7 @@ class FtpAdminTest extends TestCase
     {
         $this->admin();
         $device = $this->device();
-        $account = new FtpAccount(['device_id' => $device->id, 'account_uuid' => (string) \Illuminate\Support\Str::uuid(),
+        $account = new FtpAccount(['device_id' => $device->id, 'account_uuid' => (string) Str::uuid(),
             'home_layout' => 'legacy', 'purpose' => 'backup', 'username' => 'legacyolt', 'is_active' => true]);
         $account->secret = 'SyntheticPass123!';
         $account->save();

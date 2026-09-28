@@ -2,6 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\AuditEvent;
+use App\Models\BackupArtifact;
+use App\Models\BackupExecution;
+use App\Models\Device;
+use App\Models\FtpAccount;
 use App\Reports\ArtifactReportQuery;
 use App\Reports\DeviceReportQuery;
 use App\Reports\ExecutionReportQuery;
@@ -10,20 +15,50 @@ use App\Reports\FtpReportQuery;
 use App\Services\AuditEvents;
 use App\Services\CsvExporter;
 use App\Services\InstanceTimezone;
+use App\Support\HealthStatus;
+use App\Support\OperationalLabels;
 use App\Support\ReportPeriod;
+use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
-use Symfony\Component\HttpFoundation\StreamedResponse;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class ReportController extends Controller
 {
-    public function index(): View
+    public function index(Request $request): View
     {
         $this->authorize('reports.view');
 
-        return view('reports.index');
+        $canViewAudit = $request->user()->can('audit.view');
+        $hasAuditEvents = Schema::hasTable('audit_events');
+        $deviceCount = Device::query()->count();
+        $counts = [
+            'executions' => BackupExecution::query()->count(),
+            'devices' => $deviceCount,
+            'failures' => BackupExecution::query()->where('status', 'failed')->count(),
+            'health' => $deviceCount,
+            'artifacts' => BackupArtifact::query()->count(),
+            'ftp' => FtpAccount::query()->count(),
+            'audit' => $canViewAudit && $hasAuditEvents ? AuditEvent::query()->count() : 0,
+        ];
+        $recentReports = collect();
+
+        if ($hasAuditEvents) {
+            $recentReports = AuditEvent::query()
+                ->with('actor:id,name')
+                ->where('action', 'report.exported')
+                ->where('resource_type', 'report')
+                ->whereIn('resource_id', ['executions', 'devices', 'failures', 'artifacts', 'ftp'])
+                ->when(! $canViewAudit, fn ($query) => $query->where('actor_user_id', $request->user()->id))
+                ->latest('created_at')
+                ->latest('id')
+                ->limit(3)
+                ->get();
+        }
+
+        return view('reports.index', compact('counts', 'recentReports'));
     }
 
     // --- Executions ---------------------------------------------------
@@ -36,7 +71,7 @@ class ReportController extends Controller
             'device_id' => ['nullable', 'integer', 'exists:devices,id'],
             'vendor' => ['nullable', 'string', 'max:100'],
             'backup_policy_id' => ['nullable', 'integer', 'exists:backup_policies,id'],
-            'status' => ['nullable', Rule::in(\App\Models\BackupExecution::STATUSES)],
+            'status' => ['nullable', Rule::in(BackupExecution::STATUSES)],
             'method' => ['nullable', 'string', 'max:30'],
             'error_code' => ['nullable', 'string', 'max:100'],
         ]);
@@ -65,8 +100,8 @@ class ReportController extends Controller
                     $execution->device?->site?->name,
                     $execution->device?->name,
                     $execution->backupPolicy?->name,
-                    $execution->backupPolicy?->method,
-                    $execution->status,
+                    OperationalLabels::METHODS[$execution->backupPolicy?->method ?? ''] ?? $execution->backupPolicy?->method,
+                    OperationalLabels::EXECUTION_STATUSES[$execution->status] ?? $execution->status,
                     $execution->started_at && $execution->finished_at
                         ? $execution->started_at->diffInSeconds($execution->finished_at) : '',
                     $execution->attempt,
@@ -77,7 +112,7 @@ class ReportController extends Controller
         };
 
         return $csv->stream('executions.csv',
-            ['Data/Hora', 'Site', 'Equipamento', 'Política', 'Método', 'Status', 'Duração (s)', 'Tentativa', 'Tamanho do artifact (bytes)', 'Código de erro'],
+            ['Data/Hora', 'Site', 'Equipamento', 'Política', 'Método', 'Status', 'Duração (s)', 'Tentativa', 'Tamanho do artefato (bytes)', 'Código de erro'],
             $rows(),
             fn (int $rowCount) => $this->auditExport($audit, 'executions', $filters, $rowCount));
     }
@@ -111,15 +146,15 @@ class ReportController extends Controller
         $rows = $query->filtered($filters);
 
         $csvRows = $rows->lazy()->map(fn ($row) => [
-            $row['name'], $row['vendor'], $row['model'], $row['method'], $row['policy_name'],
-            $timezone->format($row['last_backup_at'] ? \Carbon\CarbonImmutable::parse($row['last_backup_at']) : null),
-            $timezone->format($row['last_success_at'] ? \Carbon\CarbonImmutable::parse($row['last_success_at']) : null),
-            $timezone->format($row['last_failure_at'] ? \Carbon\CarbonImmutable::parse($row['last_failure_at']) : null),
-            $row['status'], $row['consecutive_failures'], $row['latest_artifact_size'],
+            $row['name'], $row['vendor'], $row['model'], OperationalLabels::METHODS[$row['method'] ?? ''] ?? $row['method'], $row['policy_name'],
+            $timezone->format($row['last_backup_at'] ? CarbonImmutable::parse($row['last_backup_at']) : null),
+            $timezone->format($row['last_success_at'] ? CarbonImmutable::parse($row['last_success_at']) : null),
+            $timezone->format($row['last_failure_at'] ? CarbonImmutable::parse($row['last_failure_at']) : null),
+            HealthStatus::tryFrom($row['status'])?->label() ?? $row['status'], $row['consecutive_failures'], $row['latest_artifact_size'],
         ]);
 
         return $csv->stream('devices.csv',
-            ['Equipamento', 'Vendor', 'Modelo', 'Método', 'Política', 'Último backup', 'Último sucesso', 'Última falha', 'Saúde', 'Falhas consecutivas', 'Tamanho último backup (bytes)'],
+            ['Equipamento', 'Fabricante', 'Modelo', 'Método', 'Política', 'Último backup', 'Último sucesso', 'Última falha', 'Saúde', 'Falhas consecutivas', 'Tamanho último backup (bytes)'],
             $csvRows,
             fn (int $rowCount) => $this->auditExport($audit, 'devices', $filters, $rowCount));
     }
@@ -132,7 +167,7 @@ class ReportController extends Controller
         $filters = $this->validatePeriodFilters($request, [
             'site_id' => ['nullable', 'integer', 'exists:sites,id'],
             'device_id' => ['nullable', 'integer', 'exists:devices,id'],
-            'status' => ['nullable', Rule::in(\App\Models\BackupArtifact::STATUSES)],
+            'status' => ['nullable', Rule::in(BackupArtifact::STATUSES)],
             'min_size' => ['nullable', 'integer', 'min:0'],
             'max_size' => ['nullable', 'integer', 'min:0'],
         ]);
@@ -157,13 +192,13 @@ class ReportController extends Controller
                     $artifact->device?->site?->name, $artifact->device?->name,
                     $artifact->backup_execution_id, $artifact->original_filename, $artifact->size_bytes,
                     substr($artifact->sha256 ?? '', 0, 12), $timezone->format($artifact->created_at),
-                    $artifact->status, $artifact->storage,
+                    OperationalLabels::ARTIFACT_STATUSES[$artifact->status] ?? $artifact->status, $artifact->storage,
                 ];
             }
         };
 
         return $csv->stream('artifacts.csv',
-            ['Site', 'Equipamento', 'Execução', 'Arquivo', 'Tamanho (bytes)', 'SHA256 (abrev.)', 'Criado em', 'Status', 'Storage'],
+            ['Site', 'Equipamento', 'Execução', 'Arquivo', 'Tamanho (bytes)', 'SHA256 (abrev.)', 'Criado em', 'Status', 'Armazenamento'],
             $rows(),
             fn (int $rowCount) => $this->auditExport($audit, 'artifacts', $filters, $rowCount));
     }
@@ -195,12 +230,12 @@ class ReportController extends Controller
 
         $csvRows = collect($rows)->lazy()->map(fn ($row) => [
             $row['error_code'], $row['total'], $row['retryable'] ? 'sim' : 'não',
-            $timezone->format(\Carbon\CarbonImmutable::parse($row['first_seen_at'])),
-            $timezone->format(\Carbon\CarbonImmutable::parse($row['last_seen_at'])),
+            $timezone->format(CarbonImmutable::parse($row['first_seen_at'])),
+            $timezone->format(CarbonImmutable::parse($row['last_seen_at'])),
         ]);
 
         return $csv->stream('failures.csv',
-            ['Código de erro', 'Ocorrências', 'Retryable', 'Primeira ocorrência', 'Última ocorrência'],
+            ['Código de erro', 'Ocorrências', 'Permite nova tentativa', 'Primeira ocorrência', 'Última ocorrência'],
             $csvRows,
             fn (int $rowCount) => $this->auditExport($audit, 'failures', $filters, $rowCount));
     }
@@ -224,14 +259,14 @@ class ReportController extends Controller
             ->merge(collect($query->accounts('file_server'))->map(fn ($r) => $r + ['purpose' => 'file_server']));
 
         $csvRows = $rows->lazy()->map(fn ($row) => [
-            $row['purpose'], $row['device_name'] ?? $row['username'], $row['home_layout'],
+            $row['purpose'] === 'backup' ? 'Backup' : 'Servidor de arquivos', $row['device_name'] ?? $row['username'], OperationalLabels::FTP_LAYOUTS[$row['home_layout']] ?? $row['home_layout'],
             $row['is_active'] ? 'sim' : 'não',
-            $row['last_received_at'] ? $timezone->format(\Carbon\CarbonImmutable::parse($row['last_received_at'])) : '',
+            $row['last_received_at'] ? $timezone->format(CarbonImmutable::parse($row['last_received_at'])) : '',
             $row['stored_count'], $row['quarantined_count'], $row['stuck_count'],
         ]);
 
         return $csv->stream('ftp.csv',
-            ['Tipo', 'Conta/Equipamento', 'Layout', 'Ativa', 'Último recebimento', 'Armazenados', 'Quarentena', 'Presos em processamento'],
+            ['Tipo', 'Conta/Equipamento', 'Organização dos arquivos', 'Ativa', 'Último recebimento', 'Armazenados', 'Quarentena', 'Presos em processamento'],
             $csvRows,
             fn (int $rowCount) => $this->auditExport($audit, 'ftp', [], $rowCount));
     }

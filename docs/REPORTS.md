@@ -1,5 +1,10 @@
 # Relatórios e exportação CSV
 
+Atualização consolidada de responsividade, edição e traduções:
+[INTERFACE_RESPONSIVA_PT_BR.md](INTERFACE_RESPONSIVA_PT_BR.md).
+Os CSVs agora apresentam estados e métodos em português, mantendo os
+identificadores originais no banco, nos filtros e na auditoria.
+
 ## Entrega
 
 `/reports` reúne execuções, equipamentos, artifacts, falhas e contas FTP. As
@@ -20,6 +25,114 @@ filtros; listagens de execuções, equipamentos e artifacts paginam 25 itens.
 `ReportPeriod` resolve datas no fuso configurado da instância e converte os
 limites para UTC antes da consulta. `InstanceTimezone` guarda o fuso por
 request. Datas exportadas também são formatadas nesse fuso.
+
+## Página inicial de Relatórios — atualização de 27/09/2026
+
+A página `/reports` foi atualizada a partir da imagem
+`referencia/a069a809-fe39-4cf6-8cd7-3770931a5010.png`. O resultado usa fundo
+azul escuro, bordas discretas, títulos em ciano e cartões com ícone, contador
+e seta de acesso. Os cartões levam às consultas existentes; Status dos
+backups e Auditoria levam às respectivas áreas do sistema.
+
+Os números vêm do banco de dados, sem reproduzir os valores ilustrativos da
+referência:
+
+| Cartão | Contagem apresentada |
+| --- | --- |
+| Execuções | Todas as execuções de backup. |
+| Equipamentos | Todos os equipamentos cadastrados. |
+| Falhas | Execuções com `status = failed`. |
+| Status dos backups | Todos os equipamentos cadastrados. |
+| Artefatos | Todos os registros de artefatos, incluindo estados disponíveis, removidos e ausentes. |
+| FTP | Todas as contas FTP, incluindo contas inativas. |
+| Auditoria | Todos os eventos de auditoria; cartão disponível somente com `audit.view`. |
+
+O contador de Falhas resume execuções falhas. A consulta detalhada mantém
+seus critérios próprios de agrupamento por código de erro. Os contadores
+da página inicial não recebem filtros de período e são formatados com
+separador de milhar em português.
+
+### Histórico e ações
+
+**Relatórios recentes** exibe até três exportações registradas por
+`report.exported`, restritas ao recurso `report` e aos tipos execuções,
+equipamentos, falhas, artefatos e FTP. A consulta ordena por data e depois por
+ID, ambos decrescentes, e carrega os nomes dos usuários junto com os eventos.
+Se a tabela de auditoria não existir, o histórico fica vazio.
+
+Cada linha mostra o tipo de relatório, a descrição **CSV exportado**, o
+período ou a indicação de filtro personalizado, a quantidade de registros,
+a data no fuso configurado da instância, o responsável e o resultado.
+**Concluído** corresponde a `success`; os demais resultados aparecem como
+**Falhou**. O histórico atual é alimentado pelos eventos de exportação
+concluída: não foi criado acompanhamento de geração assíncrona ou estado
+**Processando**.
+
+O botão com ícone de download, rotulado **Exportar novamente em CSV**, chama
+a exportação existente com os filtros guardados no evento. Ele gera um novo
+arquivo com os dados atuais; o CSV original não é armazenado. Somente as
+chaves de filtro previstas para cada tipo são incluídas nos links. O menu
+de três pontos oferece **Abrir relatório** com esses filtros e, para quem
+tem `audit.view`, **Ver detalhes** do evento.
+
+Usuários com `audit.view` podem consultar exportações de outros usuários e
+usar **Ver todos**, que abre Auditoria filtrada por `report.exported` e pelo
+recurso `report`. Os demais usuários veem somente as próprias exportações,
+sem cartão de Auditoria ou links de acesso ao histórico administrativo.
+A ação de CSV respeita `reports.export`. Quando não há exportações, a tabela
+orienta a selecionar um relatório e exportar em CSV.
+
+### Responsividade, menu lateral e fontes
+
+Os cartões usam três colunas em telas acima de 1450 px, duas de 901 a
+1450 px e uma até 900 px. Até 1100 px, as linhas da tabela recente viram
+blocos com rótulos de campo; até 380 px, cada bloco usa uma coluna. Os menus
+flutuantes reutilizam o comportamento de posicionamento do layout comum.
+
+Após a revisão do usuário, foram removidas as dimensões exclusivas do menu
+lateral de Relatórios: largura de 305 px, largura intermediária de 260 px,
+marca ampliada, fontes e ícones maiores e espaçamentos adicionais. O menu
+passou a herdar as dimensões comuns das outras páginas, incluindo a largura
+de 250 px no desktop e o comportamento compartilhado no celular. As cores
+da página e do item ativo foram mantidas.
+
+Também foram padronizados os títulos e textos com os tokens existentes:
+título da página em 24 px, título de seção em 18 px, título de cartão em
+16 px, corpo e contadores em 14 px e metadados em 12 px. Foram removidos os
+aumentos específicos de títulos e fontes no celular.
+
+### Arquivos e validação desta atualização
+
+Arquivos de implementação:
+
+- `app/app/Http/Controllers/ReportController.php`: contadores e consulta do histórico com controle de acesso.
+- `app/resources/views/reports/index.blade.php`: cartões, histórico, estado vazio e ações.
+- `app/resources/views/components/icon.blade.php`: novos desenhos `play-circle` e `arrow-right`.
+- `app/public/assets/app.css`: aparência e responsividade da página, com dimensões compartilhadas do menu e tokens de tipografia.
+- `app/tests/Feature/ReportsSmokeTest.php`: cobertura dos contadores, ordenação e limite do histórico, filtros preservados, fuso horário e permissões.
+
+Validações realizadas:
+
+- `ReportsSmokeTest`, `ReportsAuthorizationTest` e `ReportExportTest`: **13 testes e 137 asserções aprovados**, usando SQLite em memória no contêiner PHP. Os testes foram repetidos após a formatação do código e o último ajuste de texto.
+- Laravel Pint aplicado aos dois arquivos PHP alterados. A opção `--dirty` não estava disponível no contêiner, que não tem acesso ao Git; a formatação foi executada diretamente nos dois arquivos.
+- Conferência em Chromium das páginas com histórico e vazia nas resoluções **1672×941, 1366×768, 1280×720, 1024×768, 768×1024, 390×844 e 320×568**. Sem transbordamento horizontal ou erros JavaScript; cartões, ícones, estado vazio e menus acessíveis.
+- Após o ajuste do menu, comparação automatizada das dimensões, fontes e espaçamentos de seus elementos com os estilos comuns, aprovada nas mesmas sete resoluções.
+- Leitura HTTP do Nginx local: `/reports` retornou **302** sem autenticação e `/assets/app.css` retornou **200**. A renderização autenticada foi verificada pelos testes, não por uma sessão no endereço público.
+- `git diff --check` sem erros.
+
+Para repetir os testes e a checagem do diff, executar na raiz do projeto:
+
+```bash
+docker compose exec -T app php artisan test --compact tests/Feature/ReportsSmokeTest.php tests/Feature/ReportsAuthorizationTest.php tests/Feature/ReportExportTest.php
+git diff --check
+```
+
+As prévias visuais foram geradas com dados isolados de teste, sem alteração
+de dados de produção. O CSS é servido diretamente e sua URL já inclui a
+data de modificação para invalidar o cache; não foi necessário compilar
+assets com npm. Nesta atualização não houve migração, nova dependência,
+commit ou push. A documentação complementar está em
+[UI_POLISH.md](UI_POLISH.md#relatórios-cartões-histórico-e-padronização--27092026).
 
 ## CSV e auditoria
 

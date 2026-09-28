@@ -9,14 +9,17 @@ use App\Models\DeviceBackupPolicy;
 use App\Models\FtpAccount;
 use App\Models\Site;
 use App\Models\User;
+use App\Services\BackupRetention;
+use App\Services\BackupScheduler;
 use App\Services\EngineJobService;
 use App\Services\FtpServerSettings;
-use App\Services\BackupScheduler;
-use App\Services\BackupRetention;
+use App\Services\HuaweiFtpBackupPolicy;
+use App\Services\OltFtpWizard;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Tests\TestCase;
 
@@ -46,7 +49,9 @@ class HuaweiOltFtpTest extends TestCase
                     ? substr($received['relative_path'], 0, -4).'-exec-'.$received['id'].'.cfg'
                     : $received['relative_path'];
                 $path = $root.'/'.$relative;
-                if (! is_dir(dirname($path))) mkdir(dirname($path), 0700, true);
+                if (! is_dir(dirname($path))) {
+                    mkdir(dirname($path), 0700, true);
+                }
                 file_put_contents($path, $data);
                 $artifact = $engine->complete($received['id'], $relative, $worker);
                 $this->assertSame('succeeded', BackupExecution::findOrFail($received['id'])->status);
@@ -73,10 +78,18 @@ class HuaweiOltFtpTest extends TestCase
             }
             $this->assertDatabaseCount('backup_artifacts', 2);
         } finally {
-            foreach (glob($root.'/Backup Manager/*/*/*/*.cfg') as $path) unlink($path);
-            foreach (glob($root.'/Backup Manager/*/*/*', GLOB_ONLYDIR) as $dir) rmdir($dir);
-            foreach (glob($root.'/Backup Manager/*/*', GLOB_ONLYDIR) as $dir) rmdir($dir);
-            foreach (glob($root.'/Backup Manager/*', GLOB_ONLYDIR) as $dir) rmdir($dir);
+            foreach (glob($root.'/Backup Manager/*/*/*/*.cfg') as $path) {
+                unlink($path);
+            }
+            foreach (glob($root.'/Backup Manager/*/*/*', GLOB_ONLYDIR) as $dir) {
+                rmdir($dir);
+            }
+            foreach (glob($root.'/Backup Manager/*/*', GLOB_ONLYDIR) as $dir) {
+                rmdir($dir);
+            }
+            foreach (glob($root.'/Backup Manager/*', GLOB_ONLYDIR) as $dir) {
+                rmdir($dir);
+            }
             rmdir($root.'/Backup Manager');
             rmdir($root);
         }
@@ -119,7 +132,10 @@ class HuaweiOltFtpTest extends TestCase
         } finally {
             unlink($path);
             $dir = dirname($path);
-            while ($dir !== $root) { rmdir($dir); $dir = dirname($dir); }
+            while ($dir !== $root) {
+                rmdir($dir);
+                $dir = dirname($dir);
+            }
             rmdir($root);
         }
     }
@@ -132,7 +148,7 @@ class HuaweiOltFtpTest extends TestCase
         $engine = app(EngineJobService::class);
         $this->assertSame('invalid_account', $engine->receiveFtp($device->id, bin2hex(random_bytes(16)), 'auto.cfg', time(), bin2hex(random_bytes(16)))['error_code']);
         $this->assertDatabaseCount('backup_executions', 0);
-        $account = new FtpAccount(['account_uuid' => (string) \Illuminate\Support\Str::uuid(), 'home_layout' => 'legacy', 'purpose' => 'backup', 'device_id' => $device->id, 'username' => 'bmdev'.$device->id, 'is_active' => true]);
+        $account = new FtpAccount(['account_uuid' => (string) Str::uuid(), 'home_layout' => 'legacy', 'purpose' => 'backup', 'device_id' => $device->id, 'username' => 'bmdev'.$device->id, 'is_active' => true]);
         $account->secret = 'synthetic-only-secret';
         $account->save();
         DB::table('ftp_accounts')->where('id', $account->id)->update(['provisioned_at' => now()]);
@@ -197,7 +213,7 @@ class HuaweiOltFtpTest extends TestCase
             'credential_id' => null, 'is_active' => false]);
         DeviceBackupPolicy::create(['device_id' => $device->id, 'backup_policy_id' => $other->id,
             'credential_id' => null, 'is_active' => false]);
-        $service = app(\App\Services\HuaweiFtpBackupPolicy::class);
+        $service = app(HuaweiFtpBackupPolicy::class);
         $this->assertSame($old->id, $service->ensure($device)->id);
         $this->assertSame($old->id, $service->ensure($device)->id);
         $this->assertDatabaseCount('device_backup_policies', 2);
@@ -231,7 +247,7 @@ class HuaweiOltFtpTest extends TestCase
         $association = DeviceBackupPolicy::firstOrFail();
         $this->assertTrue($association->is_active);
         $this->assertSame($device->id, $association->device_id);
-        $this->assertTrue(app(\App\Services\HuaweiFtpBackupPolicy::class)->compatible($association->load('backupPolicy')));
+        $this->assertTrue(app(HuaweiFtpBackupPolicy::class)->compatible($association->load('backupPolicy')));
         $this->get(route('ftp.show', $account))->assertOk()
             ->assertSee('Política ftp_push</dt><dd>OK', false)
             ->assertSee('Pronto para receber backup</dt><dd>SIM', false)
@@ -310,12 +326,13 @@ class HuaweiOltFtpTest extends TestCase
 
     private function prepareAccount(Device $device, string $username = 'olt_prepare'): FtpAccount
     {
-        $account = new FtpAccount(['account_uuid' => (string) \Illuminate\Support\Str::uuid(),
+        $account = new FtpAccount(['account_uuid' => (string) Str::uuid(),
             'home_layout' => 'account', 'purpose' => 'backup', 'device_id' => $device->id,
             'username' => $username, 'is_active' => true]);
         $account->secret = 'synthetic-only-secret';
         $account->save();
         DB::table('ftp_accounts')->where('id', $account->id)->update(['provisioned_at' => now(), 'sync_error' => null]);
+
         return $account->fresh();
     }
 
@@ -325,11 +342,12 @@ class HuaweiOltFtpTest extends TestCase
         $device = Device::create(['site_id' => $site->id, 'name' => 'OLT', 'management_ip' => '192.0.2.10', 'vendor' => 'Huawei', 'platform' => 'olt', 'is_active' => true]);
         $policy = BackupPolicy::create(['name' => 'OLT FTP', 'method' => 'ftp_push', 'artifact_mode' => 'config', 'schedule_type' => 'manual', 'retention_count' => 2, 'is_active' => true]);
         if ($account) {
-            $ftp = new FtpAccount(['account_uuid' => (string) \Illuminate\Support\Str::uuid(), 'home_layout' => 'legacy', 'purpose' => 'backup', 'device_id' => $device->id, 'username' => 'bmdev'.$device->id, 'is_active' => true]);
+            $ftp = new FtpAccount(['account_uuid' => (string) Str::uuid(), 'home_layout' => 'legacy', 'purpose' => 'backup', 'device_id' => $device->id, 'username' => 'bmdev'.$device->id, 'is_active' => true]);
             $ftp->secret = 'synthetic-only-secret';
             $ftp->save();
             DB::table('ftp_accounts')->where('id', $ftp->id)->update(['provisioned_at' => now()->addSecond()]);
         }
+
         return [$device, $policy];
     }
 
@@ -383,7 +401,7 @@ class HuaweiOltFtpTest extends TestCase
     public function test_provisioning_rejects_version_from_before_password_rotation(): void
     {
         [$device] = $this->fixture(false);
-        $account = new FtpAccount(['account_uuid' => (string) \Illuminate\Support\Str::uuid(), 'home_layout' => 'legacy', 'purpose' => 'backup', 'device_id' => $device->id, 'username' => 'bmdev'.$device->id, 'is_active' => true]);
+        $account = new FtpAccount(['account_uuid' => (string) Str::uuid(), 'home_layout' => 'legacy', 'purpose' => 'backup', 'device_id' => $device->id, 'username' => 'bmdev'.$device->id, 'is_active' => true]);
         $account->secret = 'synthetic-only-secret';
         $account->save();
         Artisan::call('ftp:accounts');
@@ -470,7 +488,7 @@ class HuaweiOltFtpTest extends TestCase
         $this->assertSame('bmdev'.$device->id, $account->username);
         $this->assertNotSame($oldSecret, $account->secret);
         $this->assertNull($account->provisioned_at);
-        $this->assertSame('sync', app(\App\Services\OltFtpWizard::class)->snapshot($device)['state']);
+        $this->assertSame('sync', app(OltFtpWizard::class)->snapshot($device)['state']);
     }
 
     public function test_status_polling_is_read_only_and_confirmation_creates_one_integration(): void
@@ -485,7 +503,7 @@ class HuaweiOltFtpTest extends TestCase
         $this->actingAs(User::factory()->create());
         config()->set('backup.ftp_host', '');
 
-        $account = new FtpAccount(['account_uuid' => (string) \Illuminate\Support\Str::uuid(), 'home_layout' => 'legacy', 'purpose' => 'backup', 'device_id' => $device->id, 'username' => 'bmdev4', 'is_active' => true]);
+        $account = new FtpAccount(['account_uuid' => (string) Str::uuid(), 'home_layout' => 'legacy', 'purpose' => 'backup', 'device_id' => $device->id, 'username' => 'bmdev4', 'is_active' => true]);
         $account->secret = 'synthetic-only-secret';
         $account->save();
         DB::table('ftp_accounts')->where('id', $account->id)->update([
@@ -497,7 +515,7 @@ class HuaweiOltFtpTest extends TestCase
         $this->get(route('devices.edit', [$device, 'olt_wizard' => 1]))->assertOk()
             ->assertSee('data-state="server"', false)
             ->assertSee('Etapa 3 de 6')
-            ->assertSee("showStep(currentStep); dialog.showModal(); poll();", false);
+            ->assertSee('showStep(currentStep); dialog.showModal(); poll();', false);
         for ($poll = 0; $poll < 3; $poll++) {
             $this->get(route('devices.olt-ftp.status', $device))->assertJsonPath('state', 'server');
         }
@@ -518,8 +536,7 @@ class HuaweiOltFtpTest extends TestCase
         $this->post(route('devices.olt-ftp.confirm', $device), ['olt_configured' => '1'])->assertRedirect();
         $this->assertSame($integrationId, DB::table('olt_ftp_integrations')->where('device_id', 4)->value('id'));
         $this->get(route('devices.olt-ftp.status', $device))->assertJsonPath('state', 'test');
-        $repeatedInserts = array_filter(DB::getQueryLog(), fn ($query) =>
-            str_contains(strtolower($query['query']), 'insert into "olt_ftp_integrations"'));
+        $repeatedInserts = array_filter(DB::getQueryLog(), fn ($query) => str_contains(strtolower($query['query']), 'insert into "olt_ftp_integrations"'));
         DB::disableQueryLog();
         DB::flushQueryLog();
         $this->assertSame([], $repeatedInserts);
@@ -537,7 +554,7 @@ class HuaweiOltFtpTest extends TestCase
             ->assertSee('Usuário FTP')->assertSee('Confirmar senha')->assertDontSee('Gerar automaticamente')
             ->assertDontSee('O que fazer agora')->assertDontSee('SSH Host Key');
 
-        $account = new FtpAccount(['account_uuid' => (string) \Illuminate\Support\Str::uuid(), 'home_layout' => 'legacy', 'purpose' => 'backup', 'device_id' => $device->id, 'username' => 'bmdev'.$device->id, 'is_active' => true]);
+        $account = new FtpAccount(['account_uuid' => (string) Str::uuid(), 'home_layout' => 'legacy', 'purpose' => 'backup', 'device_id' => $device->id, 'username' => 'bmdev'.$device->id, 'is_active' => true]);
         $account->secret = 'synthetic-only-secret';
         $account->save();
         config()->set('backup.ftp_host', '192.0.2.20');
@@ -688,7 +705,7 @@ class HuaweiOltFtpTest extends TestCase
         [$device, $policy] = $this->fixture(false);
         $this->assertSame(4, $device->id);
 
-        $account = new FtpAccount(['account_uuid' => (string) \Illuminate\Support\Str::uuid(), 'home_layout' => 'legacy', 'purpose' => 'backup', 'device_id' => $device->id, 'username' => 'bmdev4', 'is_active' => true]);
+        $account = new FtpAccount(['account_uuid' => (string) Str::uuid(), 'home_layout' => 'legacy', 'purpose' => 'backup', 'device_id' => $device->id, 'username' => 'bmdev4', 'is_active' => true]);
         $account->secret = 'Manual!Password123';
         $account->save();
         $this->assertSame(1, $account->id);
@@ -738,7 +755,7 @@ class HuaweiOltFtpTest extends TestCase
         $this->actingAs(User::factory()->create())->post(route('backup-policies.associations.store', $policy), [
             'device_id' => $device->id, 'is_active' => 1,
         ])->assertSessionHasErrors('device_id');
-        $ftp = new FtpAccount(['account_uuid' => (string) \Illuminate\Support\Str::uuid(), 'home_layout' => 'legacy', 'purpose' => 'backup', 'device_id' => $device->id, 'username' => 'bmdev'.$device->id, 'is_active' => true]);
+        $ftp = new FtpAccount(['account_uuid' => (string) Str::uuid(), 'home_layout' => 'legacy', 'purpose' => 'backup', 'device_id' => $device->id, 'username' => 'bmdev'.$device->id, 'is_active' => true]);
         $ftp->secret = 'synthetic-only-secret';
         $ftp->save();
         $this->post(route('backup-policies.associations.store', $policy), [
@@ -756,6 +773,7 @@ class HuaweiOltFtpTest extends TestCase
         $job = BackupExecution::createManual($association);
         $job->transitionTo('queued');
         app(EngineJobService::class)->claim();
+
         return $job;
     }
 
@@ -773,14 +791,22 @@ class HuaweiOltFtpTest extends TestCase
         mkdir(dirname($path), 0700, true);
         try {
             file_put_contents($path, '');
-            try { $engine->complete($job->id, $relative); $this->fail('Invalid artifact accepted'); }
-            catch (ValidationException) { $this->assertSame('running', $job->fresh()->status); }
+            try {
+                $engine->complete($job->id, $relative);
+                $this->fail('Invalid artifact accepted');
+            } catch (ValidationException) {
+                $this->assertSame('running', $job->fresh()->status);
+            }
             $valid = file_get_contents(dirname(__DIR__, 3).'/engine/tests/fixtures/ma5800_ftp.cfg');
             $ftpMaxBytes = config('backup.ftp_max_bytes');
             config()->set('backup.ftp_max_bytes', strlen($valid) - 1);
             file_put_contents($path, $valid);
-            try { $engine->complete($job->id, $relative); $this->fail('Oversized artifact accepted'); }
-            catch (ValidationException) { $this->assertSame('running', $job->fresh()->status); }
+            try {
+                $engine->complete($job->id, $relative);
+                $this->fail('Oversized artifact accepted');
+            } catch (ValidationException) {
+                $this->assertSame('running', $job->fresh()->status);
+            }
             config()->set('backup.ftp_max_bytes', $ftpMaxBytes);
             $valid = str_replace('[global-config]', str_repeat(" board add 0/2 H901X\n", 300).'[global-config]', $valid);
             file_put_contents($path, $valid);
@@ -792,12 +818,19 @@ class HuaweiOltFtpTest extends TestCase
             $analysis = json_decode(DB::table('audit_events')->where('action', 'backup.content_analyzed')->value('metadata'), true);
             $this->assertSame('recognized', $analysis['status']);
             $this->assertSame(1, app(BackupRetention::class)->run(false)['scanned']);
-            try { $engine->complete($job->id, $relative); $this->fail('Duplicate artifact accepted'); }
-            catch (ValidationException) { $this->assertDatabaseCount('backup_artifacts', 1); }
+            try {
+                $engine->complete($job->id, $relative);
+                $this->fail('Duplicate artifact accepted');
+            } catch (ValidationException) {
+                $this->assertDatabaseCount('backup_artifacts', 1);
+            }
         } finally {
             unlink($path);
             $dir = dirname($path);
-            while ($dir !== $root) { rmdir($dir); $dir = dirname($dir); }
+            while ($dir !== $root) {
+                rmdir($dir);
+                $dir = dirname($dir);
+            }
             rmdir($root);
         }
     }
@@ -808,7 +841,7 @@ class HuaweiOltFtpTest extends TestCase
         $payload = ['name' => 'OLT manual', 'method' => 'ftp_push', 'artifact_mode' => 'config',
             'schedule_type' => 'manual', 'retention_count' => 2, 'is_active' => 1];
         $this->get(route('backup-policies.create'))->assertOk()
-            ->assertSee('O agendamento do auto-backup fica na OLT. O teste do wizard usa execução manual.');
+            ->assertSee('O agendamento do auto-backup fica na OLT. O teste do assistente usa execução manual.');
         $this->post(route('backup-policies.store'), $payload)->assertSessionHasNoErrors();
         $policy = BackupPolicy::firstOrFail();
         $this->assertSame('manual', $policy->schedule_type);
@@ -834,8 +867,12 @@ class HuaweiOltFtpTest extends TestCase
             'backup_policy_id' => $policy->id, 'credential_id' => null, 'is_active' => true]);
         $this->patch(route('backup-policies.associations.update', [$policy, $association]),
             ['is_active' => 1])->assertSessionHasErrors('schedule_type');
-        try { BackupExecution::createManual($association); $this->fail('Legacy FTP policy started'); }
-        catch (ValidationException) { $this->assertDatabaseCount('backup_executions', 0); }
+        try {
+            BackupExecution::createManual($association);
+            $this->fail('Legacy FTP policy started');
+        } catch (ValidationException) {
+            $this->assertDatabaseCount('backup_executions', 0);
+        }
 
         $weekly = BackupPolicy::create(['name' => 'OLT weekly legacy', 'method' => 'ftp_push',
             'artifact_mode' => 'config', 'schedule_type' => 'weekly', 'schedule_time' => '07:00',
@@ -902,7 +939,10 @@ class HuaweiOltFtpTest extends TestCase
         } finally {
             unlink($path);
             $dir = dirname($path);
-            while ($dir !== $root) { rmdir($dir); $dir = dirname($dir); }
+            while ($dir !== $root) {
+                rmdir($dir);
+                $dir = dirname($dir);
+            }
             rmdir($root);
         }
 
@@ -953,7 +993,7 @@ class HuaweiOltFtpTest extends TestCase
         app(EngineJobService::class)->claim();
         app(EngineJobService::class)->fail($execution->id, 'FTP_ACCOUNT_UNAVAILABLE');
 
-        $snapshot = app(\App\Services\OltFtpWizard::class)->snapshot($device);
+        $snapshot = app(OltFtpWizard::class)->snapshot($device);
         $this->assertSame(5, $snapshot['current_step']);
         $this->assertFalse($snapshot['operational']);
         $this->get(route('devices.olt-ftp.status', $device))->assertJsonPath('state', 'failed')
@@ -964,7 +1004,7 @@ class HuaweiOltFtpTest extends TestCase
             ->assertSee('Etapa 5 de 6')
             ->assertSee('Tentar novamente')
             ->getContent();
-        $dom = new \DOMDocument();
+        $dom = new \DOMDocument;
         @$dom->loadHTML($html);
         $xpath = new \DOMXPath($dom);
         foreach ([1, 2, 3, 4] as $step) {
@@ -980,7 +1020,7 @@ class HuaweiOltFtpTest extends TestCase
         $this->assertSame('Pendente', trim($xpath->query('.//small', $future)->item(0)->textContent));
         $this->assertStringContainsString('const active = number === currentStep;', $html);
         $this->assertStringContainsString('showStep(currentStep); dialog.showModal(); poll();', $html);
-        $this->assertSame(5, app(\App\Services\OltFtpWizard::class)->snapshot($device)['current_step']);
+        $this->assertSame(5, app(OltFtpWizard::class)->snapshot($device)['current_step']);
     }
 
     public function test_account_operational_update_does_not_rewind_confirmed_wizard(): void
@@ -991,7 +1031,7 @@ class HuaweiOltFtpTest extends TestCase
         $this->post(route('devices.olt-ftp.confirm', $device), ['olt_configured' => '1'])->assertRedirect();
         $account = $device->ftpAccount()->firstOrFail();
         DB::table('ftp_accounts')->where('id', $account->id)->update(['updated_at' => now()->addMinute()]);
-        $snapshot = app(\App\Services\OltFtpWizard::class)->snapshot($device->fresh());
+        $snapshot = app(OltFtpWizard::class)->snapshot($device->fresh());
         $this->assertTrue($snapshot['synced']);
         $this->assertTrue((bool) $snapshot['confirmed']);
         $this->assertSame(5, $snapshot['current_step']);
@@ -1015,10 +1055,10 @@ class HuaweiOltFtpTest extends TestCase
             'device_id' => $device->id, 'olt_confirmed_at' => $confirmedAt,
             'test_execution_id' => $executionId, 'updated_at' => $updatedAt,
         ]);
-        $this->assertSame(2, app(\App\Services\OltFtpWizard::class)->snapshot($device->fresh())['current_step']);
+        $this->assertSame(2, app(OltFtpWizard::class)->snapshot($device->fresh())['current_step']);
 
         $this->artisan('ftp:sync-failed')->assertExitCode(0);
-        $this->assertSame('sync_error', app(\App\Services\OltFtpWizard::class)->snapshot($device->fresh())['state']);
+        $this->assertSame('sync_error', app(OltFtpWizard::class)->snapshot($device->fresh())['state']);
         $this->post(route('devices.ftp-account.retry', $device))->assertRedirect();
         Artisan::call('ftp:accounts');
         $version = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)[0]['updated_at'];
@@ -1078,9 +1118,9 @@ class HuaweiOltFtpTest extends TestCase
             $this->assertNull($integration->test_execution_id, $changedField);
             $this->assertNotNull($integration->account_updated_at, $changedField);
             $this->assertSame('192.0.2.20', $integration->ftp_host);
-            $this->assertSame(2, app(\App\Services\OltFtpWizard::class)->snapshot($device->fresh())['current_step']);
+            $this->assertSame(2, app(OltFtpWizard::class)->snapshot($device->fresh())['current_step']);
             DB::table('ftp_accounts')->where('id', $account->id)->update(['provisioned_at' => now()]);
-            $this->assertSame(4, app(\App\Services\OltFtpWizard::class)->snapshot($device->fresh())['current_step']);
+            $this->assertSame(4, app(OltFtpWizard::class)->snapshot($device->fresh())['current_step']);
         }
     }
 
@@ -1089,11 +1129,11 @@ class HuaweiOltFtpTest extends TestCase
         [$device] = $this->fixture();
         config()->set('backup.ftp_host', '');
         DB::table('application_settings')->where('id', 1)->update(['ftp_host' => '192.0.2.20', 'ftp_port' => 0]);
-        $this->assertSame(4, app(\App\Services\OltFtpWizard::class)->snapshot($device)['current_step']);
+        $this->assertSame(4, app(OltFtpWizard::class)->snapshot($device)['current_step']);
         DB::table('application_settings')->where('id', 1)->update(['ftp_port' => 21, 'ftp_passive_address' => 'bad/address']);
-        $this->assertSame(4, app(\App\Services\OltFtpWizard::class)->snapshot($device)['current_step']);
+        $this->assertSame(4, app(OltFtpWizard::class)->snapshot($device)['current_step']);
         DB::table('application_settings')->where('id', 1)->update(['ftp_passive_address' => null]);
-        $this->assertSame(4, app(\App\Services\OltFtpWizard::class)->snapshot($device)['current_step']);
+        $this->assertSame(4, app(OltFtpWizard::class)->snapshot($device)['current_step']);
     }
 
     public function test_wizard_and_engine_agree_on_sync_error_contract(): void
@@ -1110,7 +1150,7 @@ class HuaweiOltFtpTest extends TestCase
 
         foreach ([null, '', 'erro qualquer'] as $error) {
             DB::table('ftp_accounts')->where('device_id', $device->id)->update(['sync_error' => $error]);
-            $snapshot = app(\App\Services\OltFtpWizard::class)->snapshot($device->fresh());
+            $snapshot = app(OltFtpWizard::class)->snapshot($device->fresh());
             $available = app(EngineJobService::class)->job($execution->id)['ftp_account_available'];
             $this->assertSame($error === null, $snapshot['synced']);
             $this->assertSame($snapshot['synced'], $available);
@@ -1128,7 +1168,7 @@ class HuaweiOltFtpTest extends TestCase
         $execution = $device->fresh()->oltFtpIntegration->testExecution;
         foreach (['pending', 'queued', 'running', 'failed', 'cancelled', 'succeeded'] as $status) {
             DB::table('backup_executions')->where('id', $execution->id)->update(['status' => $status]);
-            $snapshot = app(\App\Services\OltFtpWizard::class)->snapshot($device);
+            $snapshot = app(OltFtpWizard::class)->snapshot($device);
             $this->assertTrue($snapshot['synced']);
             $this->assertSame(5, $snapshot['current_step'], $status);
             $this->assertFalse($snapshot['operational'], $status);

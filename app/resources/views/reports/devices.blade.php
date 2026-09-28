@@ -15,7 +15,7 @@
 @endsection
 
 @section('content')
-<div class="stack">
+<div class="stack report-detail-page">
     <section class="card">
         <div class="card__body">
             <form method="GET" action="{{ route('reports.devices') }}" class="grid grid--4">
@@ -24,7 +24,7 @@
                     <select class="form-control" id="status" name="status">
                         <option value="">Todas</option>
                         @foreach(['healthy', 'warning', 'critical', 'unknown'] as $status)
-                            <option value="{{ $status }}" @selected(($filters['status'] ?? '') === $status)>{{ strtoupper($status) }}</option>
+                            <option value="{{ $status }}" @selected(($filters['status'] ?? '') === $status)>{{ \App\Support\HealthStatus::from($status)->label() }}</option>
                         @endforeach
                     </select>
                 </div>
@@ -54,18 +54,18 @@
     <section class="card">
         <div class="table-shell" role="region" aria-label="Equipamentos" tabindex="0">
             <table class="data-table">
-                <thead><tr><th>Equipamento</th><th>Vendor</th><th>Método</th><th>Política</th><th>Último backup</th><th>Última falha</th><th>Saúde</th><th>Falhas seguidas</th></tr></thead>
+                <thead><tr><th>Equipamento</th><th>Fabricante</th><th>Método</th><th>Política</th><th>Último backup</th><th>Última falha</th><th>Saúde</th><th>Falhas seguidas</th></tr></thead>
                 <tbody>
                     @forelse($devices as $row)
                         <tr>
-                            <td>{{ $row['name'] }}</td>
-                            <td>{{ $row['vendor'] }}</td>
-                            <td>{{ $row['method'] }}</td>
-                            <td>{{ $row['policy_name'] ?? '—' }}</td>
-                            <td>{{ $row['last_backup_at'] ? app(\App\Services\InstanceTimezone::class)->format(\Carbon\CarbonImmutable::parse($row['last_backup_at'])) : 'Nunca' }}</td>
-                            <td>{{ $row['last_failure_at'] ? app(\App\Services\InstanceTimezone::class)->format(\Carbon\CarbonImmutable::parse($row['last_failure_at'])) : '—' }}</td>
-                            <td><span class="badge badge--{{ \App\Support\HealthStatus::from($row['status'])->badgeVariant() }}">{{ \App\Support\HealthStatus::from($row['status'])->label() }}</span></td>
-                            <td>{{ $row['consecutive_failures'] }}</td>
+                            <td data-label="Equipamento">{{ $row['name'] }}</td>
+                            <td data-label="Fabricante">{{ $row['vendor'] }}</td>
+                            <td data-label="Método">{{ \App\Support\OperationalLabels::METHODS[$row['method'] ?? ''] ?? '—' }}</td>
+                            <td data-label="Política">{{ $row['policy_name'] ?? '—' }}</td>
+                            <td data-label="Último backup">{{ $row['last_backup_at'] ? app(\App\Services\InstanceTimezone::class)->format(\Carbon\CarbonImmutable::parse($row['last_backup_at'])) : 'Nunca' }}</td>
+                            <td data-label="Última falha">{{ $row['last_failure_at'] ? app(\App\Services\InstanceTimezone::class)->format(\Carbon\CarbonImmutable::parse($row['last_failure_at'])) : '—' }}</td>
+                            <td data-label="Saúde"><span class="badge badge--{{ \App\Support\HealthStatus::from($row['status'])->badgeVariant() }}">{{ \App\Support\HealthStatus::from($row['status'])->label() }}</span></td>
+                            <td data-label="Falhas seguidas">{{ $row['consecutive_failures'] }}</td>
                         </tr>
                     @empty
                         <tr><td colspan="8" class="empty-table">Nenhum equipamento encontrado para os filtros selecionados.</td></tr>

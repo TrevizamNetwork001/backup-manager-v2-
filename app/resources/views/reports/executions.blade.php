@@ -15,7 +15,7 @@
 @endsection
 
 @section('content')
-<div class="stack">
+<div class="stack report-detail-page">
     <section class="card">
         <div class="card__body">
             <form method="GET" action="{{ route('reports.executions') }}" class="grid grid--4">
@@ -41,7 +41,7 @@
                     <select class="form-control" id="status" name="status">
                         <option value="">Todos</option>
                         @foreach(\App\Models\BackupExecution::STATUSES as $status)
-                            <option value="{{ $status }}" @selected(($filters['status'] ?? '') === $status)>{{ strtoupper($status) }}</option>
+                            <option value="{{ $status }}" @selected(($filters['status'] ?? '') === $status)>{{ \App\Support\OperationalLabels::EXECUTION_STATUSES[$status] ?? $status }}</option>
                         @endforeach
                     </select>
                 </div>
@@ -70,14 +70,14 @@
                 <tbody>
                     @forelse($executions as $execution)
                         <tr>
-                            <td>{{ app(\App\Services\InstanceTimezone::class)->format($execution->created_at) }}</td>
-                            <td>{{ $execution->device?->site?->name }}</td>
-                            <td>{{ $execution->device?->name }}</td>
-                            <td>{{ $execution->backupPolicy?->name }}</td>
-                            <td><span class="badge badge--{{ in_array($execution->status, ['succeeded'], true) ? 'success' : (in_array($execution->status, ['failed', 'timed_out'], true) ? 'danger' : 'neutral') }}">{{ strtoupper($execution->status) }}</span></td>
-                            <td>{{ $execution->attempt }}</td>
-                            <td>{{ $execution->artifact?->size_bytes ? number_format($execution->artifact->size_bytes / 1024, 1).' KB' : '—' }}</td>
-                            <td>{{ $execution->error_code }}</td>
+                            <td data-label="Data/Hora">{{ app(\App\Services\InstanceTimezone::class)->format($execution->created_at) }}</td>
+                            <td data-label="Site">{{ $execution->device?->site?->name }}</td>
+                            <td data-label="Equipamento">{{ $execution->device?->name }}</td>
+                            <td data-label="Política">{{ $execution->backupPolicy?->name }}</td>
+                            <td data-label="Status"><span class="badge badge--{{ in_array($execution->status, ['succeeded'], true) ? 'success' : (in_array($execution->status, ['failed', 'timed_out'], true) ? 'danger' : 'neutral') }}">{{ \App\Support\OperationalLabels::EXECUTION_STATUSES[$execution->status] ?? $execution->status }}</span></td>
+                            <td data-label="Tentativa">{{ $execution->attempt }}</td>
+                            <td data-label="Tamanho">{{ $execution->artifact?->size_bytes ? number_format($execution->artifact->size_bytes / 1024, 1).' KB' : '—' }}</td>
+                            <td data-label="Erro">{{ $execution->error_code }}</td>
                         </tr>
                     @empty
                         <tr><td colspan="8" class="empty-table">Nenhuma execução encontrada para os filtros selecionados.</td></tr>

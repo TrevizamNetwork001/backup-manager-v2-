@@ -29,7 +29,7 @@
                     <select class="form-control" id="status" name="status">
                         <option value="">Todos</option>
                         @foreach(\App\Models\BackupExecution::STATUSES as $status)
-                            <option value="{{ $status }}" @selected(($filters['status'] ?? '') === $status)>{{ strtoupper($status) }}</option>
+                            <option value="{{ $status }}" @selected(($filters['status'] ?? '') === $status)>{{ \App\Support\OperationalLabels::EXECUTION_STATUSES[$status] ?? $status }}</option>
                         @endforeach
                     </select>
                 </div>
@@ -38,7 +38,7 @@
                     <select class="form-control" id="origin" name="origin">
                         <option value="">Todas</option>
                         @foreach(\App\Models\BackupExecution::ORIGINS as $origin)
-                            <option value="{{ $origin }}" @selected(($filters['origin'] ?? '') === $origin)>{{ $origin === 'ftp_received' ? 'FTP recebido' : ucfirst($origin) }}</option>
+                            <option value="{{ $origin }}" @selected(($filters['origin'] ?? '') === $origin)>{{ \App\Support\OperationalLabels::EXECUTION_ORIGINS[$origin] ?? $origin }}</option>
                         @endforeach
                     </select>
                 </div>
@@ -83,14 +83,14 @@
                             @php
                                 $duration = $execution->started_at && $execution->finished_at
                                     ? max(0, (int) $execution->started_at->diffInSeconds($execution->finished_at)) : null;
-                                $statusLabel = ['succeeded' => 'Concluído', 'failed' => 'Erro', 'timed_out' => 'Tempo esgotado', 'running' => 'Em andamento', 'queued' => 'Na fila', 'pending' => 'Pendente', 'retry_wait' => 'Nova tentativa', 'cancelled' => 'Cancelado'][$execution->status] ?? $execution->status;
+                                $statusLabel = \App\Support\OperationalLabels::EXECUTION_STATUSES[$execution->status] ?? $execution->status;
                                 $statusVariant = $execution->status === 'succeeded' ? 'success' : (in_array($execution->status, ['failed', 'timed_out'], true) ? 'danger' : (in_array($execution->status, ['retry_wait', 'running'], true) ? 'warning' : 'neutral'));
                             @endphp
                             <tr>
-                                <td data-label="Hora"><a class="table-action" href="{{ route('backup-executions.show', $execution) }}">{{ app(\App\Services\InstanceTimezone::class)->format($execution->started_at ?? $execution->created_at, 'd/m/Y H:i') }}</a><small class="entity-cell__meta">#{{ $execution->id }} · {{ $execution->origin === 'ftp_received' ? 'FTP recebido' : ucfirst($execution->origin) }}</small></td>
+                                <td data-label="Hora"><a class="table-action" href="{{ route('backup-executions.show', $execution) }}">{{ app(\App\Services\InstanceTimezone::class)->format($execution->started_at ?? $execution->created_at, 'd/m/Y H:i') }}</a><small class="entity-cell__meta">#{{ $execution->id }} · {{ \App\Support\OperationalLabels::EXECUTION_ORIGINS[$execution->origin] ?? $execution->origin }}</small></td>
                                 <td data-label="Equipamento"><span class="entity-cell__title">{{ $execution->device->name }}</span></td>
                                 <td data-label="Política">{{ $execution->backupPolicy->name }}</td>
-                                <td data-label="Método">{{ $execution->backupPolicy->method === 'ftp_push' ? 'FTP Push' : 'SSH Pull' }}</td>
+                                <td data-label="Método">{{ $execution->backupPolicy->method === 'ftp_push' ? 'Envio via FTP' : 'Coleta via SSH' }}</td>
                                 <td data-label="Status"><span class="badge badge--{{ $statusVariant }}">{{ $statusLabel }}</span></td>
                                 <td data-label="Duração" class="tech-value">{{ $duration === null ? '—' : (intdiv($duration, 3600) ? intdiv($duration, 3600).'h ' : '').intdiv($duration % 3600, 60).'m '.($duration % 60).'s' }}</td>
                                 <td data-label="Tentativa">{{ $execution->attempt }} / {{ $execution->max_attempts ?? '—' }}</td>

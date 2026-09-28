@@ -15,7 +15,7 @@
 @endsection
 
 @section('content')
-<div class="stack">
+<div class="stack report-detail-page">
     <section class="card">
         <div class="card__body">
             <form method="GET" action="{{ route('reports.failures') }}" class="grid grid--4">
@@ -40,14 +40,14 @@
             <div class="card__header"><h2 class="card__title">Top erros</h2></div>
             <div class="table-shell" role="region" aria-label="Erros por código" tabindex="0">
                 <table class="data-table">
-                    <thead><tr><th>Código</th><th>Ocorrências</th><th>Retryable</th><th>Última ocorrência</th></tr></thead>
+                    <thead><tr><th>Código</th><th>Ocorrências</th><th>Permite nova tentativa</th><th>Última ocorrência</th></tr></thead>
                     <tbody>
                         @forelse($byErrorCode as $row)
                             <tr>
-                                <td><code>{{ $row['error_code'] }}</code></td>
-                                <td>{{ $row['total'] }}</td>
-                                <td><span class="badge badge--{{ $row['retryable'] ? 'info' : 'neutral' }}">{{ $row['retryable'] ? 'Sim' : 'Não' }}</span></td>
-                                <td>{{ app(\App\Services\InstanceTimezone::class)->format(\Carbon\CarbonImmutable::parse($row['last_seen_at'])) }}</td>
+                                <td data-label="Código"><code>{{ $row['error_code'] }}</code></td>
+                                <td data-label="Ocorrências">{{ $row['total'] }}</td>
+                                <td data-label="Permite nova tentativa"><span class="badge badge--{{ $row['retryable'] ? 'info' : 'neutral' }}">{{ $row['retryable'] ? 'Sim' : 'Não' }}</span></td>
+                                <td data-label="Última ocorrência">{{ app(\App\Services\InstanceTimezone::class)->format(\Carbon\CarbonImmutable::parse($row['last_seen_at'])) }}</td>
                             </tr>
                         @empty
                             <tr><td colspan="4" class="empty-table">Nenhuma falha na janela selecionada.</td></tr>
@@ -61,14 +61,14 @@
             <div class="card__header"><h2 class="card__title">Equipamentos mais afetados</h2></div>
             <div class="table-shell" role="region" aria-label="Equipamentos mais afetados" tabindex="0">
                 <table class="data-table">
-                    <thead><tr><th>Equipamento</th><th>Vendor</th><th>Falhas</th><th>Última ocorrência</th></tr></thead>
+                    <thead><tr><th>Equipamento</th><th>Fabricante</th><th>Falhas</th><th>Última ocorrência</th></tr></thead>
                     <tbody>
                         @forelse($byDevice as $row)
                             <tr>
-                                <td>{{ $row->name }}</td>
-                                <td>{{ $row->vendor }}</td>
-                                <td>{{ $row->total }}</td>
-                                <td>{{ app(\App\Services\InstanceTimezone::class)->format(\Carbon\CarbonImmutable::parse($row->last_seen_at)) }}</td>
+                                <td data-label="Equipamento">{{ $row->name }}</td>
+                                <td data-label="Fabricante">{{ $row->vendor }}</td>
+                                <td data-label="Falhas">{{ $row->total }}</td>
+                                <td data-label="Última ocorrência">{{ app(\App\Services\InstanceTimezone::class)->format(\Carbon\CarbonImmutable::parse($row->last_seen_at)) }}</td>
                             </tr>
                         @empty
                             <tr><td colspan="4" class="empty-table">Nenhuma falha na janela selecionada.</td></tr>

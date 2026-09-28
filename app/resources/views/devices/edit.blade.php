@@ -4,23 +4,29 @@
 @section('page-title', 'Editar Equipamento')
 @section('page-description', 'Atualize as informações do equipamento.')
 
+@section('page-header')
+<header class="page-header">
+    <div class="page-header__content"><h1 class="page-header__title">Editar equipamento</h1><p class="page-header__description">Atualize as informações do equipamento.</p></div>
+    <div class="page-header__actions"><a href="{{ route('devices.index') }}" class="btn btn--ghost">Voltar à lista</a></div>
+</header>
+@endsection
 @section('content')
 
-<div class="page-width">
+<div class="modern-form-page stack">
     @php
         $isHuaweiOltFtp = mb_strtolower(trim($device->vendor)) === 'huawei' && $device->platform === 'olt';
     @endphp
 
-    <article class="panel form-panel">
+    <article class="card">
 
-        <div class="panel-header">
+        <div class="card__header">
             <div>
-                <h2>{{ $device->name }}</h2>
-                <p>{{ $device->management_ip }}</p>
+                <h2 class="card__title">{{ $device->name }}</h2>
+                <p class="card__description">{{ $device->management_ip }}</p>
             </div>
         </div>
 
-        <form method="POST" action="{{ route('devices.update', $device) }}">
+        <form class="card__body" method="POST" action="{{ route('devices.update', $device) }}">
             @include('devices._form')
         </form>
 
@@ -30,9 +36,9 @@
     @php
         $wizard = app(\App\Services\OltFtpWizard::class)->snapshot($device);
     @endphp
-    <article class="panel form-panel">
-        <div class="panel-header"><div><h2>Integração Huawei OLT / FTP</h2><p>Estado: {{ $wizard['operational'] ? 'Operacional' : 'Configuração pendente' }}</p></div></div>
-        <button type="button" class="secondary-button" id="open-olt-wizard">Abrir configuração guiada</button>
+    <article class="card">
+        <div class="card__header"><div><h2 class="card__title">Integração Huawei OLT / FTP</h2><p class="card__description">Estado: {{ $wizard['operational'] ? 'Operacional' : 'Configuração pendente' }}</p></div></div>
+        <div class="card__body"><button type="button" class="btn btn--secondary" id="open-olt-wizard">Abrir configuração guiada</button></div>
     </article>
     <dialog id="olt-wizard" class="olt-wizard" aria-labelledby="olt-wizard-title" data-state="{{ $wizard['state'] }}" data-current-step="{{ $wizard['current_step'] }}" data-execution-id="{{ $wizard['execution']?->id }}" data-execution-status="{{ $wizard['execution']?->status }}">
         @php
@@ -45,6 +51,7 @@
             </div>
             <button type="button" id="close-olt-wizard" class="secondary-button" aria-label="Fechar configuração">Fechar</button>
         </div>
+        <div class="olt-wizard-body">
         <div class="olt-wizard-progress" role="progressbar" aria-label="Progresso da configuração" aria-valuemin="1" aria-valuemax="6" aria-valuenow="{{ $wizardStep }}">
             <span id="olt-wizard-progress-fill" style="width: {{ $wizardStep / 6 * 100 }}%"></span>
         </div>
@@ -171,6 +178,7 @@
         </section>
         @error('wizard') <p class="olt-wizard-error" role="alert">{{ $message }}</p> @enderror
         @error('olt_configured') <p class="olt-wizard-error" role="alert">Marque a confirmação após configurar a OLT.</p> @enderror
+        </div>
         <div class="olt-wizard-navigation">
             <button type="button" id="back-olt-wizard" class="secondary-button">Voltar</button>
             <button type="button" id="next-olt-wizard" @if ($wizardStep >= 4) hidden @endif>Avançar</button>
@@ -250,8 +258,8 @@
     @endif
 
     @unless ($isHuaweiOltFtp)
-    <article class="panel form-panel">
-        <div class="panel-header"><h2>SSH Host Key</h2></div>
+    <article class="card">
+        <div class="card__header"><h2 class="card__title">SSH Host Key</h2></div>
         @php
             $mismatch = $device->ssh_host_key_fingerprint && $device->ssh_observed_fingerprint &&
                 ($device->ssh_host_key_algorithm !== $device->ssh_observed_algorithm ||

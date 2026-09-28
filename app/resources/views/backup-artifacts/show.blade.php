@@ -63,7 +63,7 @@
                     <dl class="risk-zone-preview">
                         <div><dt>Arquivo</dt> <dd>{{ $preview->resourceLabel }}</dd></div>
                         <div><dt>Equipamento</dt> <dd>{{ $backupArtifact->device->name }}</dd></div>
-                        <div><dt>Execução</dt> <dd>#{{ $backupArtifact->backup_execution_id }} ({{ $backupArtifact->backupExecution->status ?? 'desconhecido' }})</dd></div>
+                        <div><dt>Execução</dt> <dd>#{{ $backupArtifact->backup_execution_id }} ({{ \App\Support\OperationalLabels::EXECUTION_STATUSES[$backupArtifact->backupExecution?->status ?? ''] ?? 'Desconhecido' }})</dd></div>
                         <div><dt>Tamanho</dt> <dd>{{ number_format($preview->filesBytes ?? 0) }} bytes</dd></div>
                         <div><dt>Arquivo físico</dt> <dd>{{ $preview->filesCount > 0 ? 'Existe' : 'Ausente' }}</dd></div>
                         @foreach($preview->preserved as $item)

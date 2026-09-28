@@ -12,7 +12,7 @@
     </div>
     <div class="page-header__actions">
         @can('devices.manage')
-            <a href="{{ route('devices.create') }}" class="btn btn--primary"><x-icon name="add" size="sm" /> Novo equipamento</a>
+            <button type="button" class="btn btn--primary" data-open-device-create @disabled($sites->isEmpty())><x-icon name="add" size="sm" /> Novo equipamento</button>
         @endcan
     </div>
 </header>
@@ -26,13 +26,19 @@
     @if(session('warning'))
         <div class="alert alert--warning" role="alert">{{ session('warning') }}</div>
     @endif
+    @if($sites->isEmpty())
+        <div class="alert alert--warning" role="status">
+            Nenhum Site / POP ativo está disponível.
+            @can('sites.manage') <a class="link" href="{{ route('sites.create') }}">Cadastre ou ative um Site / POP</a> antes de adicionar equipamentos. @else Cadastre ou ative um Site / POP antes de adicionar equipamentos. @endcan
+        </div>
+    @endif
 
     <div class="toolbar">
         <div class="toolbar__primary">
             <span class="toolbar__count"><strong>{{ $devices->total() }}</strong> {{ $devices->total() === 1 ? 'equipamento cadastrado' : 'equipamentos cadastrados' }}</span>
         </div>
         @unless($devices->isEmpty())
-            <label class="list-search">Buscar nesta página <input class="form-control" type="search" data-list-search="devices-rows" placeholder="Nome, IP, vendor ou site"></label>
+            <label class="list-search">Buscar nesta página <input class="form-control" type="search" data-list-search="devices-rows" placeholder="Nome, IP, fabricante ou local"></label>
         @endunless
     </div>
 
@@ -42,7 +48,7 @@
             <h2 class="empty-state__title">Nenhum equipamento cadastrado</h2>
             <p class="empty-state__description">Cadastre o primeiro equipamento para começar a estruturar a operação de backup.</p>
             @can('devices.manage')
-                <div class="empty-state__actions"><a href="{{ route('devices.create') }}" class="btn btn--secondary">Cadastrar primeiro equipamento</a></div>
+                <div class="empty-state__actions"><button type="button" class="btn btn--secondary" data-open-device-create @disabled($sites->isEmpty())>Cadastrar primeiro equipamento</button></div>
             @endcan
         </div>
     @else
@@ -52,7 +58,7 @@
                     <tr>
                         <th>Equipamento</th>
                         <th>Site / POP</th>
-                        <th>Vendor / Modelo</th>
+                        <th>Fabricante / Modelo</th>
                         <th>Método / política</th>
                         <th>Último backup</th>
                         <th>Saúde</th>
@@ -67,7 +73,8 @@
                             <td data-label="Equipamento">
                                 <div class="entity-cell">
                                     <span class="entity-cell__title">{{ $device->name }}</span>
-                                    <span class="entity-cell__meta tech-value">{{ $device->hostname ? $device->hostname.' · ' : '' }}{{ $device->management_ip }}</span>
+                                    @if($device->hostname)<span class="entity-cell__meta tech-value">{{ $device->hostname }}</span>@endif
+                                    <span class="entity-cell__meta tech-value">{{ $device->management_ip }}</span>
                                 </div>
                             </td>
                             <td data-label="Site / POP">
@@ -76,7 +83,7 @@
                                     @if($device->site->code)<span class="entity-cell__meta">{{ $device->site->code }}</span>@endif
                                 </div>
                             </td>
-                            <td data-label="Vendor / Modelo">
+                            <td data-label="Fabricante / Modelo">
                                 <div class="entity-cell">
                                     <span class="entity-cell__title">{{ $device->vendor }}</span>
                                     @if($device->model)<span class="entity-cell__meta">{{ $device->model }}</span>@endif
@@ -84,7 +91,7 @@
                             </td>
                             <td data-label="Método / política">
                                 <div class="entity-cell">
-                                    <span class="entity-cell__title">{{ ($health['method'] ?? null) === 'ftp_push' ? 'FTP Push' : (($health['method'] ?? null) === 'ssh_pull' ? 'SSH Pull' : '—') }}</span>
+                                    <span class="entity-cell__title">{{ ($health['method'] ?? null) === 'ftp_push' ? 'Envio via FTP' : (($health['method'] ?? null) === 'ssh_pull' ? 'Coleta via SSH' : '—') }}</span>
                                     <span class="entity-cell__meta">{{ $health['policy_name'] ?? ($device->is_active ? 'Sem política ativa' : 'Não avaliado') }}</span>
                                 </div>
                             </td>
@@ -122,4 +129,26 @@
         @endif
     @endif
 </div>
+@can('devices.manage')
+<dialog class="modal form-create-modal" id="device-create-dialog" aria-labelledby="device-create-title">
+    <div class="modal__surface">
+        <div class="modal__header">
+            <div><h2 class="modal__title" id="device-create-title">Novo equipamento</h2><p class="modal__description">Informe a identificação, o acesso e os dados operacionais.</p></div>
+            <button type="button" class="modal__close" data-close-device-create aria-label="Fechar"><x-icon name="close" /></button>
+        </div>
+        <form method="POST" action="{{ route('devices.store') }}">
+            @include('devices._form', ['createModal' => true])
+        </form>
+    </div>
+</dialog>
+<script>
+(() => {
+    const dialog = document.getElementById('device-create-dialog');
+    document.querySelectorAll('[data-open-device-create]').forEach(button => button.addEventListener('click', () => dialog.showModal()));
+    dialog.querySelectorAll('[data-close-device-create]').forEach(button => button.addEventListener('click', () => dialog.close()));
+    dialog.addEventListener('click', event => { if (event.target === dialog) dialog.close(); });
+    @if ($errors->any()) dialog.showModal(); @endif
+})();
+</script>
+@endcan
 @endsection

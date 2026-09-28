@@ -1,6 +1,61 @@
 @props(['name', 'size' => 'md', 'label' => null])
 <svg {{ $attributes->class(['icon', 'icon--' . $size]) }} viewBox="0 0 24 24" @if($label) role="img" aria-label="{{ $label }}" @else aria-hidden="true" @endif focusable="false">
     @switch($name)
+        @case('health-pulse')
+            <path d="M2 12h5l3-9 4 18 3-9h5" />
+            @break
+        @case('cpu')
+            <rect x="5" y="5" width="14" height="14" rx="2" /><rect x="9" y="9" width="6" height="6" rx="1" />
+            <path d="M9 2v3m6-3v3M9 19v3m6-3v3M2 9h3m-3 6h3M19 9h3m-3 6h3" />
+            @break
+        @case('memory')
+            <rect x="2" y="6" width="20" height="12" rx="2" /><path d="M6 10v4m4-4v4m4-4v4m4-4v4M6 18v3m4-3v3m4-3v3m4-3v3" />
+            @break
+        @case('hard-drive')
+            <path d="m4 4-2 10v5a1 1 0 0 0 1 1h18a1 1 0 0 0 1-1v-5L20 4Z" /><path d="M2 14h20M6 17h.01M10 17h.01M7 8h10" />
+            @break
+        @case('bell')
+            <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4M12 2V1" />
+            @break
+        @case('calendar')
+            <rect x="3" y="5" width="18" height="16" rx="2" /><path d="M7 2v6m10-6v6M3 11h18" />
+            @break
+        @case('chevron-right')
+            <path d="m9 5 7 7-7 7" />
+            @break
+        @case('play-circle')
+            <circle cx="12" cy="12" r="9" />
+            <path d="m10 8 6 4-6 4Z" fill="currentColor" stroke="none" />
+            @break
+        @case('arrow-right')
+            <path d="M4 12h16m-6-6 6 6-6 6" />
+            @break
+        @case('dashboard-sites')
+            <path d="M19 10c0 5-7 11-7 11S5 15 5 10a7 7 0 0 1 14 0Z" />
+            <circle cx="12" cy="10" r="2.5" />
+            @break
+        @case('dashboard-devices')
+            <rect x="3" y="4" width="18" height="7" rx="2" />
+            <rect x="3" y="14" width="18" height="7" rx="2" />
+            <circle cx="7" cy="7.5" r=".75" fill="currentColor" stroke="none" />
+            <circle cx="7" cy="17.5" r=".75" fill="currentColor" stroke="none" />
+            <path d="M12 7.5h5M12 17.5h5" />
+            @break
+        @case('dashboard-backups')
+            <ellipse cx="10" cy="5" rx="7" ry="3" />
+            <path d="M3 5v12c0 1.7 3.1 3 7 3M17 5v5M3 11c0 1.7 3.1 3 7 3" />
+            <circle cx="17" cy="17" r="5" />
+            <path d="m14.5 17 1.5 1.5 3.5-3.5" />
+            @break
+        @case('dashboard-failures')
+            <path d="m10.3 4-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3l-8-14a2 2 0 0 0-3.4 0Z" />
+            <path d="M12 9v5" />
+            <circle cx="12" cy="17.5" r=".75" fill="currentColor" stroke="none" />
+            @break
+        @case('dashboard-artifacts')
+            <path d="M2 18V6a2 2 0 0 1 2-2h4.5a2 2 0 0 1 1.6.8L12 7h7a2 2 0 0 1 2 2v2" />
+            <path d="M4.5 11H22l-2.5 7.6A2 2 0 0 1 17.6 20H4a2 2 0 0 1-1.9-2.6L4.5 11Z" />
+            @break
         @case('home')
             <path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z" />
             @break
@@ -31,6 +86,13 @@
         @case('system-health')
             <rect x="3" y="3" width="18" height="15" rx="2" />
             <path d="M3 11h4l2-4 4 8 2-4h6M12 18v3M8 21h8" />
+            @break
+        @case('user')
+            <circle cx="12" cy="7" r="4" />
+            <path d="M4 22v-2a8 8 0 0 1 16 0v2" />
+            @break
+        @case('terminal')
+            <path d="m3 5 7 7-7 7M13 20h8" />
             @break
         @case('users')
             <circle cx="9" cy="8" r="3" /><circle cx="17" cy="9" r="2.5" />

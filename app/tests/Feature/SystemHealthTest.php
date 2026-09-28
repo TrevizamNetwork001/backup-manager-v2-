@@ -3,6 +3,8 @@
 namespace Tests\Feature;
 
 use App\Models\User;
+use App\Services\EngineHealth;
+use App\Services\HostResources;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -58,5 +60,53 @@ class SystemHealthTest extends TestCase
             ->assertSee('badge--danger', false)
             ->assertSee('Crítico')
             ->assertSee('Os dados de capacidade não estão disponíveis nesta verificação.');
+    }
+
+    public function test_unknown_status_is_not_presented_as_a_healthy_system(): void
+    {
+        $report = app(EngineHealth::class)->report();
+        $report['overall_status'] = 'unknown';
+        foreach ($report['checks'] as &$check) {
+            $check['status'] = $check['check'] === 'worker' ? 'unknown' : 'healthy';
+        }
+        unset($check);
+        $this->mock(EngineHealth::class)->shouldReceive('report')->once()->andReturn($report);
+        $this->mock(HostResources::class)->shouldReceive('snapshot')->once()->andReturn([]);
+
+        $this->actingAs(User::factory()->admin()->create())->get(route('system-health.index'))
+            ->assertOk()->assertSee('health-state--unknown', false)
+            ->assertSee('Alguns componentes estão sem dados recentes de verificação.')
+            ->assertDontSee('Todos os componentes estão operando normalmente.')
+            ->assertSee('data-health-target="health-check-worker"', false)
+            ->assertSee('Capacidade indisponível');
+    }
+
+    public function test_history_panel_separates_never_completed_backups_from_other_device_problems(): void
+    {
+        $report = app(EngineHealth::class)->report();
+        foreach ($report['checks'] as &$check) {
+            if ($check['check'] === 'devices') {
+                $check['metadata']['problem_devices'] = [
+                    ['device_id' => 1, 'name' => 'Manual sem backup', 'status' => 'unknown', 'reason' => 'manual_never_backed_up'],
+                    ['device_id' => 2, 'name' => 'Agendado sem sucesso', 'status' => 'critical', 'reason' => 'scheduled_never_succeeded'],
+                    ['device_id' => 3, 'name' => 'Falhas repetidas', 'status' => 'critical', 'reason' => 'consecutive_failures'],
+                ];
+            }
+        }
+        unset($check);
+        $this->mock(EngineHealth::class)->shouldReceive('report')->once()->andReturn($report);
+        $this->mock(HostResources::class)->shouldReceive('snapshot')->once()->andReturn([
+            'cpu_count' => 4, 'load_1m' => 1.57, 'memory_used_bytes' => 25, 'memory_total_bytes' => 100,
+        ]);
+
+        $response = $this->actingAs(User::factory()->admin()->create())->get(route('system-health.index'))->assertOk();
+        $html = $response->getContent();
+        $panel = substr($html, strpos($html, '<section class="health-panel health-no-history"'));
+        $panel = substr($panel, 0, strpos($panel, '</section>'));
+        $this->assertStringContainsString('Manual sem backup', $panel);
+        $this->assertStringContainsString('Agendado sem sucesso', $panel);
+        $this->assertStringNotContainsString('Falhas repetidas', $panel);
+        $response->assertSee('aria-label="Uso da memória" aria-valuenow="25"', false)
+            ->assertSee('Falhas repetidas');
     }
 }

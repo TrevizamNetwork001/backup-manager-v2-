@@ -15,7 +15,7 @@
 @endsection
 
 @section('content')
-<div class="stack">
+<div class="stack report-detail-page">
     <section class="card">
         <div class="card__body">
             <form method="GET" action="{{ route('reports.artifacts') }}" class="grid grid--4">
@@ -33,7 +33,7 @@
                     <select class="form-control" id="status" name="status">
                         <option value="">Todos</option>
                         @foreach(\App\Models\BackupArtifact::STATUSES as $status)
-                            <option value="{{ $status }}" @selected(($filters['status'] ?? '') === $status)>{{ strtoupper($status) }}</option>
+                            <option value="{{ $status }}" @selected(($filters['status'] ?? '') === $status)>{{ \App\Support\OperationalLabels::ARTIFACT_STATUSES[$status] ?? $status }}</option>
                         @endforeach
                     </select>
                 </div>
@@ -51,16 +51,16 @@
                 <tbody>
                     @forelse($artifacts as $artifact)
                         <tr>
-                            <td>{{ $artifact->device?->site?->name }}</td>
-                            <td>{{ $artifact->device?->name }}</td>
-                            <td>{{ $artifact->original_filename }}</td>
-                            <td>{{ number_format($artifact->size_bytes / 1024, 1) }} KB</td>
-                            <td><code>{{ substr($artifact->sha256, 0, 12) }}…</code></td>
-                            <td>{{ app(\App\Services\InstanceTimezone::class)->format($artifact->created_at) }}</td>
-                            <td><span class="badge badge--{{ $artifact->status === 'available' ? 'success' : 'neutral' }}">{{ strtoupper($artifact->status) }}</span></td>
+                            <td data-label="Site">{{ $artifact->device?->site?->name }}</td>
+                            <td data-label="Equipamento">{{ $artifact->device?->name }}</td>
+                            <td data-label="Arquivo">{{ $artifact->original_filename }}</td>
+                            <td data-label="Tamanho">{{ number_format($artifact->size_bytes / 1024, 1) }} KB</td>
+                            <td data-label="SHA256"><code>{{ substr($artifact->sha256, 0, 12) }}…</code></td>
+                            <td data-label="Criado em">{{ app(\App\Services\InstanceTimezone::class)->format($artifact->created_at) }}</td>
+                            <td data-label="Status"><span class="badge badge--{{ $artifact->status === 'available' ? 'success' : 'neutral' }}">{{ $artifact->statusLabel() }}</span></td>
                         </tr>
                     @empty
-                        <tr><td colspan="7" class="empty-table">Nenhum artifact encontrado para os filtros selecionados.</td></tr>
+                        <tr><td colspan="7" class="empty-table">Nenhum artefato encontrado para os filtros selecionados.</td></tr>
                     @endforelse
                 </tbody>
             </table>

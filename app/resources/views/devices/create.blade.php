@@ -6,14 +6,14 @@
 
 @section('content')
 
-<div class="page-width">
+<div class="modern-form-page stack">
 
-    <article class="panel form-panel">
+    <article class="card">
 
-        <div class="panel-header">
+        <div class="card__header">
             <div>
-                <h2>Dados do equipamento</h2>
-                <p>Defina a identificação e localização do equipamento.</p>
+                <h2 class="card__title">Dados do equipamento</h2>
+                <p class="card__description">Defina a identificação e localização do equipamento.</p>
             </div>
         </div>
 
@@ -24,7 +24,7 @@
             </div>
         @endif
 
-        <form method="POST" action="{{ route('devices.store') }}">
+        <form class="card__body" method="POST" action="{{ route('devices.store') }}">
             @include('devices._form')
         </form>
 
