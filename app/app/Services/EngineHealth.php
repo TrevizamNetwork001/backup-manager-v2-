@@ -221,7 +221,11 @@ class EngineHealth
             return HealthCheckResult::make('scheduler', HealthStatus::Unknown, 'redis_unavailable',
                 'Não foi possível ler o sinal de atividade do agendador (Redis indisponível).', []);
         }
-        if (! is_int($lastTick)) {
+        // Redis returns un-serialized numeric cache values as strings.
+        if (is_string($lastTick) && ctype_digit($lastTick)) {
+            $lastTick = filter_var($lastTick, FILTER_VALIDATE_INT);
+        }
+        if (! is_int($lastTick) || $lastTick <= 0) {
             return HealthCheckResult::make('scheduler', HealthStatus::Unknown, 'never_ticked',
                 'O agendador ainda não registrou nenhuma execução.', []);
         }

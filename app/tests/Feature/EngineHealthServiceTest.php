@@ -8,8 +8,10 @@ use App\Models\Credential;
 use App\Models\Device;
 use App\Models\DeviceBackupPolicy;
 use App\Models\Site;
+use App\Services\AuditEvents;
 use App\Services\EngineHealth;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
@@ -51,6 +53,33 @@ class EngineHealthServiceTest extends TestCase
     {
         $checks = collect(app(EngineHealth::class)->report()['checks'])->keyBy('check');
         $this->assertSame('healthy', $checks['database']['status']);
+    }
+
+    public function test_scheduler_accepts_integer_timestamps_returned_as_strings_by_redis(): void
+    {
+        $this->freezeTime();
+        config()->set('cache.stores.redis', ['driver' => 'array']);
+        Cache::forgetDriver('redis');
+
+        foreach ([0 => 'healthy', 4 => 'warning', 11 => 'critical'] as $minutes => $expected) {
+            foreach ([now()->subMinutes($minutes)->timestamp, (string) now()->subMinutes($minutes)->timestamp] as $tick) {
+                Cache::store('redis')->put('health:scheduler:last_tick', $tick);
+                $checks = collect(app(EngineHealth::class)->report()['checks'])->keyBy('check');
+                $this->assertSame($expected, $checks['scheduler']['status']);
+            }
+        }
+    }
+
+    public function test_invalid_or_absent_scheduler_timestamps_remain_unknown(): void
+    {
+        config()->set('cache.stores.redis', ['driver' => 'array']);
+        Cache::forgetDriver('redis');
+
+        foreach ([null, '', 'invalid', '123abc', '999999999999999999999999', '0', -1, true, 1.5] as $tick) {
+            Cache::store('redis')->put('health:scheduler:last_tick', $tick);
+            $checks = collect(app(EngineHealth::class)->report()['checks'])->keyBy('check');
+            $this->assertSame('unknown', $checks['scheduler']['status']);
+        }
     }
 
     public function test_backlog_thresholds_drive_the_queue_check(): void
@@ -129,7 +158,7 @@ class EngineHealthServiceTest extends TestCase
 
     public function test_retention_summary_event_feeds_the_check(): void
     {
-        app(\App\Services\AuditEvents::class)->record('backup_retention.completed', 'system', null, null, 'success',
+        app(AuditEvents::class)->record('backup_retention.completed', 'system', null, null, 'success',
             ['scanned' => 5, 'deleted' => 1, 'errors' => 0, 'mode' => 'apply']);
         $checks = collect(app(EngineHealth::class)->report()['checks'])->keyBy('check');
         $this->assertSame('healthy', $checks['retention']['status']);
@@ -138,7 +167,7 @@ class EngineHealthServiceTest extends TestCase
 
     public function test_retention_failures_are_surfaced_as_warning(): void
     {
-        app(\App\Services\AuditEvents::class)->record('backup_retention.completed', 'system', null, null, 'warning',
+        app(AuditEvents::class)->record('backup_retention.completed', 'system', null, null, 'warning',
             ['scanned' => 5, 'deleted' => 0, 'errors' => 2, 'mode' => 'apply']);
         $checks = collect(app(EngineHealth::class)->report()['checks'])->keyBy('check');
         $this->assertSame('warning', $checks['retention']['status']);
