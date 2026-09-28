@@ -9,6 +9,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 
 from errors import BackupError
+from artisan_session import ArtisanSession
 from contexts import BackupContext
 from driver_base import RECEIVED_PAYLOAD
 from registry_setup import registry
@@ -160,25 +161,26 @@ def main():
             if time.monotonic() - last_orphan_scan >= 5 and os.environ.get('BACKUP_FTP_ROOT'):
                 last_orphan_scan = time.monotonic()
                 try:
-                    expected = json.loads(command('ftp:expected'))
-                    accounts = json.loads(command('ftp:accounts'))
-                    scan_spontaneous(os.environ['BACKUP_FTP_ROOT'], os.environ['BACKUP_STORAGE_ROOT'],
-                                     int(os.environ.get('BACKUP_FTP_STABLE_SECONDS', '5')),
-                                     spontaneous_observed, expected,
-                                     lambda device, token, filename, received: json.loads(command(
-                                         'ftp:receive', device, token,
-                                         'n' + base64.urlsafe_b64encode(filename.encode('utf-8')).decode('ascii'),
-                                         received, WORKER_ID)),
-                                     lambda job_id, relative: command('engine:complete', job_id, relative, WORKER_ID),
-                                     lambda job_id, code: command('engine:fail', job_id, code, WORKER_ID),
-                                     accounts,
-                                     lambda account, token, filename, received, status, size, digest, path, error: command(
-                                         'ftp:receipt', account, token,
-                                         'n' + base64.urlsafe_b64encode(filename.encode('utf-8')).decode('ascii'),
-                                         received, status, size, digest, path, error))
-                    scan_orphans(os.environ['BACKUP_FTP_ROOT'], expected,
-                                 int(os.environ.get('BACKUP_FTP_STABLE_SECONDS', '5')), orphan_observed,
-                                 preserved_uploads, accounts)
+                    with ArtisanSession(ARTISAN) as session:
+                        expected = json.loads(session.command('ftp:expected'))
+                        accounts = json.loads(session.command('ftp:accounts'))
+                        scan_spontaneous(os.environ['BACKUP_FTP_ROOT'], os.environ['BACKUP_STORAGE_ROOT'],
+                                         int(os.environ.get('BACKUP_FTP_STABLE_SECONDS', '5')),
+                                         spontaneous_observed, expected,
+                                         lambda device, token, filename, received: json.loads(session.command(
+                                             'ftp:receive', device, token,
+                                             'n' + base64.urlsafe_b64encode(filename.encode('utf-8')).decode('ascii'),
+                                             received, WORKER_ID)),
+                                         lambda job_id, relative: session.command('engine:complete', job_id, relative, WORKER_ID),
+                                         lambda job_id, code: session.command('engine:fail', job_id, code, WORKER_ID),
+                                         accounts,
+                                         lambda account, token, filename, received, status, size, digest, path, error: session.command(
+                                             'ftp:receipt', account, token,
+                                             'n' + base64.urlsafe_b64encode(filename.encode('utf-8')).decode('ascii'),
+                                             received, status, size, digest, path, error))
+                        scan_orphans(os.environ['BACKUP_FTP_ROOT'], expected,
+                                     int(os.environ.get('BACKUP_FTP_STABLE_SECONDS', '5')), orphan_observed,
+                                     preserved_uploads, accounts)
                 except Exception:
                     logging.error(json.dumps({'status': 'ftp_orphan_scan_failed'}))
             active = {future for future in active if not future.done()}
