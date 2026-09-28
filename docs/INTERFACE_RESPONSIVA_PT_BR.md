@@ -54,6 +54,9 @@ Os formulários compartilhados também atualizam as páginas de cadastro e
 os modais existentes. Campos usam duas colunas quando há espaço e uma no
 celular. Os valores, métodos HTTP e destinos dos formulários são preservados.
 
+O controle **Site ativo** usa o mesmo fundo de cartão, borda e escala de
+texto dos outros campos, em vez do fundo quase preto do componente antigo.
+
 Em Usuários continuam disponíveis a alteração de nome, e-mail e papel e a
 redefinição de senha, com os limites de administrador existentes. Políticas
 preservam a lista de equipamentos associados, ativação, remoção, criação de

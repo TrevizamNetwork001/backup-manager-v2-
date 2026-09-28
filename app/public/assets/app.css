@@ -3010,6 +3010,10 @@ body:has(.reports-page) .content { padding: 22px 32px 28px; }
 .modern-form-page { max-width: 1100px; }
 .modern-form-page .card__title, .user-create-page .card__title { overflow-wrap: anywhere; }
 .modern-form-page .card__body > .form-create-grid { margin-top: 0; }
+.modern-form-page .switch-row, .user-create-page .switch-row { align-items: center; min-height: 60px; padding: 14px 16px; border-color: var(--color-border-soft); border-radius: var(--radius-sm); background: var(--color-surface-elevated); }
+.modern-form-page .switch-row input, .user-create-page .switch-row input { flex: none; margin-top: 0; }
+.modern-form-page .switch-row strong, .user-create-page .switch-row strong { color: var(--color-text); font-size: var(--font-size-label); line-height: var(--line-height-heading); }
+.modern-form-page .switch-row small, .user-create-page .switch-row small { margin-top: 4px; color: var(--color-text-muted); font-size: var(--font-size-meta); line-height: var(--line-height-body); }
 .policy-associations .table-shell { margin-bottom: 24px; }
 .ftp-detail-menu > .table-actions { position: absolute; top: calc(100% + 4px); right: 0; z-index: 20; width: max-content; max-width: min(240px, calc(100vw - 36px)); margin: 0; }
 .olt-wizard[open] { display: flex; flex-direction: column; max-height: calc(100dvh - 24px); padding: 0; overflow: hidden; }
