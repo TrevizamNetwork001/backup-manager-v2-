@@ -10,6 +10,7 @@ use App\Models\DeviceBackupPolicy;
 use App\Models\Site;
 use App\Models\User;
 use App\Services\EngineJobService;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -30,6 +31,7 @@ class EngineJobTest extends TestCase
         $association = DeviceBackupPolicy::create(['device_id' => $device->id, 'backup_policy_id' => $policy->id, 'credential_id' => $credential->id, 'is_active' => true]);
         $job = BackupExecution::createManual($association);
         $job->transitionTo('queued');
+
         return $job;
     }
 
@@ -66,7 +68,9 @@ class EngineJobTest extends TestCase
         $association = $first->association;
         foreach (['SSH_HOST_KEY_UNKNOWN', 'SSH_HOST_KEY_MISMATCH'] as $code) {
             $job = $code === 'SSH_HOST_KEY_UNKNOWN' ? $first : BackupExecution::createManual($association);
-            if ($job->status === 'pending') $job->transitionTo('queued');
+            if ($job->status === 'pending') {
+                $job->transitionTo('queued');
+            }
             $engine = app(EngineJobService::class);
             $engine->claim();
             $engine->fail($job->id, $code);
@@ -204,17 +208,28 @@ class EngineJobTest extends TestCase
             $this->assertSame('7.15.2', json_decode($analysis->metadata, true)['version']);
             $this->assertStringNotContainsString('PRIVATE123', $analysis->metadata);
             $this->assertStringNotContainsString('segredo-exportado', $analysis->metadata);
-            try { $engine->complete($job->id, $relative); $this->fail('Execução concluída foi reprocessada.'); }
-            catch (ValidationException) { $this->assertDatabaseCount('backup_artifacts', 1); }
-            try { DB::table('backup_executions')->where('id', $job->id)->delete(); $this->fail('Histórico apagado.'); }
-            catch (\Illuminate\Database\QueryException) { $this->assertDatabaseHas('backup_artifacts', ['id' => $artifact->id]); }
+            try {
+                $engine->complete($job->id, $relative);
+                $this->fail('Execução concluída foi reprocessada.');
+            } catch (ValidationException) {
+                $this->assertDatabaseCount('backup_artifacts', 1);
+            }
+            try {
+                DB::transaction(fn () => DB::table('backup_executions')->where('id', $job->id)->delete());
+                $this->fail('Histórico apagado.');
+            } catch (QueryException) {
+                $this->assertDatabaseHas('backup_artifacts', ['id' => $artifact->id]);
+            }
             $this->actingAs(User::factory()->create());
             $this->get(route('backup-artifacts.index'))->assertOk()->assertDontSee('bridge1')
                 ->assertDontSee('senha-super-secreta');
         } finally {
             unlink($root.'/'.$relative);
             $dir = dirname($root.'/'.$relative);
-            while ($dir !== $root) { rmdir($dir); $dir = dirname($dir); }
+            while ($dir !== $root) {
+                rmdir($dir);
+                $dir = dirname($dir);
+            }
             rmdir($root);
         }
     }
@@ -246,15 +261,22 @@ class EngineJobTest extends TestCase
         try {
             foreach (['', str_repeat('x', 8 * 1024 * 1024 + 1), 'error: denied'] as $contents) {
                 file_put_contents($root.'/'.$relative, $contents);
-                try { $engine->complete($job->id, $relative); $this->fail('Arquivo inválido aceito.'); }
-                catch (ValidationException) { $this->assertSame('running', $job->fresh()->status); }
+                try {
+                    $engine->complete($job->id, $relative);
+                    $this->fail('Arquivo inválido aceito.');
+                } catch (ValidationException) {
+                    $this->assertSame('running', $job->fresh()->status);
+                }
             }
             $this->expectException(\RuntimeException::class);
             $engine->resolvePath('../outside.rsc');
         } finally {
             unlink($root.'/'.$relative);
             $dir = dirname($root.'/'.$relative);
-            while ($dir !== $root) { rmdir($dir); $dir = dirname($dir); }
+            while ($dir !== $root) {
+                rmdir($dir);
+                $dir = dirname($dir);
+            }
             rmdir($root);
         }
     }
@@ -275,8 +297,12 @@ class EngineJobTest extends TestCase
         try {
             foreach (['', 'Error: denied', "#\nsysname Lab\n#\n---- More ----\n"] as $invalid) {
                 file_put_contents($path, $invalid);
-                try { $engine->complete($job->id, $relative); $this->fail('Huawei inválido aceito.'); }
-                catch (ValidationException) { $this->assertSame('running', $job->fresh()->status); }
+                try {
+                    $engine->complete($job->id, $relative);
+                    $this->fail('Huawei inválido aceito.');
+                } catch (ValidationException) {
+                    $this->assertSame('running', $job->fresh()->status);
+                }
             }
             $contents = "#\nsysname Lab\n#\ninterface GigabitEthernet0/0/0\n description test\n#\n";
             file_put_contents($path, $contents);
@@ -292,7 +318,10 @@ class EngineJobTest extends TestCase
         } finally {
             unlink($path);
             $dir = dirname($path);
-            while ($dir !== $root) { rmdir($dir); $dir = dirname($dir); }
+            while ($dir !== $root) {
+                rmdir($dir);
+                $dir = dirname($dir);
+            }
             rmdir($root);
         }
     }

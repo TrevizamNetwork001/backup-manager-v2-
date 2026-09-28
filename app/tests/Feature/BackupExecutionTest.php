@@ -233,7 +233,7 @@ class BackupExecutionTest extends TestCase
         $this->assertDatabaseHas('device_backup_policies', ['id' => $association->id]);
         foreach (['device_backup_policies' => $association->id, 'backup_policies' => $association->backup_policy_id, 'devices' => $association->device_id, 'credentials' => $association->credential_id] as $table => $id) {
             try {
-                DB::table($table)->where('id', $id)->delete();
+                DB::transaction(fn () => DB::table($table)->where('id', $id)->delete());
                 $this->fail('Historical FK deleted');
             } catch (QueryException) {
                 $this->assertDatabaseHas('backup_executions', ['id' => $execution->id]);

@@ -49,7 +49,7 @@ class FtpAdminTest extends TestCase
         $this->assertSame($device->id, $rows[0]['device_id']);
         $this->assertArrayNotHasKey('secret', $rows[0]);
         $second = $this->device('OLT 2');
-        $this->assertSame('/data/ftp/accounts/'.$account->account_uuid.'/incoming', $account->homePath());
+        $this->assertSame(config('backup.ftp_root').'/accounts/'.$account->account_uuid.'/incoming', $account->homePath());
         $this->assertDatabaseHas('ftp_account_audits', ['ftp_account_id' => $account->id, 'action' => 'create']);
         $this->assertStringNotContainsString($account->secret, json_encode(DB::table('ftp_account_audits')->get()));
     }
@@ -132,7 +132,7 @@ class FtpAdminTest extends TestCase
         $account = FtpAccount::where('username', 'standalone')->firstOrFail();
         $this->assertNull($account->device_id);
         $this->assertSame('file_server', $account->purpose);
-        $this->assertSame('/data/ftp/accounts/'.$account->account_uuid.'/incoming', $account->homePath());
+        $this->assertSame(config('backup.ftp_root').'/accounts/'.$account->account_uuid.'/incoming', $account->homePath());
         $this->get(route('ftp.show', $account))->assertDontSee($password);
         $this->post(route('ftp.store'), ['purpose' => 'backup', 'username' => 'orphan', 'password' => $password, 'password_confirmation' => $password])->assertSessionHasErrors('device_id');
         $this->post(route('ftp.store'), $data)->assertSessionHasErrors('username');
@@ -176,13 +176,13 @@ class FtpAdminTest extends TestCase
         Schema::table('ftp_accounts', fn (Blueprint $table) => $table->dropColumn(['account_uuid', 'purpose', 'home_layout']));
         $this->get(route('ftp.index'))->assertOk()->assertSee('legacyolt')
             ->assertSee('A criação de novas contas aguarda a migration FTP-CORE-1.');
-        $this->get(route('ftp.show', $account))->assertOk()->assertSee('/data/ftp/'.$device->id.'/incoming');
+        $this->get(route('ftp.show', $account))->assertOk()->assertSee(config('backup.ftp_root').'/'.$device->id.'/incoming');
         $this->post(route('ftp.store'), ['purpose' => 'backup', 'device_id' => $device->id,
             'username' => 'newolt', 'password' => 'SyntheticPass123!',
             'password_confirmation' => 'SyntheticPass123!'])->assertStatus(503);
         Artisan::call('ftp:accounts');
         $rows = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
         $this->assertSame('legacy', $rows[0]['home_layout']);
-        $this->assertSame('/data/ftp/'.$device->id.'/incoming', $rows[0]['home']);
+        $this->assertSame(config('backup.ftp_root').'/'.$device->id.'/incoming', $rows[0]['home']);
     }
 }

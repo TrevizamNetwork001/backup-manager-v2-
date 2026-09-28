@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""PERF-1: real engine + Artisan/SQLite and synthetic local upload workloads.
+"""PERF-1: real engine + isolated Artisan/database and synthetic local uploads.
 
 Never imports production credentials, opens equipment sockets, or uses Docker.
-Each scenario has a fresh /tmp workspace; results explicitly identify SQLite.
+Each scenario has a fresh /tmp workspace; PostgreSQL requires a temporary socket.
 Usage: PYTHONPATH=engine python3 scripts/perf_baseline.py --php /path/to/php --output /tmp/results.json
 """
 
@@ -71,7 +71,7 @@ def control(php, mode, count):
 def engine_load(php, count, delay, same_device=False):
     control(php, 'same_device' if same_device else 'jobs', count)
     result = {'scenario': 'engine_same_device' if same_device else 'engine_queue', 'jobs': count,
-              'driver_delay_seconds': delay, 'control_plane': 'real Artisan/SQLite', 'workers': 4}
+              'driver_delay_seconds': delay, 'control_plane': 'real Artisan/' + os.environ['DB_CONNECTION'], 'workers': 4}
     started, ended, durations, queues = {}, {}, [], []
     operations = collections.Counter()
     commands = []
@@ -215,7 +215,13 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--only', choices=['engine', 'control', 'ftp'])
     parser.add_argument('--engine-cases', choices=['all', 'remaining'], default='all')
+    parser.add_argument('--pg-socket', type=Path)
+    parser.add_argument('--pg-bin', type=Path)
     args = parser.parse_args()
+    if args.pg_socket and (not args.pg_bin or args.pg_socket.name != 'socket'
+            or args.pg_socket.parent.parent != Path('/tmp')
+            or not args.pg_socket.parent.name.startswith('bm-perf-1-')):
+        parser.error('PostgreSQL requires --pg-bin and /tmp/bm-perf-1-*/socket')
     logging.getLogger().setLevel(logging.CRITICAL)
     results = []
     scenarios = []
@@ -245,13 +251,30 @@ def main():
                            'APP_CONFIG_CACHE': str(root / 'config.php'),
                            'BACKUP_STORAGE_ROOT': str(root / 'backups'), 'BACKUP_FTP_ROOT': str(root / 'ftp'),
                            'BACKUP_FTP_MAX_BYTES': str(64*1024*1024), 'BACKUP_ENGINE_HEALTH_SNAPSHOT_PATH': ''}
-            with patch.dict(os.environ, environment):
-                if scenario[0] == 'engine':
-                    result = engine_load(args.php, *scenario[1:])
-                elif scenario[0] == 'ftp':
-                    result = uploads(*scenario[1:])
-                else:
-                    result = control(args.php, *scenario[1:])
+            database = 'bm_perf_1_' + root.name.removeprefix('bm-perf-1-')
+            pg_args = ['-h', str(args.pg_socket), '-p', '55432', '-U', 'perf']
+            if args.pg_socket:
+                # Read-only identity check precedes database creation.
+                directory = subprocess.check_output([str(args.pg_bin / 'psql'), *pg_args,
+                    '-d', 'postgres', '-Atc', 'SHOW data_directory']).decode().strip()
+                if directory != str(args.pg_socket.parent / 'pgdata'):
+                    raise RuntimeError('Not the isolated PERF cluster')
+                subprocess.run([str(args.pg_bin / 'createdb'), *pg_args, '-T', 'template0', '-E', 'UTF8', database], check=True)
+                environment.update(DB_CONNECTION='pgsql', DB_DATABASE=database,
+                    DB_HOST=str(args.pg_socket), DB_PORT='55432', DB_USERNAME='perf', DB_PASSWORD='',
+                    PERF_PG_SOCKET=str(args.pg_socket))
+            try:
+                with patch.dict(os.environ, environment):
+                    if scenario[0] == 'engine':
+                        result = engine_load(args.php, *scenario[1:])
+                    elif scenario[0] == 'ftp':
+                        result = uploads(*scenario[1:])
+                    else:
+                        result = control(args.php, *scenario[1:])
+                    result['database_backend'] = environment['DB_CONNECTION']
+            finally:
+                if args.pg_socket:
+                    subprocess.run([str(args.pg_bin / 'dropdb'), *pg_args, database], check=True)
             results.append(result)
             args.output.write_text(json.dumps(results, indent=2) + '\n')
             print(json.dumps({key: value for key, value in result.items() if key not in ('job_ids', 'slowest')}), flush=True)

@@ -16,6 +16,7 @@ use App\Services\FtpServerSettings;
 use App\Services\HuaweiFtpBackupPolicy;
 use App\Services\OltFtpWizard;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -222,6 +223,7 @@ class HuaweiOltFtpTest extends TestCase
 
     public function test_prepare_button_posts_and_repairs_missing_policy_for_device_six(): void
     {
+        $this->resetHistoricalFixtureSequences();
         $site = Site::create(['name' => 'Lab', 'is_active' => true]);
         for ($id = 1; $id <= 5; $id++) {
             Device::create(['site_id' => $site->id, 'name' => 'Other '.$id,
@@ -317,8 +319,16 @@ class HuaweiOltFtpTest extends TestCase
         $device->update(['vendor' => 'Huawei', 'is_active' => false]);
         $this->post($url)->assertSessionHasErrors('account');
         $device->update(['is_active' => true]);
-        $account->update(['purpose' => 'file_server']);
+        $account->update(['purpose' => 'file_server', 'device_id' => null]);
         $this->post($url)->assertSessionHasErrors('account');
+        $this->assertDatabaseCount('device_backup_policies', 0);
+        if (DB::getDriverName() === 'pgsql') {
+            // PostgreSQL rejects this legacy invalid row before the application can read it.
+            $this->expectException(QueryException::class);
+            DB::transaction(fn () => $account->update(['purpose' => 'backup', 'device_id' => null]));
+
+            return;
+        }
         $account->update(['purpose' => 'backup', 'device_id' => null]);
         $this->post($url)->assertSessionHasErrors('account');
         $this->assertDatabaseCount('device_backup_policies', 0);
@@ -493,6 +503,7 @@ class HuaweiOltFtpTest extends TestCase
 
     public function test_status_polling_is_read_only_and_confirmation_creates_one_integration(): void
     {
+        $this->resetHistoricalFixtureSequences();
         $site = Site::create(['name' => 'Other', 'is_active' => true]);
         for ($number = 1; $number <= 3; $number++) {
             Device::create(['site_id' => $site->id, 'name' => 'Other '.$number,
@@ -697,6 +708,7 @@ class HuaweiOltFtpTest extends TestCase
 
     public function test_execution_22_accepts_provisioned_device_4_account_and_saved_ftp_host(): void
     {
+        $this->resetHistoricalFixtureSequences();
         $site = Site::create(['name' => 'Lab', 'is_active' => true]);
         for ($id = 1; $id <= 3; $id++) {
             Device::create(['site_id' => $site->id, 'name' => 'Other '.$id,
@@ -747,6 +759,18 @@ class HuaweiOltFtpTest extends TestCase
         $this->assertFalse($engine->job($execution->id)['ftp_account_available']);
         DB::table('ftp_accounts')->where('id', $account->id)->update(['provisioned_at' => now(), 'is_active' => false]);
         $this->assertFalse($engine->job($execution->id)['ftp_account_available']);
+    }
+
+    private function resetHistoricalFixtureSequences(): void
+    {
+        if (DB::getDriverName() !== 'pgsql') {
+            return;
+        }
+        // RefreshDatabase rolls back rows, but PostgreSQL sequence increments survive rollback.
+        foreach (['devices', 'ftp_accounts', 'backup_executions'] as $table) {
+            $this->assertDatabaseCount($table, 0);
+            DB::statement('ALTER SEQUENCE '.$table.'_id_seq RESTART WITH 1');
+        }
     }
 
     public function test_ftp_requires_olt_account_and_no_ssh_credential(): void

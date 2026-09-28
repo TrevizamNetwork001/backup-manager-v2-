@@ -1,6 +1,6 @@
 {
   "date": "2026-09-28",
-  "status": "provisional: PostgreSQL, Redis and Pure-FTPd wire tests pending manual runtime",
+  "status": "closed isolated synthetic baseline; production capacity and persistent-disk saturation unmeasured",
   "environment": {
     "os": "Linux-6.12.107+deb13-amd64-x86_64-with-glibc2.41",
     "python": "3.13.5",
@@ -9,7 +9,11 @@
     "logical_cpus": 4,
     "cpu_model": "Intel Xeon E5-2680 v4 @ 2.40GHz (VMware VM)",
     "ram_mib": 7947,
-    "storage_tested": "/tmp tmpfs"
+    "storage_tested": "/tmp tmpfs",
+    "postgresql": "17.11, extracted runtime; private Unix socket, temporary cluster",
+    "redis": "8.0.2, loopback:56379; no persistence",
+    "pure_ftpd": "1.0.50-2.2+b2; isolated PureDB/chroots",
+    "ftps": "TLSv1.3 / TLS_AES_256_GCM_SHA384, temporary trusted self-signed certificate"
   },
   "method": {
     "p95": "nearest rank",
@@ -19,7 +23,11 @@
     "rss": "process lifetime high water; harness producers allocate payload; child RSS max is not simultaneous sum",
     "io": "/proc/self/io deltas include children; tmpfs read_bytes/write_bytes zero is not zero I/O",
     "repetitions": 1,
-    "control_loads": "service only, except scheduler includes two runs; migration/seed excluded"
+    "control_loads": "service only, except scheduler includes two runs; migration/seed excluded",
+    "postgres_runs": "One exploratory run with concurrent test work, then one final engine run without concurrent PERF load suites. Control-plane results include initial exploration; final retention/FTPS integration sequential.",
+    "ftps_wire": "Four persistent sessions for transport table; integrated workload reconnects/authenticates per upload, excludes TLS credential setup and schema seed.",
+    "lock_wait": "One real retention contender, no artificial lock hold; transactionid wait sampled from pg_stat_activity. Not a lock p95.",
+    "scope": "All services/files/accounts temporary. No real deployment change, Docker socket write, migration or upload."
   },
   "engine": [
     {
@@ -814,15 +822,711 @@
   "validation": {
     "python_engine": "89 passed",
     "python_ftp_admin": "16 passed",
-    "python_purepw": "blocked: UID 65534 unavailable in sandbox",
+    "python_purepw": "passed on dedicated loopback/passive ports; original port profile conflicted (425)",
     "laravel": {
+      "tool": "phpunit",
+      "result": "passed",
       "tests": 341,
-      "passed": 340,
-      "failed": 1,
-      "assertions": 2086,
-      "failure": "pre-existing UI expectation SSH Pull, actual Portuguese label"
+      "passed": 341,
+      "assertions": 2089,
+      "duration_ms": 22207
     },
     "php_l_files": 189,
-    "critical_regressions": 6
-  }
+    "critical_regressions": 6,
+    "laravel_postgresql": {
+      "tool": "phpunit",
+      "result": "passed",
+      "tests": 341,
+      "passed": 341,
+      "assertions": 2096,
+      "duration_ms": 45270
+    },
+    "harness_guard_cases": "production APP_ENV, external SQLite database and external FTP root rejected; SQLite retention_apply 20 deletes 10",
+    "pint": "passed; fixtures formatted, production PHP unchanged",
+    "additional_production_fixes": 0,
+    "cleanup": {
+      "synthetic_postgres_stopped": true,
+      "synthetic_redis_stopped": true,
+      "remaining_perf_databases": 0,
+      "ftp_test_processes_terminated_by_probes": true
+    }
+  },
+  "postgres_engine": [
+    {
+      "scenario": "engine_queue",
+      "jobs": 20,
+      "driver_delay_seconds": 0.02,
+      "control_plane": "real Artisan/pgsql",
+      "workers": 4,
+      "seconds": 15.497628420998808,
+      "cpu_seconds": 0.11093400000000003,
+      "child_cpu_seconds": 20.461178999999998,
+      "peak_rss_kib": 38932,
+      "child_peak_rss_kib": 53644,
+      "io_delta": {
+        "rchar": 512672780,
+        "wchar": 18857,
+        "syscr": 60411,
+        "syscw": 603,
+        "read_bytes": 0,
+        "write_bytes": 0,
+        "cancelled_write_bytes": 0
+      },
+      "throughput_jobs_min": 77.4312022073027,
+      "latency": {
+        "mean_seconds": 5.979420309799752,
+        "p95_seconds": 9.655546844005585
+      },
+      "execution": {
+        "mean_seconds": 0.8038049234004575,
+        "p95_seconds": 0.9809369930007961
+      },
+      "queue": {
+        "mean_seconds": 5.1766395665988965,
+        "p95_seconds": 8.694099404994631
+      },
+      "command": {
+        "mean_seconds": 0.3891006171498743,
+        "p95_seconds": 0.5314928059960948
+      },
+      "artisan_operations": {
+        "ftp:expected": 3,
+        "ftp:accounts": 3,
+        "engine:claim": 21,
+        "engine:secret": 20,
+        "engine:complete": 20
+      },
+      "peak_active_devices": 3,
+      "device_overlap": 0,
+      "failure_rate": 0.0,
+      "database_result": {
+        "statuses": {
+          "succeeded": 20
+        },
+        "artifacts": 20,
+        "retries": 0
+      },
+      "subprocess_errors": {},
+      "attempted_jobs": 20,
+      "unreported_jobs": 0,
+      "database_backend": "pgsql"
+    },
+    {
+      "scenario": "engine_queue",
+      "jobs": 50,
+      "driver_delay_seconds": 0.02,
+      "control_plane": "real Artisan/pgsql",
+      "workers": 4,
+      "seconds": 30.35417690500617,
+      "cpu_seconds": 0.26485100000000006,
+      "child_cpu_seconds": 55.649863,
+      "peak_rss_kib": 39956,
+      "child_peak_rss_kib": 53644,
+      "io_delta": {
+        "rchar": 1248123510,
+        "wchar": 46715,
+        "syscr": 147096,
+        "syscw": 1467,
+        "read_bytes": 0,
+        "write_bytes": 0,
+        "cancelled_write_bytes": 0
+      },
+      "throughput_jobs_min": 98.83318560699382,
+      "latency": {
+        "mean_seconds": 13.701494325257954,
+        "p95_seconds": 24.2888920569967
+      },
+      "execution": {
+        "mean_seconds": 0.8569995086404378,
+        "p95_seconds": 1.0582994939904893
+      },
+      "queue": {
+        "mean_seconds": 12.84578959783743,
+        "p95_seconds": 23.517214827996213
+      },
+      "command": {
+        "mean_seconds": 0.41083607295743385,
+        "p95_seconds": 0.5490402959985659
+      },
+      "artisan_operations": {
+        "ftp:expected": 6,
+        "ftp:accounts": 6,
+        "engine:claim": 51,
+        "engine:secret": 50,
+        "engine:complete": 50
+      },
+      "peak_active_devices": 3,
+      "device_overlap": 0,
+      "failure_rate": 0.0,
+      "database_result": {
+        "statuses": {
+          "succeeded": 50
+        },
+        "artifacts": 50,
+        "retries": 0
+      },
+      "subprocess_errors": {},
+      "attempted_jobs": 50,
+      "unreported_jobs": 0,
+      "database_backend": "pgsql"
+    },
+    {
+      "scenario": "engine_queue",
+      "jobs": 100,
+      "driver_delay_seconds": 0.02,
+      "control_plane": "real Artisan/pgsql",
+      "workers": 4,
+      "seconds": 55.39050780200341,
+      "cpu_seconds": 0.5559429999999999,
+      "child_cpu_seconds": 110.12800900000002,
+      "peak_rss_kib": 42388,
+      "child_peak_rss_kib": 53760,
+      "io_delta": {
+        "rchar": 2473873582,
+        "wchar": 93149,
+        "syscr": 291571,
+        "syscw": 2907,
+        "read_bytes": 0,
+        "write_bytes": 0,
+        "cancelled_write_bytes": 0
+      },
+      "throughput_jobs_min": 108.32180888189991,
+      "latency": {
+        "mean_seconds": 25.843449149380177,
+        "p95_seconds": 47.11174729499908
+      },
+      "execution": {
+        "mean_seconds": 0.8698761324009684,
+        "p95_seconds": 1.030207325995434
+      },
+      "queue": {
+        "mean_seconds": 24.97483144421043,
+        "p95_seconds": 46.364609683005256
+      },
+      "command": {
+        "mean_seconds": 0.4175009234241987,
+        "p95_seconds": 0.546044468996115
+      },
+      "artisan_operations": {
+        "ftp:expected": 11,
+        "ftp:accounts": 11,
+        "engine:claim": 101,
+        "engine:secret": 100,
+        "engine:complete": 100
+      },
+      "peak_active_devices": 3,
+      "device_overlap": 0,
+      "failure_rate": 0.0,
+      "database_result": {
+        "statuses": {
+          "succeeded": 100
+        },
+        "artifacts": 100,
+        "retries": 0
+      },
+      "subprocess_errors": {},
+      "attempted_jobs": 100,
+      "unreported_jobs": 0,
+      "database_backend": "pgsql"
+    },
+    {
+      "scenario": "engine_queue",
+      "jobs": 20,
+      "driver_delay_seconds": 2.0,
+      "control_plane": "real Artisan/pgsql",
+      "workers": 4,
+      "seconds": 25.73115111599327,
+      "cpu_seconds": 0.13556200000000007,
+      "child_cpu_seconds": 26.438820999999997,
+      "peak_rss_kib": 42772,
+      "child_peak_rss_kib": 53760,
+      "io_delta": {
+        "rchar": 542562494,
+        "wchar": 19309,
+        "syscr": 63901,
+        "syscw": 639,
+        "read_bytes": 0,
+        "write_bytes": 0,
+        "cancelled_write_bytes": 0
+      },
+      "throughput_jobs_min": 46.63607914743218,
+      "latency": {
+        "mean_seconds": 12.498681432698504,
+        "p95_seconds": 19.98202792200027
+      },
+      "execution": {
+        "mean_seconds": 2.8770741469983476,
+        "p95_seconds": 2.9680421450029826
+      },
+      "queue": {
+        "mean_seconds": 9.622628818496741,
+        "p95_seconds": 17.2397995289939
+      },
+      "command": {
+        "mean_seconds": 0.4248429838304398,
+        "p95_seconds": 0.5571298439899692
+      },
+      "artisan_operations": {
+        "ftp:expected": 5,
+        "ftp:accounts": 5,
+        "engine:claim": 21,
+        "engine:secret": 20,
+        "engine:complete": 20
+      },
+      "peak_active_devices": 4,
+      "device_overlap": 0,
+      "failure_rate": 0.0,
+      "database_result": {
+        "statuses": {
+          "succeeded": 20
+        },
+        "artifacts": 20,
+        "retries": 0
+      },
+      "subprocess_errors": {},
+      "attempted_jobs": 20,
+      "unreported_jobs": 0,
+      "database_backend": "pgsql"
+    },
+    {
+      "scenario": "engine_same_device",
+      "jobs": 5,
+      "driver_delay_seconds": 0.1,
+      "control_plane": "real Artisan/pgsql",
+      "workers": 4,
+      "seconds": 34.211487114997,
+      "cpu_seconds": 0.06118999999999997,
+      "child_cpu_seconds": 12.872875999999998,
+      "peak_rss_kib": 43028,
+      "child_peak_rss_kib": 53760,
+      "io_delta": {
+        "rchar": 242043543,
+        "wchar": 6431,
+        "syscr": 28437,
+        "syscw": 288,
+        "read_bytes": 0,
+        "write_bytes": 0,
+        "cancelled_write_bytes": 0
+      },
+      "throughput_jobs_min": 8.768984493178946,
+      "latency": {
+        "mean_seconds": 15.474793549993773,
+        "p95_seconds": 29.045282927996595
+      },
+      "execution": {
+        "mean_seconds": 1.0457007516000885,
+        "p95_seconds": 1.1570567689923337
+      },
+      "queue": {
+        "mean_seconds": 14.42944056999404,
+        "p95_seconds": 27.918472959994688
+      },
+      "command": {
+        "mean_seconds": 0.4347259831242809,
+        "p95_seconds": 0.5486559950077208
+      },
+      "artisan_operations": {
+        "ftp:expected": 6,
+        "ftp:accounts": 6,
+        "engine:claim": 10,
+        "engine:secret": 5,
+        "engine:complete": 5
+      },
+      "peak_active_devices": 1,
+      "device_overlap": 0,
+      "failure_rate": 0.0,
+      "database_result": {
+        "statuses": {
+          "succeeded": 5
+        },
+        "artifacts": 5,
+        "retries": 0
+      },
+      "subprocess_errors": {},
+      "attempted_jobs": 5,
+      "unreported_jobs": 0,
+      "database_backend": "pgsql"
+    }
+  ],
+  "postgres_control": [
+    {
+      "mode": "scheduler",
+      "count": 100,
+      "seconds": 0.215786742,
+      "query_count": 311,
+      "query_ms": 131.02000000000004,
+      "peak_php_bytes": 33554432,
+      "result": {
+        "created": 100,
+        "duplicate": 0
+      },
+      "database_backend": "pgsql"
+    },
+    {
+      "mode": "scheduler",
+      "count": 1000,
+      "seconds": 2.44282069,
+      "query_count": 3083,
+      "query_ms": 1482.6499999998584,
+      "peak_php_bytes": 37748736,
+      "result": {
+        "created": 1000,
+        "duplicate": 0
+      },
+      "database_backend": "pgsql"
+    },
+    {
+      "mode": "retention",
+      "count": 1000,
+      "seconds": 0.415940085,
+      "query_count": 8,
+      "query_ms": 191.59999999999997,
+      "peak_php_bytes": 39845888,
+      "result": {
+        "scanned": 1000,
+        "candidates": 990,
+        "protected_latest": 0,
+        "missing": 0,
+        "deleted": 0,
+        "anomalies": 0,
+        "errors": 0
+      },
+      "database_backend": "pgsql"
+    },
+    {
+      "mode": "retention",
+      "count": 10000,
+      "seconds": 2.224676641,
+      "query_count": 8,
+      "query_ms": 188.37,
+      "peak_php_bytes": 109051904,
+      "result": {
+        "scanned": 10000,
+        "candidates": 9990,
+        "protected_latest": 0,
+        "missing": 0,
+        "deleted": 0,
+        "anomalies": 0,
+        "errors": 0
+      },
+      "database_backend": "pgsql"
+    },
+    {
+      "mode": "stale",
+      "count": 1000,
+      "seconds": 3.262744857,
+      "query_count": 3013,
+      "query_ms": 1830.1600000000099,
+      "peak_php_bytes": 37748736,
+      "result": {
+        "stale_count": 1000,
+        "batches": [
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          0
+        ],
+        "retry_count": 1000
+      },
+      "database_backend": "pgsql"
+    },
+    {
+      "mode": "retry",
+      "count": 100,
+      "seconds": 2.69892625,
+      "query_count": 2406,
+      "query_ms": 1536.370000000008,
+      "peak_php_bytes": 33554432,
+      "result": {
+        "attempts": 300,
+        "failures": 100
+      },
+      "database_backend": "pgsql"
+    },
+    {
+      "mode": "cancel",
+      "count": 100,
+      "seconds": 0.310903441,
+      "query_count": 401,
+      "query_ms": 181.4500000000001,
+      "peak_php_bytes": 33554432,
+      "result": {
+        "cancelled": 100
+      },
+      "database_backend": "pgsql"
+    }
+  ],
+  "postgres_retention": {
+    "initial_dry_run": {
+      "mode": "retention",
+      "count": 10000,
+      "seconds": 2.227166626,
+      "query_count": 9,
+      "query_ms": 186.93,
+      "peak_php_bytes": 109051904,
+      "result": {
+        "scanned": 10000,
+        "candidates": 9990,
+        "protected_latest": 0,
+        "missing": 0,
+        "deleted": 0,
+        "anomalies": 0,
+        "errors": 0
+      }
+    },
+    "contender_wall_seconds": 2.396985921994201,
+    "dry_run_lock_probe": {
+      "seconds": 2.488878671,
+      "locked_seconds": 2.358339311,
+      "peak_php_bytes": 100663296,
+      "query_count": 8,
+      "query_ms": 220.58,
+      "result": {
+        "scanned": 10000,
+        "candidates": 9990,
+        "protected_latest": 0,
+        "missing": 0,
+        "deleted": 0,
+        "anomalies": 0,
+        "errors": 0
+      }
+    },
+    "wait_events": [
+      "::0",
+      "Lock:transactionid:1"
+    ],
+    "apply": {
+      "seconds": 29.758927874,
+      "locked_seconds": 29.565299688,
+      "peak_php_bytes": 113246208,
+      "query_count": 9998,
+      "query_ms": 8529.569999999994,
+      "result": {
+        "scanned": 10000,
+        "candidates": 9990,
+        "protected_latest": 0,
+        "missing": 0,
+        "deleted": 9990,
+        "anomalies": 0,
+        "errors": 0
+      }
+    },
+    "database_statuses": "available|10\ndeleted|9990",
+    "remaining_files": 10,
+    "deadlocks": 0
+  },
+  "isolated_services": {
+    "redis_mutex": {
+      "first": true,
+      "second": false,
+      "exists": true
+    },
+    "skip_locked": {
+      "id": 2,
+      "seconds": 0.047290837
+    },
+    "scheduler_online": {
+      "created": 2,
+      "total": 2
+    },
+    "lifecycle_redis_offline": {
+      "job": 5,
+      "status": "retry_wait"
+    },
+    "scheduler_direct_redis_offline": {
+      "created": 2,
+      "total": 2
+    },
+    "scheduled_command_redis_offline": {
+      "exception": "RedisException",
+      "total": 0
+    },
+    "scheduler_return": {
+      "ran": true,
+      "total": 2
+    },
+    "redis_commands_after_restart": 17,
+    "redis_stats_before_restart": 20,
+    "redis_ping_return": "PONG",
+    "redis_mutex_return": {
+      "first": true,
+      "second": false,
+      "exists": true
+    },
+    "postgres_offline_rejected": true,
+    "postgres_return": {
+      "job": 7,
+      "status": "retry_wait"
+    },
+    "postgres_rows_preserved": 2,
+    "deadlocks": 0,
+    "query_plan": "Limit  (cost=16.34..16.35 rows=1 width=1750)\n  ->  LockRows  (cost=16.34..16.35 rows=1 width=1750)\n        ->  Sort  (cost=16.34..16.34 rows=1 width=1750)\n              Sort Key: backup_executions.id\n              ->  Nested Loop Anti Join  (cost=0.28..16.33 rows=1 width=1750)\n                    Join Filter: (r.device_id = backup_executions.device_id)\n                    ->  Index Scan using backup_executions_status_next_attempt_at_index on backup_executions  (cost=0.14..8.16 rows=1 width=1744)\n                          Index Cond: ((status)::text = 'queued'::text)\n                    ->  Index Scan using backup_executions_one_running_device on backup_executions r  (cost=0.14..8.16 rows=1 width=14)\n                          Filter: ((status)::text = 'running'::text)"
+  },
+  "postgres_connections": {
+    "peak_workload_connections": 1,
+    "peak_lock_waiters": 0,
+    "samples": 248,
+    "interval_ms": 50,
+    "seconds": 13.191200017929077,
+    "scope": "partial final engine run, monitor started after first two batches; monitor DB excluded"
+  },
+  "ftps_wire": {
+    "profile": {
+      "clients": 20,
+      "per_ip": 5,
+      "passive_ports": 10,
+      "max_bytes": 67108864,
+      "tls": "optional synthetic only; deployment server.py has no TLS flag"
+    },
+    "scenarios": [
+      {
+        "tls": false,
+        "uploads": 100,
+        "bytes_each": 4096,
+        "sessions": 4,
+        "seconds": 2.423200528995949,
+        "files_per_second": 41.267736121465326,
+        "mib_per_second": 0.16120209422447393,
+        "stor_latency": {
+          "mean_seconds": 0.0009559860799345188,
+          "p95_seconds": 0.0020143110014032573
+        },
+        "verified": 100
+      },
+      {
+        "tls": true,
+        "uploads": 100,
+        "bytes_each": 4096,
+        "sessions": 4,
+        "seconds": 3.662123124988284,
+        "files_per_second": 27.30656413970787,
+        "mib_per_second": 0.10666626617073387,
+        "stor_latency": {
+          "mean_seconds": 0.05084629297882202,
+          "p95_seconds": 0.056111666999640875
+        },
+        "verified": 100
+      },
+      {
+        "tls": true,
+        "uploads": 4,
+        "bytes_each": 8388608,
+        "sessions": 4,
+        "seconds": 3.3463081599911675,
+        "files_per_second": 1.1953471732891923,
+        "mib_per_second": 9.562777386313538,
+        "stor_latency": {
+          "mean_seconds": 0.07208350649307249,
+          "p95_seconds": 0.10446665898780338
+        },
+        "verified": 4
+      },
+      {
+        "tls": true,
+        "uploads": 4,
+        "bytes_each": 67108864,
+        "sessions": 4,
+        "seconds": 3.634234530996764,
+        "files_per_second": 1.100644431690796,
+        "mib_per_second": 70.44124362821094,
+        "stor_latency": {
+          "mean_seconds": 0.5162095810010214,
+          "p95_seconds": 0.607498986995779
+        },
+        "verified": 4
+      }
+    ],
+    "tls_version": "TLSv1.3",
+    "tls_cipher": "TLS_AES_256_GCM_SHA384",
+    "chroot_isolation": true,
+    "no_overwrite": true,
+    "sixth_same_ip_rejected": true,
+    "oversize_rejected": true,
+    "oversize_retained_bytes": 67108864,
+    "rotation_old_rejected": true,
+    "disabled_rejected": true
+  },
+  "ftps_postgres_pipeline": {
+    "uploads": 40,
+    "backup_uploads": 20,
+    "file_server_uploads": 20,
+    "bytes_each": 4096,
+    "sessions": 4,
+    "upload_seconds": 37.11732571000175,
+    "upload_files_per_second": 1.0776638465960784,
+    "scan_seconds": 41.269420157012064,
+    "scan_files_per_second": 0.9692406592536925,
+    "end_to_end_seconds": 78.38676048300113,
+    "end_to_end_files_per_second": 0.5102902510864245,
+    "upload_session_p95_seconds": 5.250043524996727,
+    "receipt_command_p95_seconds": 0.4918273869989207,
+    "batch_receipt_p95_seconds": 77.04009317800228,
+    "batch_receipt_mean_seconds": 63.518423709097746,
+    "db_counts": {
+      "executions": 20,
+      "succeeded": 20,
+      "artifacts": 20,
+      "receipts": 40
+    },
+    "unique_tokens": 40,
+    "processing_files": 0,
+    "deadlocks": 0,
+    "publication_postgres_outage": {
+      "offline_completion_rejected": true,
+      "files_after_outage": 41,
+      "files_after_restart": 41,
+      "artifacts_after_restart": 21,
+      "unique_receipts_after_restart": 41,
+      "processing_after_restart": 0
+    }
+  },
+  "engine_process_restart": {
+    "killed_running": 2,
+    "early_recovery": "0",
+    "stale_recovered": "2",
+    "retry_wait": 2,
+    "restart_ack_seconds": 2.77546841998992,
+    "succeeded": 2,
+    "artifacts": 2,
+    "attempts": "2|2",
+    "synthetic_time_advance": true
+  },
+  "claim_race": {
+    "processes": 2,
+    "barrier": "after selecting two different queued rows for the same device, while both row locks held",
+    "running_same_device": 1,
+    "queued_same_device": 1,
+    "loser_sqlstate": "23505",
+    "constraint": "backup_executions_one_running_device",
+    "lost_jobs": 0,
+    "duplicate_running": 0,
+    "classification": "contention handling deferred to PERF-2; existing unique index already preserves exclusion"
+  },
+  "real_limits": [
+    "4 workers per engine process; no shared global worker cap",
+    "20 global FTP clients, 5/IP, 10 passive ports configured; sixth same-IP session rejected",
+    "backup maximum 8 MiB, FTP default 8 MiB configurable to 64 MiB",
+    "stale batch maximum 100/cycle, retry backoff 60/300 seconds without jitter",
+    "Redis outage blocks scheduled events using Redis withoutOverlapping; direct backups:schedule and job lifecycle tested independently",
+    "scheduler grace 5 minutes; tested outage short, long-outage catch-up not proven",
+    "tmpfs/loopback and synthetic drivers; no disk saturation, real SSH devices, WAN, power-loss or production capacity test"
+  ],
+  "perf_2": [
+    "Artisan process/bootstrap and repeated job()/queries",
+    "poll delay and same-device queue latency",
+    "scanner serial database callbacks",
+    "retention locks and full-source hydration/hash within one transaction",
+    "23505 claim collision handling; keep partial unique constraint",
+    "streaming and shorter completion/retention transactions",
+    "scheduler N+1 and stale cap/backlog",
+    "outage tolerance beyond grace, retry jitter/backoff and heartbeat fencing",
+    "physical disk/fsync, large multi-source artifacts, WAN FTPS and deployment Paramiko pin"
+  ]
 }

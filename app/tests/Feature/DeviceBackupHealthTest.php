@@ -177,7 +177,7 @@ class DeviceBackupHealthTest extends TestCase
         $this->actingAs(User::factory()->viewer()->create());
         $this->get(route('devices.index'))->assertOk()
             ->assertSee('Policy 1')
-            ->assertSee('SSH Pull')
+            ->assertSee('Coleta via SSH')
             ->assertSee('Saudável')
             ->assertSee('Não avaliado');
     }

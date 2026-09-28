@@ -17,22 +17,36 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 
 $root = getenv('PERF_WORKSPACE');
+$postgres = getenv('DB_CONNECTION') === 'pgsql';
+$socket = getenv('PERF_PG_SOCKET');
+$isolatedDatabase = $postgres
+    ? is_string($socket) && preg_match('~\A/tmp/bm-perf-1-[a-zA-Z0-9_-]+/socket\z~D', $socket)
+        && getenv('DB_HOST') === $socket && getenv('DB_PORT') === '55432'
+        && preg_match('/\Abm_perf_1_[a-z0-9_]+\z/D', getenv('DB_DATABASE') ?: '') && getenv('DB_USERNAME') === 'perf'
+    : getenv('DB_CONNECTION') === 'sqlite' && getenv('DB_DATABASE') === $root.'/database.sqlite';
 if (! is_string($root) || ! preg_match('~\A/tmp/bm-perf-1-[a-zA-Z0-9_-]+\z~D', $root) || ! is_dir($root)
-    || getenv('APP_ENV') !== 'testing' || getenv('DB_CONNECTION') !== 'sqlite'
-    || getenv('DB_DATABASE') !== $root.'/database.sqlite' || getenv('BACKUP_STORAGE_ROOT') !== $root.'/backups') {
-    throw new RuntimeException('PERF requires an isolated temporary SQLite workspace.');
+    || getenv('APP_ENV') !== 'testing' || ! $isolatedDatabase || getenv('BACKUP_STORAGE_ROOT') !== $root.'/backups'
+    || getenv('BACKUP_FTP_ROOT') !== $root.'/ftp') {
+    throw new RuntimeException('PERF requires an isolated temporary database and workspace.');
 }
 require __DIR__.'/../app/vendor/autoload.php';
 $app = require __DIR__.'/../app/bootstrap/app.php';
 $app->make(Kernel::class)->bootstrap();
-if (config('database.default') !== 'sqlite' || config('database.connections.sqlite.database') !== $root.'/database.sqlite'
-    || config('backup.storage_root') !== $root.'/backups') {
+if (config('database.default') !== getenv('DB_CONNECTION')
+    || config('database.connections.'.getenv('DB_CONNECTION').'.database') !== getenv('DB_DATABASE')
+    || config('backup.storage_root') !== $root.'/backups' || config('backup.ftp_root') !== $root.'/ftp') {
     throw new RuntimeException('Cached configuration is not isolated.');
 }
+if ($postgres && (config('database.connections.pgsql.host') !== $socket
+    || (string) config('database.connections.pgsql.port') !== '55432'
+    || DB::selectOne('SHOW data_directory')->data_directory !== dirname($socket).'/pgdata')) {
+    throw new RuntimeException('PostgreSQL is not the isolated PERF cluster.');
+}
 $mode = $argv[1] ?? 'jobs';
-if (! in_array($mode, ['jobs', 'same_device', 'status', 'scheduler', 'retention', 'stale', 'retry', 'cancel'], true)) {
+if (! in_array($mode, ['jobs', 'same_device', 'status', 'scheduler', 'retention', 'retention_apply', 'stale', 'retry', 'cancel'], true)) {
     throw new InvalidArgumentException('Unknown PERF scenario.');
 }
+$retention = in_array($mode, ['retention', 'retention_apply'], true);
 $count = (int) ($argv[2] ?? 20);
 if ($count < 1 || $count > 10000) {
     throw new InvalidArgumentException('PERF count outside 1..10000.');
@@ -50,9 +64,9 @@ $clock = CarbonImmutable::parse('2026-09-28 12:00:00', 'UTC');
 $site = Site::create(['name' => 'PERF LAB', 'is_active' => true]);
 $policy = BackupPolicy::create(['name' => 'PERF', 'method' => 'ssh_pull', 'artifact_mode' => 'config',
     'schedule_type' => $mode === 'scheduler' ? 'daily' : 'manual', 'schedule_time' => '09:00',
-    'retention_count' => $mode === 'retention' ? 10 : null, 'is_active' => true]);
+    'retention_count' => $retention ? 10 : null, 'is_active' => true]);
 $associations = [];
-$devices = in_array($mode, ['retention', 'same_device'], true) ? 1 : $count;
+$devices = $retention || $mode === 'same_device' ? 1 : $count;
 for ($i = 0; $i < $devices; $i++) {
     $device = Device::create(['site_id' => $site->id, 'name' => 'PERF-'.$i, 'management_ip' => '198.18.'.intdiv($i, 250).'.'.($i % 250 + 1),
         'vendor' => 'MikroTik', 'platform' => 'network', 'is_active' => true]);
@@ -70,14 +84,14 @@ if ($mode !== 'scheduler') {
         $association = $associations[$i % count($associations)];
         $job = BackupExecution::create(['device_backup_policy_id' => $association->id, 'backup_policy_id' => $policy->id,
             'device_id' => $association->device_id, 'credential_id' => $association->credential_id,
-            'origin' => 'manual', 'status' => $mode === 'retention' ? 'succeeded' : 'queued', 'attempt' => 1,
+            'origin' => 'manual', 'status' => $retention ? 'succeeded' : 'queued', 'attempt' => 1,
             'max_attempts' => 3]);
-        if ($mode === 'retention') {
+        if ($retention) {
             DB::table('backup_executions')->where('id', $job->id)->update(['created_at' => $clock->subSeconds($count - $i)]);
             $job = $job->fresh();
         }
         $jobs[] = $job->id;
-        if ($mode === 'retention') {
+        if ($retention) {
             $relative = $engine->relativePath($job);
             $path = $root.'/backups/'.$relative;
             if (! is_dir(dirname($path))) {
@@ -106,9 +120,12 @@ if ($mode === 'scheduler') {
         throw new RuntimeException('Scheduler lost or duplicated occurrences.');
     }
     $result = compact('created', 'duplicate');
-} elseif ($mode === 'retention') {
-    $result = app(BackupRetention::class)->run(false, $clock);
-    if ($result['scanned'] !== $count || $result['candidates'] !== max(0, $count - 10) || $result['deleted'] !== 0) {
+} elseif ($retention) {
+    $apply = $mode === 'retention_apply';
+    $result = app(BackupRetention::class)->run($apply, $clock);
+    if ($result['scanned'] !== $count || $result['candidates'] !== max(0, $count - 10)
+        || $result['deleted'] !== ($apply ? max(0, $count - 10) : 0)
+        || BackupArtifact::where('status', 'available')->count() !== ($apply ? min(10, $count) : $count)) {
         throw new RuntimeException('Retention baseline mismatch.');
     }
 } elseif ($mode === 'stale') {

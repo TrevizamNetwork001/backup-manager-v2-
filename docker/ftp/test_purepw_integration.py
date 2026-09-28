@@ -10,6 +10,12 @@ import tempfile
 import time
 from pathlib import Path
 
+PORT = int(os.environ.get('PUREDB_TEST_PORT', '2121'))
+PASSIVE_PORTS = os.environ.get('PUREDB_TEST_PASSIVE_PORTS', '30000:30009')
+first, last = (int(value) for value in PASSIVE_PORTS.split(':'))
+if not (1024 <= PORT <= 65535 and 1024 <= first <= last <= 65535) or first <= PORT <= last:
+    raise ValueError('Invalid isolated test ports')
+
 
 def call(*args, secret=None):
     result = subprocess.run(['/usr/bin/pure-pw', *args], input=secret,
@@ -21,7 +27,7 @@ def call(*args, secret=None):
 
 def login(username, secret):
     client = ftplib.FTP()
-    client.connect('127.0.0.1', 2121, timeout=20)
+    client.connect('127.0.0.1', PORT, timeout=20)
     client.login(username, secret.decode())
     return client
 
@@ -48,7 +54,7 @@ with tempfile.TemporaryDirectory(prefix='bm-puredb-test-') as name:
     call('mkdb', db, '-f', passwd)
     assert Path(db).is_file() and Path(db).stat().st_size > 0
     server = subprocess.Popen(['/usr/sbin/pure-ftpd', '-l', f'puredb:{db}', '-E', '-A', '-R', '-K', '-G', '-r',
-                               '-u', '1', '-S', '127.0.0.1,2121', '-p', '30000:30009'],
+                               '-u', '1', '-S', f'127.0.0.1,{PORT}', '-p', PASSIVE_PORTS],
                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                               preexec_fn=lambda: resource.setrlimit(resource.RLIMIT_FSIZE, (1048576, 1048576)))
     try:
@@ -56,7 +62,7 @@ with tempfile.TemporaryDirectory(prefix='bm-puredb-test-') as name:
             if server.poll() is not None:
                 raise AssertionError('pure_ftpd_exited')
             try:
-                with socket.create_connection(('127.0.0.1', 2121), timeout=1):
+                with socket.create_connection(('127.0.0.1', PORT), timeout=1):
                     break
             except OSError:
                 time.sleep(0.1)
