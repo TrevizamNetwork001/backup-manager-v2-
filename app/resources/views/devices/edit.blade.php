@@ -353,7 +353,7 @@ set save-configuration interval 30</code></pre>
          unlike Huawei OLT which never does SSH at all — see
          Device::isHuaweiFtpEligible() / docs/CORE_STATUS.md. --}}
     @unless ($isOlt && ! $isVsol)
-    <article class="card">
+    <article class="card" id="device-ssh-security">
         <div class="card__header"><h2 class="card__title">SSH Host Key</h2></div>
         @php
             $mismatch = $device->ssh_host_key_fingerprint && $device->ssh_observed_fingerprint &&

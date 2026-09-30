@@ -69,6 +69,9 @@
             <h3 class="alert__title" id="execution-error-title">Detalhes do erro</h3>
             @if($backupExecution->error_code)<p class="alert__description"><strong>Código:</strong> <code>{{ $backupExecution->error_code }}</code></p>@endif
             @if($backupExecution->error_message)<p class="alert__description">{{ $backupExecution->error_message }}</p>@endif
+            @if(in_array($backupExecution->error_code, ['SSH_HOST_KEY_UNKNOWN', 'SSH_HOST_KEY_MISMATCH'], true) && $backupExecution->device && auth()->user()->can('devices.manage'))
+                <a href="{{ route('devices.edit', $backupExecution->device) }}#device-ssh-security" class="btn btn--secondary">Aprovar chave SSH do equipamento</a>
+            @endif
         </section>
     @endif
 
