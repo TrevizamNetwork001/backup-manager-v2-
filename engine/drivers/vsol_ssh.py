@@ -11,10 +11,19 @@ Prompt/pager handling here is ported from the V1 Telnet implementation
 (backup_manager/vsol_olt.py::collect_running_config, validated against real
 V1600GT hardware) onto an authenticated SSH channel instead of a raw Telnet
 socket — the device-side CLI behavior (prompts, `--More--` paging) is the
-same either way; only the transport changed. Unlike the Telnet version, no
-login/password handshake happens at the shell level: paramiko already
-authenticated over the SSH protocol before invoke_shell() runs, so the
-channel opens straight at the operational CLI prompt.
+same either way; only the transport changed.
+
+Homologation against a real unit (OLT-POP_SANCA-03) found this assumption
+wrong, though: even after the SSH protocol itself authenticates, the device
+still runs its own "User Access Verification" Login:/Password: handshake at
+the CLI level before reaching the operational `>`/`#` prompt — effectively
+Telnet-style authentication tunneled inside the SSH channel. `_login()`
+reproduces that handshake. The same homologation also saw one login attempt
+rejected ("Bad UserName or Bad Password , Login Failed.") immediately
+followed by the device re-presenting its own Login: prompt, succeeding on
+the very next attempt with the exact same credentials — so `_login()` retries
+before giving up rather than treating the first rejection as a hard
+credential failure.
 """
 
 import re
@@ -29,20 +38,49 @@ from driver_base import BackupDriver, ANALYZE, BACKUP, PROBE
 from results import AnalysisResult, BackupResult, ProbeResult
 
 
-PROMPT = re.compile(r'[>#]\s*$')
+FLAGS = re.MULTILINE
+PROMPT = re.compile(r'[>#]\s*$', FLAGS)
+LOGIN_PROMPT = re.compile(r'(?i)login\s*:\s*$|user\s*name\s*:\s*$', FLAGS)
+PASSWORD_PROMPT = re.compile(r'(?i)password\s*:\s*$', FLAGS)
+LOGIN_REJECTED = re.compile(r'(?i)bad\s+user\s*name\s+or\s+bad\s+password|login\s+failed')
 CLI_ERROR = re.compile(r'(?i)unknown command|invalid input|command error')
+STOP_PATTERNS = (PROMPT, LOGIN_PROMPT, PASSWORD_PROMPT)
+
+
+def _strip_controls(data):
+    # Strip common three-byte Telnet/ANSI control sequences some VSOL CLIs
+    # still emit even over SSH. Deliberately leaves backspace alone — this
+    # is only used for in-loop pager/prompt detection, where each `--More--`
+    # occurrence must keep counting even after the device later erases it
+    # with backspaces (see _clean() for the version that actually processes
+    # those).
+    data = re.sub(rb'\xff[\xfb-\xfe].', b'', data)
+    text = data.decode('iso-8859-1', errors='replace')
+    return re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]', '', text)
 
 
 def _clean(data):
-    # Strip common three-byte Telnet/ANSI control sequences some VSOL CLIs
-    # still emit even over SSH, and backspace characters from line editing.
-    data = re.sub(rb'\xff[\xfb-\xfe].', b'', data)
-    text = data.decode('iso-8859-1', errors='replace')
-    text = re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]', '', text)
-    return text.replace('\x08', '')
+    """Final, human-readable reconstruction of the terminal output. The
+    device erases its own `--More--` prompt with a real backspace/space/
+    backspace sequence — homologation against OLT-POP_SANCA-03 found that
+    just discarding the backspace *bytes* (the original approach) leaves the
+    erased text's leftovers (including a stray NUL byte the device sends
+    after `--More--`) stitched into the next real config line, which then
+    fails `storage.validate_ssh_command_output`'s "no NUL bytes" check.
+    Backspace is processed here the way a real terminal would: it removes
+    the preceding character instead of being silently dropped."""
+    text = _strip_controls(data)
+    output = []
+    for char in text:
+        if char == '\x08':
+            if output:
+                output.pop()
+        else:
+            output.append(char)
+    return ''.join(output).replace('\x00', '')
 
 
-def _receive(channel, timeout):
+def _receive(channel, timeout, stop_patterns=(PROMPT,)):
     chunks = bytearray()
     deadline = time.monotonic() + timeout
     quiet_deadline = None
@@ -55,7 +93,7 @@ def _receive(channel, timeout):
             if len(chunks) + len(chunk) > MAX_BYTES:
                 raise BackupError('ARTIFACT_INVALID')
             chunks.extend(chunk)
-            text = _clean(bytes(chunks))
+            text = _strip_controls(bytes(chunks))
             pager_count = text.count('--More--') + text.count('---- More ----')
             if pager_count > handled_pagers:
                 channel.sendall(b' ' * (pager_count - handled_pagers))
@@ -63,7 +101,7 @@ def _receive(channel, timeout):
                 quiet_deadline = None
                 continue
             quiet_deadline = time.monotonic() + 0.35
-            if PROMPT.search(text):
+            if any(pattern.search(text) for pattern in stop_patterns):
                 break
         elif channel.closed or channel.exit_status_ready():
             break
@@ -74,9 +112,30 @@ def _receive(channel, timeout):
     return _clean(bytes(chunks))
 
 
-def _send(channel, value, timeout=30):
+def _send(channel, value, timeout=30, stop_patterns=(PROMPT,)):
     channel.sendall((value + '\n').encode('iso-8859-1'))
-    return _receive(channel, timeout)
+    return _receive(channel, timeout, stop_patterns)
+
+
+def _login(channel, username, password, attempts=2):
+    """Reproduce the device's own Login:/Password: handshake at the CLI
+    level, which happens even after the SSH protocol itself has already
+    authenticated (see module docstring). Retries once on an explicit
+    rejection before failing for real — homologation saw the very first
+    attempt rejected and the second succeed with identical credentials."""
+    response = _receive(channel, 30, stop_patterns=(LOGIN_PROMPT,))
+    for attempt in range(attempts):
+        if not LOGIN_PROMPT.search(response):
+            raise BackupError('VSOL_PROMPT_FAILED')
+        response = _send(channel, username, stop_patterns=(PASSWORD_PROMPT,))
+        if not PASSWORD_PROMPT.search(response):
+            raise BackupError('VSOL_PROMPT_FAILED')
+        response = _send(channel, password, stop_patterns=(PROMPT, LOGIN_PROMPT))
+        if PROMPT.search(response) and not LOGIN_REJECTED.search(response):
+            return response
+        if attempt + 1 >= attempts or not LOGIN_PROMPT.search(response):
+            raise BackupError('SSH_AUTH_FAILED')
+    raise BackupError('SSH_AUTH_FAILED')
 
 
 def _connect(host, port, username, password, algorithm, fingerprint, observe):
@@ -121,9 +180,7 @@ def export_config(host, port, username, password, algorithm=None, fingerprint=No
         channel = client.invoke_shell(width=160, height=48)
         channel.settimeout(20)
         try:
-            response = _receive(channel, 30)
-            if not PROMPT.search(response):
-                raise BackupError('VSOL_PROMPT_FAILED')
+            response = _login(channel, username, password)
             if not response.rstrip().endswith('#'):
                 response = _send(channel, 'enable')
                 if 'password' in response.casefold():
@@ -164,9 +221,7 @@ def probe_connection(host, port, username, password, algorithm=None, fingerprint
         channel = client.invoke_shell(width=160, height=48)
         channel.settimeout(20)
         try:
-            response = _receive(channel, 30)
-            if not PROMPT.search(response):
-                raise BackupError('VSOL_PROMPT_FAILED')
+            _login(channel, username, password)
         finally:
             channel.close()
         return round((time.monotonic() - started) * 1000, 1)
