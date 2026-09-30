@@ -193,7 +193,7 @@ class EngineJobService
     public function relativePath(BackupExecution $job): string
     {
         $vendor = mb_strtolower(trim($job->device->vendor));
-        $extension = $vendor === 'huawei' ? 'cfg' : 'rsc';
+        $extension = in_array($vendor, ['huawei', 'vsol'], true) ? 'cfg' : 'rsc';
         $device = $job->device;
         $site = $device->site;
         $siteName = $this->safePathName($site->name, 'SITE-'.$site->id);
@@ -461,7 +461,10 @@ class EngineJobService
             // literals — that duplication is exactly what let VSOL silently fail
             // this check after Device::isHuaweiFtpEligible() was extended to
             // cover it (caught by VsolOltFtpTest). Single source of truth.
-            $supported = $payload['method'] === 'ssh_pull' && $payload['platform'] === 'network' && in_array($vendor, ['mikrotik', 'huawei'], true)
+            $supported = $payload['method'] === 'ssh_pull' && (
+                    ($payload['platform'] === 'network' && in_array($vendor, ['mikrotik', 'huawei'], true))
+                    || ($payload['platform'] === 'olt' && $vendor === 'vsol')
+                )
                 || $payload['method'] === 'ftp_push' && $payload['ftp_account_available'] && $job->device->isHuaweiFtpEligible();
             if (! $payload['eligible'] || ! $supported || $payload['artifact_mode'] !== 'config') {
                 throw ValidationException::withMessages(['status' => 'Job não é elegível para conclusão.']);
@@ -565,6 +568,9 @@ class EngineJobService
             'HUAWEI_PROMPT_FAILED' => 'Prompt Huawei não reconhecido.',
             'HUAWEI_PAGING_FAILED' => 'Paginação Huawei não pôde ser desativada.',
             'HUAWEI_EXPORT_FAILED' => 'Export de configuração Huawei falhou.',
+            'VSOL_PROMPT_FAILED' => 'Prompt da OLT VSOL não reconhecido.',
+            'VSOL_PRIVILEGED_MODE_FAILED' => 'A OLT VSOL não liberou o modo privilegiado.',
+            'VSOL_EXPORT_FAILED' => 'Export de configuração da OLT VSOL falhou.',
             'FTP_ACCOUNT_UNAVAILABLE' => 'Conta FTP indisponível.',
             'FTP_TRIGGER_FAILED' => 'Disparo do backup FTP falhou.',
             'FTP_RECEIVE_TIMEOUT' => 'Arquivo FTP não recebido no prazo.',

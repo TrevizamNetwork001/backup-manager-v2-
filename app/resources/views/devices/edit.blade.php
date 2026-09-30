@@ -16,6 +16,7 @@
     @php
         $isHuaweiFtp = $device->isHuaweiFtpEligible();
         $isOlt = $device->platform === 'olt';
+        $isVsol = mb_strtolower(trim($device->vendor)) === 'vsol';
     @endphp
 
     <article class="card">
@@ -36,8 +37,7 @@
     @if ($isHuaweiFtp)
     @php
         $wizard = app(\App\Services\OltFtpWizard::class)->snapshot($device);
-        $vendor = mb_strtolower(trim($device->vendor));
-        $isVsol = $vendor === 'vsol';
+        $vendorLabel = $isVsol ? 'VSOL' : 'Huawei';
         // "a OLT" (feminine) vs. "o equipamento" (masculine) — same gender
         // agreement the pre-existing OLT-only strings already used.
         $equipmentName = $isOlt ? 'OLT' : 'equipamento';
@@ -46,7 +46,7 @@
         $daOrDo = $isOlt ? 'da' : 'do';
     @endphp
     <article class="card">
-        <div class="card__header"><div><h2 class="card__title">Integração Huawei {{ $isOlt ? 'OLT' : 'Rede' }} / FTP</h2><p class="card__description">Estado: {{ $wizard['operational'] ? 'Operacional' : 'Configuração pendente' }}</p></div></div>
+        <div class="card__header"><div><h2 class="card__title">Integração {{ $vendorLabel }} {{ $isOlt ? 'OLT' : 'Rede' }} / FTP</h2><p class="card__description">Estado: {{ $wizard['operational'] ? 'Operacional' : 'Configuração pendente' }}</p></div></div>
         <div class="card__body"><button type="button" class="btn btn--secondary" id="open-olt-wizard">Abrir configuração guiada</button></div>
     </article>
     <dialog id="olt-wizard" class="olt-wizard" aria-labelledby="olt-wizard-title" data-state="{{ $wizard['state'] }}" data-current-step="{{ $wizard['current_step'] }}" data-execution-id="{{ $wizard['execution']?->id }}" data-execution-status="{{ $wizard['execution']?->status }}">
@@ -55,7 +55,7 @@
         @endphp
         <div class="olt-wizard-header">
             <div>
-                <h2 id="olt-wizard-title">Configuração Huawei {{ $isOlt ? 'OLT' : 'Rede' }} / FTP</h2>
+                <h2 id="olt-wizard-title">Configuração {{ $vendorLabel }} {{ $isOlt ? 'OLT' : 'Rede' }} / FTP</h2>
                 <p id="olt-wizard-count">Etapa {{ $wizardStep }} de 6</p>
             </div>
             <button type="button" id="close-olt-wizard" class="secondary-button" aria-label="Fechar configuração">Fechar</button>
@@ -349,7 +349,10 @@ set save-configuration interval 30</code></pre>
     </style>
     @endif
 
-    @unless ($isOlt)
+    {{-- VSOL OLT can use ssh_pull (this section's whole reason for being),
+         unlike Huawei OLT which never does SSH at all — see
+         Device::isHuaweiFtpEligible() / docs/CORE_STATUS.md. --}}
+    @unless ($isOlt && ! $isVsol)
     <article class="card">
         <div class="card__header"><h2 class="card__title">SSH Host Key</h2></div>
         @php

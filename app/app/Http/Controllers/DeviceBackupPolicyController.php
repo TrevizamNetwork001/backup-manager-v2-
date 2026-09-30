@@ -38,7 +38,12 @@ class DeviceBackupPolicyController extends Controller
              ! $device->ftpAccount?->is_active || $backupPolicy->artifact_mode !== 'config')) {
             throw ValidationException::withMessages(['device_id' => 'FTP Push requer um equipamento compatível e conta FTP ativa.']);
         }
-        if ($backupPolicy->method === 'ssh_pull' && $device->platform === 'olt') {
+        // VSOL OLT is the one exception: unlike Huawei OLT (never SSH-managed),
+        // this vendor's OLT genuinely accepts an SSH-pulled `show
+        // running-config`, so it's allowed either method — see
+        // Device::isHuaweiFtpEligible() / docs/CORE_STATUS.md.
+        if ($backupPolicy->method === 'ssh_pull' && $device->platform === 'olt'
+            && mb_strtolower(trim($device->vendor)) !== 'vsol') {
             throw ValidationException::withMessages(['device_id' => 'OLT requer política FTP Push.']);
         }
 

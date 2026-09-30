@@ -8,9 +8,13 @@ from registry import registry
 from drivers.mikrotik_ssh import MikroTikRouterOsSshDriver
 from drivers.huawei_vrp_ssh import HuaweiVrpSshDriver
 from drivers.huawei_olt_ftp import HuaweiOltFtpReceivedDriver
+from drivers.vsol_olt_ftp import VsolOltFtpReceivedDriver
+from drivers.vsol_ssh import VsolOltSshDriver
 
 registry.register(('mikrotik', 'network', 'ssh_pull'), MikroTikRouterOsSshDriver())
 registry.register(('huawei', 'network', 'ssh_pull'), HuaweiVrpSshDriver())
 registry.register(('huawei', 'olt', 'ftp_push'), HuaweiOltFtpReceivedDriver())
+registry.register(('vsol', 'olt', 'ftp_push'), VsolOltFtpReceivedDriver())
+registry.register(('vsol', 'olt', 'ssh_pull'), VsolOltSshDriver())
 
 __all__ = ['registry']

@@ -310,6 +310,23 @@ ainda com hardware): o V1 exigia extensão `.config` no nome do arquivo por
 convenção própria do script; não está confirmado se é exigência do firmware
 VSOL ou não — o wizard orienta tentar `.config` se `.cfg` for recusado.
 
+**Atualização pós-homologação real**: o equipamento VSOL de teste do usuário
+não tem FTP de verdade — o `copy startup-config` dele só aceita destino
+`tftp://`, não `ftp://`. TFTP (UDP, sem autenticação) não é algo que esta
+instalação provisiona (seria um serviço novo inteiro, com implicações de
+segurança próprias por não ter usuário/senha). Em vez de push por
+FTP/TFTP, a decisão foi **puxar a configuração via SSH** (`show
+running-config`), reaproveitando o padrão `ssh_pull` já usado por
+MikroTik/Huawei rede — `engine/drivers/vsol_ssh.py`, portado da
+implementação Telnet já validada do V1
+(`backup_manager/vsol_olt.py::collect_running_config`) para um canal SSH
+autenticado. `Device::isHuaweiFtpEligible()` (FTP push) e a nova exceção
+em `DeviceBackupPolicyController` (permitir `ssh_pull` também para
+`platform=olt` quando `vendor=vsol`) coexistem — a eligibilidade de FTP
+push pra VSOL OLT fica registrada no código para o caso de outro modelo
+VSOL realmente suportar FTP no futuro, mas o caminho validado e recomendado
+hoje é o SSH pull.
+
 ## Antes do polimento de UI
 
 Com os P0/P1 desta fase corrigidos, não há bloqueio técnico remanescente
