@@ -42,8 +42,7 @@ class FtpAdminController extends Controller
         $this->authorize('ftp.view');
         $ftpAccount->load('device');
         $huaweiPolicy = app(\App\Services\HuaweiFtpBackupPolicy::class);
-        $isHuaweiBackup = ($ftpAccount->purpose ?? 'backup') === 'backup' && $ftpAccount->device?->platform === 'olt' &&
-            mb_strtolower(trim($ftpAccount->device->vendor)) === 'huawei';
+        $isHuaweiBackup = ($ftpAccount->purpose ?? 'backup') === 'backup' && (bool) $ftpAccount->device?->isHuaweiFtpEligible();
         $policyReady = $isHuaweiBackup && $huaweiPolicy->active($ftpAccount->device) !== null;
         $accountReady = $isHuaweiBackup && $ftpAccount->is_active && ! $ftpAccount->deletion_mode && $ftpAccount->device->is_active;
         $pureDbReady = $accountReady && $ftpAccount->provisioned_at !== null && $ftpAccount->sync_error === null;
@@ -74,8 +73,8 @@ class FtpAdminController extends Controller
                 throw ValidationException::withMessages(['account' => 'A conta deve ser de backup, ter equipamento e não estar em exclusão.']);
             }
             $device = Device::query()->lockForUpdate()->findOrFail($account->device_id);
-            if (! $device->is_active || $device->platform !== 'olt' || mb_strtolower(trim($device->vendor)) !== 'huawei') {
-                throw ValidationException::withMessages(['account' => 'O equipamento deve ser uma OLT Huawei ativa.']);
+            if (! $device->is_active || ! $device->isHuaweiFtpEligible()) {
+                throw ValidationException::withMessages(['account' => 'O equipamento deve ser um Huawei (OLT, roteador ou switch) ativo.']);
             }
 
             $existingAssociationIds = $device->deviceBackupPolicies()->pluck('id')->all();

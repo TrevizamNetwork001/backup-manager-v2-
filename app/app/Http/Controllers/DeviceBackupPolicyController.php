@@ -34,9 +34,9 @@ class DeviceBackupPolicyController extends Controller
         }
         $device = ($backupPolicy->method === 'ftp_push' ? Device::with('ftpAccount') : Device::query())->findOrFail($validated['device_id']);
         if ($backupPolicy->method === 'ftp_push' &&
-            (mb_strtolower(trim($device->vendor)) !== 'huawei' || $device->platform !== 'olt' ||
+            (! $device->isHuaweiFtpEligible() ||
              ! $device->ftpAccount?->is_active || $backupPolicy->artifact_mode !== 'config')) {
-            throw ValidationException::withMessages(['device_id' => 'FTP Push requer Huawei OLT e conta FTP ativa.']);
+            throw ValidationException::withMessages(['device_id' => 'FTP Push requer um equipamento Huawei e conta FTP ativa.']);
         }
         if ($backupPolicy->method === 'ssh_pull' && $device->platform === 'olt') {
             throw ValidationException::withMessages(['device_id' => 'OLT requer política FTP Push.']);

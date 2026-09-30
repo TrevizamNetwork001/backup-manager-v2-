@@ -14,7 +14,7 @@ class OltFtpWizardController extends Controller
     public function saveServer(Request $request, Device $device, OltFtpWizard $wizard, FtpServerSettings $settings): RedirectResponse
     {
         $this->authorize('ftp.manage');
-        $wizard->assertOlt($device);
+        $wizard->assertEligible($device);
         $validated = $request->validate([
             'ftp_host' => ['required', 'string', 'max:255', function ($attribute, $value, $fail) {
                 if (! FtpServerSettings::validAddress(trim($value))) $fail('Informe um IPv4, IPv6 ou hostname válido.');
@@ -38,7 +38,7 @@ class OltFtpWizardController extends Controller
     public function status(Device $device, OltFtpWizard $wizard): JsonResponse
     {
         $this->authorize('ftp.view');
-        $wizard->assertOlt($device);
+        $wizard->assertEligible($device);
         $snapshot = $wizard->snapshot($device);
         $execution = $snapshot['execution'];
         return response()->json([

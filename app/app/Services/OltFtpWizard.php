@@ -10,6 +10,12 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
 
+/**
+ * Historically named/tabled for OLT (table `olt_ftp_integrations`), this
+ * wizard now also covers Huawei network devices (router/switch) — VRP
+ * firmware can push its own saved-configuration to an FTP server the same
+ * way an OLT does. See Device::isHuaweiFtpEligible().
+ */
 class OltFtpWizard
 {
     public function snapshot(Device $device): array
@@ -27,7 +33,21 @@ class OltFtpWizard
         $confirmed = $synced && $server && $integration?->olt_confirmed_at !== null &&
             $integration->ftp_host === $host &&
             $integration->management_ip === $device->management_ip;
-        $execution = $confirmed ? $integration->testExecution : null;
+        // OLT: the operator triggers one specific execution on demand (exact
+        // expected filename). Network devices (router/switch) push
+        // automatically on their own schedule with their own filename — VRP's
+        // `save-configuration backup-to-server` has no "send now with this
+        // name" equivalent — so instead of waiting on one pre-created
+        // execution, we watch for whichever spontaneous ftp_received
+        // execution shows up first after confirmation.
+        $execution = ! $confirmed ? null : ($device->platform === 'olt'
+            ? $integration->testExecution
+            : BackupExecution::query()->with('artifact')
+                ->where('device_id', $device->id)
+                ->where('device_backup_policy_id', $integration->test_association_id)
+                ->where('origin', 'ftp_received')
+                ->where('created_at', '>=', $integration->olt_confirmed_at)
+                ->orderByDesc('id')->first());
         $operational = $execution?->status === 'succeeded' &&
             $execution->device_id === $device->id &&
             $execution->device_backup_policy_id === $integration->test_association_id &&
@@ -56,7 +76,7 @@ class OltFtpWizard
     {
         DB::transaction(function () use ($device) {
             $locked = Device::query()->lockForUpdate()->findOrFail($device->id);
-            $this->assertOlt($locked);
+            $this->assertEligible($locked);
             $ready = $this->snapshot($locked);
             if (! $ready['synced'] || ! $ready['server']) {
                 throw ValidationException::withMessages(['wizard' => 'A conta precisa estar sincronizada e o servidor FTP configurado.']);
@@ -74,6 +94,11 @@ class OltFtpWizard
             $integration->ftp_host = $ready['host'];
             $integration->management_ip = $locked->management_ip;
             $integration->test_execution_id = null;
+            if ($locked->platform !== 'olt') {
+                // Network devices have no on-demand "startTest" step (see
+                // snapshot()) — the association to watch is provisioned here.
+                $integration->test_association_id = app(HuaweiFtpBackupPolicy::class)->ensure($locked)->id;
+            }
             $integration->save();
         });
     }
@@ -82,7 +107,8 @@ class OltFtpWizard
     {
         return DB::transaction(function () use ($device) {
             $locked = Device::query()->lockForUpdate()->findOrFail($device->id);
-            $this->assertOlt($locked);
+            $this->assertEligible($locked);
+            abort_unless($locked->platform === 'olt', 404, 'Equipamentos de rede aguardam o próximo envio automático; não há teste sob demanda.');
             $ready = $this->snapshot($locked);
             if (! $ready['confirmed']) {
                 throw ValidationException::withMessages(['wizard' => 'Confirme a configuração manual da OLT após preparar o FTP.']);
@@ -109,9 +135,9 @@ class OltFtpWizard
         });
     }
 
-    public function assertOlt(Device $device): void
+    public function assertEligible(Device $device): void
     {
-        abort_unless(mb_strtolower(trim($device->vendor)) === 'huawei' && $device->platform === 'olt', 404);
+        abort_unless($device->isHuaweiFtpEligible(), 404);
         abort_unless(Schema::hasTable('olt_ftp_integrations'), 503);
     }
 }

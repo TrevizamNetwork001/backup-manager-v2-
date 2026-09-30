@@ -14,7 +14,8 @@
 
 <div class="modern-form-page stack">
     @php
-        $isHuaweiOltFtp = mb_strtolower(trim($device->vendor)) === 'huawei' && $device->platform === 'olt';
+        $isHuaweiFtp = $device->isHuaweiFtpEligible();
+        $isOlt = $device->platform === 'olt';
     @endphp
 
     <article class="card">
@@ -32,12 +33,18 @@
 
     </article>
 
-    @if ($isHuaweiOltFtp)
+    @if ($isHuaweiFtp)
     @php
         $wizard = app(\App\Services\OltFtpWizard::class)->snapshot($device);
+        // "a OLT" (feminine) vs. "o equipamento" (masculine) — same gender
+        // agreement the pre-existing OLT-only strings already used.
+        $equipmentName = $isOlt ? 'OLT' : 'equipamento';
+        $aOrO = $isOlt ? 'a' : 'o';
+        $naOrNo = $isOlt ? 'na' : 'no';
+        $daOrDo = $isOlt ? 'da' : 'do';
     @endphp
     <article class="card">
-        <div class="card__header"><div><h2 class="card__title">Integração Huawei OLT / FTP</h2><p class="card__description">Estado: {{ $wizard['operational'] ? 'Operacional' : 'Configuração pendente' }}</p></div></div>
+        <div class="card__header"><div><h2 class="card__title">Integração Huawei {{ $isOlt ? 'OLT' : 'Rede' }} / FTP</h2><p class="card__description">Estado: {{ $wizard['operational'] ? 'Operacional' : 'Configuração pendente' }}</p></div></div>
         <div class="card__body"><button type="button" class="btn btn--secondary" id="open-olt-wizard">Abrir configuração guiada</button></div>
     </article>
     <dialog id="olt-wizard" class="olt-wizard" aria-labelledby="olt-wizard-title" data-state="{{ $wizard['state'] }}" data-current-step="{{ $wizard['current_step'] }}" data-execution-id="{{ $wizard['execution']?->id }}" data-execution-status="{{ $wizard['execution']?->status }}">
@@ -46,7 +53,7 @@
         @endphp
         <div class="olt-wizard-header">
             <div>
-                <h2 id="olt-wizard-title">Configuração Huawei OLT / FTP</h2>
+                <h2 id="olt-wizard-title">Configuração Huawei {{ $isOlt ? 'OLT' : 'Rede' }} / FTP</h2>
                 <p id="olt-wizard-count">Etapa {{ $wizardStep }} de 6</p>
             </div>
             <button type="button" id="close-olt-wizard" class="secondary-button" aria-label="Fechar configuração">Fechar</button>
@@ -56,7 +63,7 @@
             <span id="olt-wizard-progress-fill" style="width: {{ $wizardStep / 6 * 100 }}%"></span>
         </div>
         <ol class="olt-wizard-steps" aria-label="Etapas da configuração">
-            @foreach (['Conta FTP', 'Sincronização PureDB', 'Servidor FTP', 'Configuração da OLT', 'Teste de integração', 'Integração validada'] as $number => $label)
+            @foreach (['Conta FTP', 'Sincronização PureDB', 'Servidor FTP', $isOlt ? 'Configuração da OLT' : 'Configuração do equipamento', 'Teste de integração', 'Integração validada'] as $number => $label)
                 <li data-wizard-step-item="{{ $number + 1 }}" @class(['is-current' => $number + 1 === $wizardStep, 'is-complete' => $number + 1 < $wizardStep, 'is-pending' => $number + 1 > $wizardStep, 'is-error' => $number + 1 === 5 && $wizard['state'] === 'failed'])>
                     <button type="button" data-wizard-step="{{ $number + 1 }}" @if ($number + 1 === $wizardStep) aria-current="step" @endif @if ($number + 1 > $wizardStep) disabled @endif>
                         <span class="olt-wizard-step-marker" aria-hidden="true">{{ $number + 1 < $wizardStep ? '✓' : $number + 1 }}</span>
@@ -69,7 +76,7 @@
             <h3>Conta FTP</h3>
             @if ($wizard['account'])
                 <p>Usuário atual: <strong>{{ $wizard['account']->username }}</strong>.</p>
-                <p>Trocar usuário ou senha depois de configurar a OLT exigirá atualizar os dados na OLT.</p>
+                <p>Trocar usuário ou senha depois de configurar {{ $aOrO }} {{ $equipmentName }} exigirá atualizar os dados {{ $naOrNo }} {{ $equipmentName }}.</p>
                 @if (! $wizard['created'])
                 <form method="POST" action="{{ route('devices.ftp-account.update', $device) }}">@csrf @method('PATCH')
                     <input type="hidden" name="is_active" value="1">
@@ -127,33 +134,54 @@
                 <p>Valores salvos: <strong>{{ $wizard['host'] }}</strong> · Endereço passivo: <strong>{{ $wizard['passive_address'] ?: 'Padrão do servidor' }}</strong> · Porta: <strong>{{ $wizard['port'] }}</strong>.</p>
             @endif
         </section>
-        <section class="olt-wizard-panel" data-wizard-panel="4" aria-label="Configuração da OLT" @if ($wizardStep !== 4) hidden @endif>
+        <section class="olt-wizard-panel" data-wizard-panel="4" aria-label="{{ $isOlt ? 'Configuração da OLT' : 'Configuração do equipamento' }}" @if ($wizardStep !== 4) hidden @endif>
             @if ($wizard['synced'] && $wizard['server'])
+            @if ($isOlt)
             <h3>Configuração manual da OLT</h3>
             <p><strong>Servidor:</strong> {{ $wizard['host'] }} · <strong>Porta:</strong> {{ $wizard['port'] }} · <strong>Usuário:</strong> {{ $wizard['account']->username }}</p>
             <p><strong>Diretório remoto:</strong> <code>/</code></p>
             <ol><li>Acesse a OLT por um console confiável e execute <code>ftp set</code>.</li><li>Informe o usuário acima e a senha FTP guardada na criação da conta.</li><li>Execute <code>quit</code> e depois <code>save</code>.</li></ol>
             <p>Os prompts e a sequência exata podem variar conforme o firmware e o modelo. Confirme as respostas exibidas pela OLT.</p>
+            @else
+            <h3>Configuração manual do equipamento (VRP)</h3>
+            <p><strong>Servidor:</strong> {{ $wizard['host'] }} · <strong>Porta:</strong> {{ $wizard['port'] }} · <strong>Usuário:</strong> {{ $wizard['account']->username }}</p>
+            <p>Acesse o equipamento por um console confiável e execute:</p>
+            <pre><code>system-view
+set save-configuration backup-to-server server {{ $wizard['host'] }} transport-type ftp user {{ $wizard['account']->username }} password &lt;senha FTP guardada na criação da conta&gt;
+set save-configuration interval 30</code></pre>
+            <p><strong>Não use a opção <code>path</code> desse comando.</strong> A conta FTP já é isolada na própria pasta do equipamento; se o comando enviar o arquivo para um subdiretório (via <code>path</code>), o sistema não vai enxergá-lo — só é observada a raiz da conta.</p>
+            <p>O intervalo (em minutos) e a sintaxe exata podem variar conforme o modelo/firmware do switch ou roteador (em equipamentos maiores, como o NE8000, o comando também aceita <code>delay &lt;minutos&gt;</code> junto do <code>interval</code>). Confirme os comandos aceitos pelo seu equipamento antes de prosseguir.</p>
+            @endif
             @if (! $wizard['confirmed'])
             <form method="POST" action="{{ route('devices.olt-ftp.confirm', $device) }}">
                 @csrf
-                <label><input type="checkbox" name="olt_configured" value="1" required> Já configurei estes dados na OLT</label>
+                <label><input type="checkbox" name="olt_configured" value="1" required> Já configurei estes dados {{ $naOrNo }} {{ $equipmentName }}</label>
                 <button type="submit">Avançar para teste</button>
             </form>
             @else
-                <p>Configuração da OLT confirmada.</p>
+                <p>Configuração {{ $daOrDo }} {{ $equipmentName }} confirmada.</p>
             @endif
             @endif
         </section>
         <section class="olt-wizard-panel" data-wizard-panel="5" aria-label="Teste de integração" @if ($wizardStep !== 5) hidden @endif>
             @if (! $wizard['confirmed'])
-                <p>Confirme primeiro a configuração da OLT.</p>
+                <p>Confirme primeiro a configuração {{ $daOrDo }} {{ $equipmentName }}.</p>
+            @elseif (! $isOlt && ! $wizard['execution'])
+                <p role="status">Aguardando o próximo envio automático do equipamento (respeite o intervalo configurado no comando <code>set save-configuration interval</code>). Esta tela será atualizada automaticamente quando um arquivo for recebido e validado.</p>
             @elseif (! $wizard['execution'])
                 <p>Inicie o teste para gerar um nome de arquivo único. O sistema aguardará o envio manual da OLT.</p>
                 <form method="POST" action="{{ route('devices.olt-ftp.test', $device) }}">@csrf<button type="submit">Iniciar teste de integração</button></form>
-            @elseif (in_array($wizard['execution']->status, ['failed', 'cancelled', 'succeeded'], true) && ! $wizard['operational'])
+            @elseif (! $isOlt && in_array($wizard['execution']->status, ['failed', 'cancelled'], true) && ! $wizard['operational'])
+                <div class="olt-wizard-error" role="alert"><strong>O último envio recebido não pôde ser validado.</strong> {{ $wizard['execution']->error_message ?: 'O arquivo não pôde ser armazenado ou validado.' }} Aguardando o próximo envio automático.</div>
+            @elseif ($isOlt && in_array($wizard['execution']->status, ['failed', 'cancelled', 'succeeded'], true) && ! $wizard['operational'])
                 <div class="olt-wizard-error" role="alert"><strong>Teste não concluído.</strong> {{ $wizard['execution']->error_message ?: 'O arquivo não foi recebido e validado nesta tentativa.' }}</div>
                 <form method="POST" action="{{ route('devices.olt-ftp.test', $device) }}">@csrf<button type="submit">Tentar novamente</button></form>
+            @elseif (! $isOlt)
+                <h3>Teste de integração</h3>
+                <p><strong>Último envio recebido:</strong> execução #{{ $wizard['execution']->id }}, status <strong>{{ $wizard['execution']->status }}</strong>.</p>
+                @unless ($wizard['operational'])
+                    <p role="status">Aguardando a validação deste envio. Esta tela será atualizada automaticamente.</p>
+                @endunless
             @else
                 <h3>Teste de integração</h3>
                 <p><strong>Execução de teste #{{ $wizard['execution']->id }}</strong></p>
@@ -257,7 +285,7 @@
     </script>
     @endif
 
-    @unless ($isHuaweiOltFtp)
+    @unless ($isOlt)
     <article class="card">
         <div class="card__header"><h2 class="card__title">SSH Host Key</h2></div>
         @php

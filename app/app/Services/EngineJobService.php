@@ -55,7 +55,7 @@ class EngineJobService
                 return ['status' => 'rejected', 'error_code' => 'invalid_account', 'ftp_account_id' => $account?->id];
             }
             $device = Device::query()->find($deviceId);
-            if (! $device || ! $device->is_active || $device->platform !== 'olt' || mb_strtolower(trim($device->vendor)) !== 'huawei') {
+            if (! $device || ! $device->is_active || ! $device->isHuaweiFtpEligible()) {
                 return ['status' => 'rejected', 'error_code' => 'unsupported_device', 'ftp_account_id' => $account->id];
             }
             $policyService = app(HuaweiFtpBackupPolicy::class);
@@ -171,7 +171,7 @@ class EngineJobService
                 $job->association->device_id === $job->device_id &&
                 $job->association->backup_policy_id === $job->backup_policy_id &&
                 ($job->backupPolicy->method === 'ftp_push'
-                    ? $hasFtp && in_array($job->origin, ['manual', 'ftp_received'], true) && $job->backupPolicy->schedule_type === 'manual' && $job->credential_id === null && $job->device->platform === 'olt' && mb_strtolower(trim($job->device->vendor)) === 'huawei' && (bool) $job->device->ftpAccount?->is_active
+                    ? $hasFtp && in_array($job->origin, ['manual', 'ftp_received'], true) && $job->backupPolicy->schedule_type === 'manual' && $job->credential_id === null && $job->device->isHuaweiFtpEligible() && (bool) $job->device->ftpAccount?->is_active
                     : $job->credential?->is_active && $job->credential?->device_id === $job->device_id && $job->credential?->type === 'ssh'),
         ];
     }
@@ -458,7 +458,7 @@ class EngineJobService
             $payload = $this->job($id);
             $vendor = mb_strtolower(trim($payload['vendor']));
             $supported = $payload['method'] === 'ssh_pull' && $payload['platform'] === 'network' && in_array($vendor, ['mikrotik', 'huawei'], true)
-                || $payload['method'] === 'ftp_push' && $payload['platform'] === 'olt' && $vendor === 'huawei' && $payload['ftp_account_available'];
+                || $payload['method'] === 'ftp_push' && in_array($payload['platform'], ['olt', 'network'], true) && $vendor === 'huawei' && $payload['ftp_account_available'];
             if (! $payload['eligible'] || ! $supported || $payload['artifact_mode'] !== 'config') {
                 throw ValidationException::withMessages(['status' => 'Job não é elegível para conclusão.']);
             }

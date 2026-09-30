@@ -787,7 +787,12 @@ class HuaweiOltFtpTest extends TestCase
         ])->assertSessionHasNoErrors();
         $this->assertNull(DeviceBackupPolicy::firstOrFail()->credential_id);
         $job = $this->runningJob($policy, $device);
+        // FEATURES-FINAL: platform=network is now a valid FTP-push target too
+        // (Huawei router/switch), so switching platform alone must NOT
+        // revoke eligibility anymore — only the vendor check still does.
         $device->update(['platform' => 'network']);
+        $this->assertTrue(app(EngineJobService::class)->job($job->id)['eligible']);
+        $device->update(['vendor' => 'ZTE']);
         $this->assertFalse(app(EngineJobService::class)->job($job->id)['eligible']);
     }
 

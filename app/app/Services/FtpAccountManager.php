@@ -30,7 +30,7 @@ class FtpAccountManager
             $account->secret = $secret;
             $account->credential_changed_at = now();
             $account->save();
-            if ($device && $values['purpose'] === 'backup' && $device->platform === 'olt' && mb_strtolower(trim($device->vendor)) === 'huawei') {
+            if ($device && $values['purpose'] === 'backup' && $device->isHuaweiFtpEligible()) {
                 app(HuaweiFtpBackupPolicy::class)->ensure($device);
             }
             $this->audit($account, $actorId, 'create');

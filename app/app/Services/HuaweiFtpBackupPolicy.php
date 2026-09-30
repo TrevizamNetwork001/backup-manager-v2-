@@ -27,7 +27,7 @@ class HuaweiFtpBackupPolicy
     {
         return DB::transaction(function () use ($device) {
             $locked = Device::query()->lockForUpdate()->findOrFail($device->id);
-            if (! $locked->is_active || $locked->platform !== 'olt' || mb_strtolower(trim($locked->vendor)) !== 'huawei') {
+            if (! $locked->is_active || ! $locked->isHuaweiFtpEligible()) {
                 throw new \InvalidArgumentException('Equipamento incompatível com backup Huawei FTP.');
             }
             if ($active = $this->active($locked)) return $active;
@@ -45,7 +45,7 @@ class HuaweiFtpBackupPolicy
                 ->whereDoesntHave('deviceBackupPolicies', fn ($query) => $query->where('device_id', $locked->id))
                 ->orderBy('id')->first();
             if (! $policy) {
-                $policy = BackupPolicy::create(['name' => 'Huawei OLT Manual', 'method' => 'ftp_push',
+                $policy = BackupPolicy::create(['name' => 'Huawei FTP Manual', 'method' => 'ftp_push',
                     'artifact_mode' => 'config', 'schedule_type' => 'manual', 'is_active' => true]);
             }
             return DeviceBackupPolicy::create(['device_id' => $locked->id, 'backup_policy_id' => $policy->id,

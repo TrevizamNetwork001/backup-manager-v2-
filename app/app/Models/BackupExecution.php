@@ -99,7 +99,7 @@ class BackupExecution extends Model
                 ! $association->device->is_active ||
                 ($association->backupPolicy->method === 'ssh_pull' && ! $association->credential?->is_active) ||
                 ($association->backupPolicy->method === 'ftp_push' &&
-                    ($association->backupPolicy->schedule_type !== 'manual' || ! Schema::hasTable('ftp_accounts') || ! $association->device->ftpAccount?->is_active || $association->device->platform !== 'olt' || mb_strtolower(trim($association->device->vendor)) !== 'huawei'))) {
+                    ($association->backupPolicy->schedule_type !== 'manual' || ! Schema::hasTable('ftp_accounts') || ! $association->device->ftpAccount?->is_active || ! $association->device->isHuaweiFtpEligible()))) {
                 throw ValidationException::withMessages(['association' => 'A associação, política, equipamento e credencial devem estar ativos.']);
             }
             $busy = self::query()->where('device_id', $association->device_id)

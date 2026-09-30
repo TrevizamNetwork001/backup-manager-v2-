@@ -17,7 +17,7 @@ class FtpAccountController extends Controller
         $this->authorize('ftp.manage');
         abort_unless(Schema::hasTable('ftp_accounts'), 503);
         abort_unless(Schema::hasColumn('ftp_accounts', 'account_uuid'), 503, 'A criação de contas FTP aguarda a migration FTP-CORE-1.');
-        abort_unless(mb_strtolower(trim($device->vendor)) === 'huawei' && $device->platform === 'olt', 422);
+        abort_unless($device->isHuaweiFtpEligible(), 422);
         abort_if($device->ftpAccount()->exists(), 409);
         $validated = $this->credentials($request, $device);
         $secret = $validated['password'];
@@ -62,7 +62,7 @@ class FtpAccountController extends Controller
     {
         $this->authorize('ftp.manage');
         abort_unless(Schema::hasTable('ftp_accounts'), 503);
-        abort_unless(mb_strtolower(trim($device->vendor)) === 'huawei' && $device->platform === 'olt', 422);
+        abort_unless($device->isHuaweiFtpEligible(), 422);
         $account = $device->ftpAccount()->firstOrFail();
         abort_if($account->deletion_mode, 409, 'Conta em exclusão.');
         $validated = $this->credentials($request, $device, $account);

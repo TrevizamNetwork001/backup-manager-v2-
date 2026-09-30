@@ -169,6 +169,10 @@ não urgente):
 
 ## FUTURO (fora de escopo desta fase, não descartado)
 
+- **MikroTik FTP Push** — o sistema antigo possui script e agendamento para
+  enviar `.rsc` e/ou `.backup`; a v2 usa SSH Pull para MikroTik. A decisão,
+  diferenças de formato e trabalho necessário estão em
+  [IDEIAS_FUTURAS.md](IDEIAS_FUTURAS.md).
 - **Relatórios/exportação** — cinco relatórios e CSV foram entregues nesta
   fase (ver `docs/REPORTS.md`); XLSX/PDF continuam como extensões futuras.
 - **Lixeira com prazo de graça** na retenção (soft-delete + restauração
@@ -224,6 +228,57 @@ reais — duas falhas consecutivas de `SSH_CONNECTION_REFUSED` e mais de 48h
 sem um backup bem-sucedido. A fórmula de cálculo foi auditada e está correta;
 nenhum dado sintético de homologação vazou para o cálculo. Ação recomendada:
 verificar conectividade SSH desse equipamento.
+
+## Decisão: FTP push como alternativa em roteadores/switches Huawei
+
+**Contexto.** O método `ftp_push` era restrito a `platform === 'olt'` (Huawei
+OLT) em ~12 pontos de código duplicando o mesmo predicado. Firmware VRP
+(roteadores/switches Huawei) também suporta push automático de configuração
+para um servidor FTP, via:
+
+```
+system-view
+set save-configuration backup-to-server server <host> transport-type ftp user <user> password <senha>
+set save-configuration interval <minutos>
+```
+
+(confirmado por dois materiais reais: um slide de treinamento e a
+apresentação "Compartilhamento Huawei Múltiplos ISPs", GTER 51/NIC.br —
+que mostra o mesmo comando em um NE8000, com o parâmetro extra `delay` no
+`interval` e um `path` opcional no `backup-to-server`).
+
+**Comparação com V1** (`V1 | decisão na V2 | justificativa`):
+
+`huawei_vrp`/`huawei_router` eram drivers **SSH-only** no V1 (`ssh.py`
+`SSH_DRIVERS`), igual a `mikrotik_routeros`/`cisco_ios`; FTP push só existia
+para `huawei_olt_ssh_ftp` | **V2 passa a aceitar SSH pull OU FTP push, à
+escolha do operador**, para qualquer equipamento Huawei (rede ou OLT) |
+Firmware VRP já suporta push nativo; reaproveitar a infraestrutura de FTP
+que já existe para OLT (`Device::isHuaweiFtpEligible()`,
+`HuaweiFtpBackupPolicy`, `OltFtpWizard`) evita duplicar código e dá
+flexibilidade operacional real sem exigir acesso SSH ao equipamento (útil
+quando firewall/ACL bloqueia o Backup Manager, mas o equipamento consegue
+falar para fora).
+
+**Limitação real, documentada no próprio wizard**: o comando VRP não tem
+equivalente a "enviar agora com este nome de arquivo" (ao contrário do fluxo
+manual da OLT via console `ftp set` + `backup configuration`). Por isso, o
+passo "Teste de integração" do wizard, para equipamentos de rede, não cria
+uma execução aguardando um nome específico — ele observa a próxima execução
+`ftp_received` espontânea que chegar após a confirmação
+(`OltFtpWizard::snapshot()`), refletindo como o VRP realmente funciona
+(push periódico, não sob demanda).
+
+**Outra armadilha documentada na UI**: o `path` opcional do
+`backup-to-server` não deve ser usado — a conta FTP já é isolada na própria
+pasta do equipamento, e o scanner de recebimento espontâneo
+(`engine/ftp_spontaneous.py`) só observa a raiz dessa pasta, não
+subdiretórios.
+
+Nenhuma mudança foi necessária no motor Python nem no schema do banco —
+`analyze_content()`/`storage.py` já tratam conteúdo não reconhecido como
+`status: unknown` (informativo, nunca bloqueia gravação), e não havia
+nenhuma constraint de banco restringindo o fluxo a `platform = 'olt'`.
 
 ## Antes do polimento de UI
 
