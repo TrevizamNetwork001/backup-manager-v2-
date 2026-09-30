@@ -38,7 +38,7 @@
             <span class="toolbar__count"><strong>{{ $devices->total() }}</strong> {{ $devices->total() === 1 ? 'equipamento cadastrado' : 'equipamentos cadastrados' }}</span>
         </div>
         @unless($devices->isEmpty())
-            <label class="list-search">Buscar nesta página <input class="form-control" type="search" data-list-search="devices-rows" placeholder="Nome, IP, fabricante ou local"></label>
+            <label class="list-search">Buscar nesta página <input class="form-control" type="search" data-list-search="devices-rows" placeholder="Nome, hostname, IP, fabricante ou local"></label>
         @endunless
     </div>
 
@@ -73,8 +73,7 @@
                             <td data-label="Equipamento">
                                 <div class="entity-cell">
                                     <span class="entity-cell__title">{{ $device->name }}</span>
-                                    @if($device->hostname)<span class="entity-cell__meta tech-value">{{ $device->hostname }}</span>@endif
-                                    <span class="entity-cell__meta tech-value">{{ $device->management_ip }}</span>
+                                    <span class="entity-cell__meta tech-value">@if($device->technicalHostnameForDisplay()){{ $device->technicalHostnameForDisplay() }} · @endif{{ $device->management_ip }}</span>
                                 </div>
                             </td>
                             <td data-label="Site / POP">
@@ -85,7 +84,7 @@
                             </td>
                             <td data-label="Fabricante / Modelo">
                                 <div class="entity-cell">
-                                    <span class="entity-cell__title">{{ $device->vendor }}</span>
+                                    <span class="entity-cell__title">{{ \App\Models\Device::normalizeVendor($device->vendor) }}</span>
                                     @if($device->model)<span class="entity-cell__meta">{{ $device->model }}</span>@endif
                                 </div>
                             </td>
@@ -137,7 +136,7 @@
             <button type="button" class="modal__close" data-close-device-create aria-label="Fechar"><x-icon name="close" /></button>
         </div>
         <form method="POST" action="{{ route('devices.store') }}">
-            @include('devices._form', ['createModal' => true])
+            @include('devices._form', ['createModal' => true, 'device' => null])
         </form>
     </div>
 </dialog>

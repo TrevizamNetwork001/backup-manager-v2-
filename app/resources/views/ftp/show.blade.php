@@ -15,10 +15,13 @@
     $selectedDeletionMode = session()->hasOldInput('mode') ? old('mode') : ($errors->has('mode') ? null : 'account');
     $readyToReceive = $isHuaweiBackup
         ? $accountReady && $pureDbReady && $policyReady
-        : $ftpAccount->is_active && !$ftpAccount->deletion_mode && $ftpAccount->provisioned_at !== null && !$ftpAccount->sync_error
-            && (($ftpAccount->purpose ?? 'backup') === 'file_server' || $ftpAccount->device?->is_active);
+        : ($ftpAccount->purpose ?? 'backup') === 'file_server' && $ftpAccount->is_active && !$ftpAccount->deletion_mode
+            && $ftpAccount->provisioned_at !== null && !$ftpAccount->sync_error;
 @endphp
 <div class="ftp-page ftp-detail-page">
+@if (($ftpAccount->purpose ?? 'backup') === 'backup' && !$isHuaweiBackup)
+    <div class="alert alert--warning" role="alert">Backup FTP deste tipo de equipamento não está implementado. O cadastro da conta não habilita a geração de execuções ou artifacts de backup.</div>
+@endif
 @if ($errors->any()) <div class="alert alert--warning" role="alert">{{ $errors->first() }}</div> @endif
 @if (session('status')) <div class="alert" role="status">{{ session('status') }}</div> @endif
 @if ($impact['deletion_mode']) <div class="alert alert--warning" role="status">Exclusão solicitada ({{ $impact['deletion_mode'] }}). Aguardando PureDB e conclusão segura. {{ $impact['deletion_error'] }}</div> @endif

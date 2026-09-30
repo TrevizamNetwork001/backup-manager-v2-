@@ -64,6 +64,23 @@ class FtpAdminTest extends TestCase
         $this->assertSame('ValidPassword123!', $device->ftpAccount->secret);
     }
 
+    public function test_provisioned_router_account_does_not_claim_backup_support(): void
+    {
+        $this->admin();
+        $device = $this->device();
+        $device->update(['vendor' => 'MikroTik', 'platform' => 'network']);
+        $this->post(route('ftp.store'), ['device_id' => $device->id, 'username' => 'routerftp',
+            'password' => 'ValidPassword123!', 'password_confirmation' => 'ValidPassword123!'])->assertOk();
+        $account = $device->ftpAccount()->firstOrFail();
+        DB::table('ftp_accounts')->where('id', $account->id)->update(['provisioned_at' => now(), 'sync_error' => null]);
+
+        $this->get(route('ftp.show', $account))->assertOk()
+            ->assertSee('Backup FTP deste tipo de equipamento não está implementado.')
+            ->assertDontSee('Conta apta para receber backups.');
+        $this->assertDatabaseCount('backup_executions', 0);
+        $this->assertDatabaseCount('backup_artifacts', 0);
+    }
+
     public function test_new_accounts_reject_automatic_username_and_missing_username(): void
     {
         $this->admin();

@@ -37,6 +37,21 @@ cofre de senhas/segredos com controle de acesso próprio (ex.: Vault,
 volume/backup do PostgreSQL, nunca em texto plano num repositório Git, nunca
 enviada por e-mail sem criptografia adicional.
 
+## Gerar o backup do sistema
+
+No host, com Docker Compose, Python 3 e os contêineres `app` e `postgres`
+em execução, rode na raiz do repositório:
+
+```bash
+bash scripts/system-backup.sh
+```
+
+O script grava um dump PostgreSQL e um manifesto com hash SHA-256 em
+`database/backups/`. O PHP da aplicação roda no contêiner `app`; o host não
+precisa ter PHP instalado. O script não copia a `APP_KEY` nem o volume de
+arquivos de backup dos equipamentos. Preserve os quatro itens exigidos para a
+recuperação conforme descrito acima.
+
 ## Procedimento de recuperação
 
 ### 1. Reinstalar a stack
@@ -54,7 +69,8 @@ antes de restaurar o banco — isso tornaria as credenciais existentes
 ilegíveis permanentemente.
 
 Se houver dúvida sobre qual APP_KEY é a correta (múltiplas chaves guardadas,
-por exemplo), rode `php artisan system:recovery-check --json` **depois** de
+por exemplo), rode
+`docker compose exec app php artisan system:recovery-check --json` **depois** de
 colocar a chave candidata no `.env` e compare o campo
 `checks[].metadata.fingerprint_sha256_16` (para `check == "app_key"`) contra
 o fingerprint registrado no manifesto do backup usado (gerado por

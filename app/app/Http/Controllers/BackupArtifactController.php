@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Models\BackupArtifact;
+use App\Models\Device;
+use App\Models\Site;
 use App\Services\ArtifactDeletionService;
 use App\Services\ArtifactStorage;
 use App\Support\DestructiveMode;
@@ -14,19 +16,64 @@ use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class BackupArtifactController extends Controller
 {
-    public function index(): View
+    public function index(Request $request): View
     {
         $this->authorize('backup_artifacts.view');
-        $artifacts = BackupArtifact::with(['device:id,name', 'backupPolicy:id,name'])
-            ->latest('id')->paginate(20);
+        $filters = $request->validate([
+            'search' => ['nullable', 'string', 'max:255'],
+            'period' => ['nullable', 'in:7,30,90,all'],
+            'site_id' => ['nullable', 'integer', 'exists:sites,id'],
+            'vendor' => ['nullable', 'string', 'max:100'],
+            'type' => ['nullable', 'string', 'max:20'],
+            'status' => ['nullable', 'in:available,deleted,missing'],
+            'artifact' => ['nullable', 'integer'],
+        ]);
 
-        return view('backup-artifacts.index', compact('artifacts'));
+        $query = BackupArtifact::query()->with(['device:id,name,management_ip,vendor,platform,model,site_id', 'device.site:id,name', 'backupPolicy:id,name']);
+        if ($search = trim($filters['search'] ?? '')) {
+            $query->where(function ($query) use ($search) {
+                $query->where('original_filename', 'like', "%{$search}%")
+                    ->orWhereHas('device', function ($device) use ($search) {
+                        $device->where('name', 'like', "%{$search}%")
+                            ->orWhere('management_ip', 'like', "%{$search}%")
+                            ->orWhereHas('site', fn ($site) => $site->where('name', 'like', "%{$search}%"));
+                    });
+            });
+        }
+        if (($filters['period'] ?? '30') !== 'all') {
+            $query->where('created_at', '>=', now()->subDays((int) ($filters['period'] ?? 30)));
+        }
+        if (! empty($filters['site_id'])) {
+            $query->whereHas('device', fn ($device) => $device->where('site_id', $filters['site_id']));
+        }
+        if (! empty($filters['vendor'])) {
+            $query->whereHas('device', fn ($device) => $device->where('vendor', $filters['vendor']));
+        }
+        if (! empty($filters['type'])) {
+            $query->where('type', $filters['type']);
+        }
+        if (! empty($filters['status'])) {
+            $query->where('status', $filters['status']);
+        }
+
+        $artifacts = $query->latest('id')->paginate(10)->appends($request->except(['artifact', 'page']));
+        $selectedArtifact = $artifacts->getCollection()->firstWhere('id', (int) ($filters['artifact'] ?? 0));
+        $statusCounts = BackupArtifact::query()->selectRaw('status, count(*) as total')
+            ->groupBy('status')->pluck('total', 'status');
+        $sites = Site::query()->orderBy('name')->get(['id', 'name']);
+        $vendors = Device::query()->whereNotNull('vendor')->distinct()->orderBy('vendor')->pluck('vendor');
+        $types = BackupArtifact::query()->distinct()->orderBy('type')->pluck('type');
+
+        return view('backup-artifacts.index', compact('artifacts', 'selectedArtifact', 'statusCounts', 'sites', 'vendors', 'types', 'filters'));
     }
 
     public function show(BackupArtifact $backupArtifact, ArtifactDeletionService $service): View
     {
         $this->authorize('backup_artifacts.view');
-        $backupArtifact->load(['device:id,name', 'backupPolicy:id,name', 'backupExecution.device']);
+        $backupArtifact->load([
+            'device:id,name,management_ip,vendor,platform,model,site_id', 'device.site:id,name',
+            'backupPolicy:id,name', 'backupExecution.device:id,name',
+        ]);
 
         $preview = null;
         $confirmationPhrase = null;
@@ -57,8 +104,9 @@ class BackupArtifactController extends Controller
         }
 
         $extension = pathinfo($backupArtifact->relative_path, PATHINFO_EXTENSION) ?: 'bin';
-        $filename = preg_replace('/[^A-Za-z0-9_-]+/', '-', $backupArtifact->original_filename ?: ('artifact-'.$backupArtifact->id));
-        $filename = trim($filename, '-').'.'.$extension;
+        $stem = pathinfo($backupArtifact->original_filename ?: ('artifact-'.$backupArtifact->id), PATHINFO_FILENAME);
+        $filename = trim(preg_replace('/[^A-Za-z0-9_-]+/', '-', $stem), '-');
+        $filename = ($filename ?: 'artifact-'.$backupArtifact->id).'.'.$extension;
 
         return response()->download($check['path'], $filename, [
             'Content-Type' => 'application/octet-stream',

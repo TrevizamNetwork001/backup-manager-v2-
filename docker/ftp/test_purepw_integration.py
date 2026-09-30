@@ -115,9 +115,17 @@ with tempfile.TemporaryDirectory(prefix='bm-puredb-test-') as name:
             pass
         else:
             raise AssertionError('disabled_account_accepted')
+        call('useradd', 'bmdev12', '-u', '65534', '-g', '65534', '-d', str(homes[12]),
+             '-f', passwd, secret=new_secret + b'\n' + new_secret + b'\n')
+        call('mkdb', replacement, '-f', passwd)
+        os.replace(replacement, db)
+        with login('bmdev12', new_secret) as client:
+            client.storbinary('STOR reactivated.cfg', io.BytesIO(b'reactivated'))
+        assert (homes[12] / 'reactivated.cfg').read_bytes() == b'reactivated'
+        assert (homes[12] / 'bm-exec-1.cfg').read_bytes() == b'config'
         with login('bmdev13', secrets[13]):
             pass
     finally:
         server.terminate()
         server.wait(timeout=5)
-print('synthetic_puredb_login_chroot_rotation_disable_ok')
+print('synthetic_puredb_login_chroot_rotation_disable_reactivate_ok')

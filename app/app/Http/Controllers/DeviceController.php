@@ -56,7 +56,7 @@ class DeviceController extends Controller
             'name' => ['required', 'string', 'max:255'],
             'hostname' => ['nullable', 'string', 'max:255'],
             'management_ip' => ['required', 'ip', 'max:45', 'unique:devices,management_ip'],
-            'vendor' => ['required', 'string', 'max:100'],
+            'vendor' => ['required', 'string', 'max:100', Rule::in(Device::VENDORS)],
             'platform' => ['required', Rule::in(['network', 'olt'])],
             'model' => ['nullable', 'string', 'max:255'],
             'os_version' => ['nullable', 'string', 'max:255'],
@@ -107,7 +107,7 @@ class DeviceController extends Controller
                 'max:45',
                 Rule::unique('devices', 'management_ip')->ignore($device->id),
             ],
-            'vendor' => ['required', 'string', 'max:100'],
+            'vendor' => ['required', 'string', 'max:100', Rule::in(Device::vendorOptions($device->vendor))],
             'platform' => ['required', Rule::in(['network', 'olt'])],
             'model' => ['nullable', 'string', 'max:255'],
             'os_version' => ['nullable', 'string', 'max:255'],
@@ -180,7 +180,9 @@ class DeviceController extends Controller
             'name' => trim((string) $request->input('name')),
             'hostname' => trim((string) $request->input('hostname')) ?: null,
             'management_ip' => trim((string) $request->input('management_ip')),
-            'vendor' => trim((string) $request->input('vendor')),
+            'vendor' => is_string($request->input('vendor'))
+                ? Device::normalizeVendor($request->input('vendor'))
+                : $request->input('vendor'),
             'platform' => $request->input('platform', 'network'),
             'model' => trim((string) $request->input('model')) ?: null,
             'os_version' => trim((string) $request->input('os_version')) ?: null,

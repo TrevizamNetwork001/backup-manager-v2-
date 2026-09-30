@@ -11,7 +11,8 @@
 # Run from the repository root, on the HOST (it shells out to `docker compose
 # exec`, same pattern used throughout this project's homologation steps —
 # never grants this script access to the Docker socket itself, it just is
-# one). Requires: docker compose stack running, .env present with
+# one). Requires: Docker Compose and Python 3 on the host, the stack running,
+# and .env present with
 # POSTGRES_USER/POSTGRES_DB/POSTGRES_PASSWORD (read by the postgres
 # container's own environment, never printed by this script).
 #
@@ -46,7 +47,7 @@ SHA256=$(sha256sum "$DUMP_FILE" | awk '{print $1}')
 
 echo "==> Fetching a non-reversible APP_KEY fingerprint (never the key itself) for later DR verification"
 KEY_FINGERPRINT=$(docker compose exec -T app php artisan system:recovery-check --json 2>/dev/null \
-    | php -r '$d=json_decode(stream_get_contents(STDIN),true); foreach ($d["checks"] as $c) { if ($c["check"]==="app_key") { echo $c["metadata"]["fingerprint_sha256_16"] ?? "unavailable"; break; } }' \
+    | python3 -c 'import json, sys; checks = json.load(sys.stdin).get("checks", []); print(next((check.get("metadata", {}).get("fingerprint_sha256_16", "unavailable") for check in checks if check.get("check") == "app_key"), "unavailable"), end="")' \
     || echo "unavailable")
 
 GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")

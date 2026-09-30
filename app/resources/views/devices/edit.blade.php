@@ -353,32 +353,42 @@ set save-configuration interval 30</code></pre>
          unlike Huawei OLT which never does SSH at all — see
          Device::isHuaweiFtpEligible() / docs/CORE_STATUS.md. --}}
     @unless ($isOlt && ! $isVsol)
-    <article class="card" id="device-ssh-security">
-        <div class="card__header"><h2 class="card__title">SSH Host Key</h2></div>
-        @php
-            $mismatch = $device->ssh_host_key_fingerprint && $device->ssh_observed_fingerprint &&
-                ($device->ssh_host_key_algorithm !== $device->ssh_observed_algorithm ||
-                 $device->ssh_host_key_fingerprint !== $device->ssh_observed_fingerprint);
-        @endphp
-        <p>Status: {{ $mismatch ? 'Chave alterada — backups bloqueados até aprovação' : ($device->ssh_host_key_fingerprint ? 'Confiada' : 'Não confiada') }}</p>
-        <p>Algoritmo confiado: {{ $device->ssh_host_key_algorithm ?? '—' }}</p>
-        <p>Fingerprint confiado: {{ $device->ssh_host_key_fingerprint ?? '—' }}</p>
-        <p>Algoritmo observado: {{ $device->ssh_observed_algorithm ?? '—' }}</p>
-        <p>Fingerprint observado: {{ $device->ssh_observed_fingerprint ?? '—' }}</p>
-        @if ($device->ssh_observed_at)
-            <p>Observada em: {{ app(\App\Services\InstanceTimezone::class)->format($device->ssh_observed_at, 'd/m/Y H:i') }}</p>
-        @endif
-        @if ($device->ssh_host_key_trusted_at)
-            <p>Confiada em: {{ app(\App\Services\InstanceTimezone::class)->format($device->ssh_host_key_trusted_at, 'd/m/Y H:i') }}</p>
-        @endif
-        @error('ssh_host_key') <p>{{ $message }}</p> @enderror
-        @if ($device->ssh_observed_fingerprint && ($mismatch || ! $device->ssh_host_key_fingerprint))
-            <form method="POST" action="{{ route('devices.ssh-host-key.trust', $device) }}">
-                @csrf
-                <button type="submit">Confiar nesta chave observada</button>
-            </form>
-        @endif
-    </article>
+    @php
+        $mismatch = $device->ssh_host_key_fingerprint && $device->ssh_observed_fingerprint &&
+            ($device->ssh_host_key_algorithm !== $device->ssh_observed_algorithm ||
+             $device->ssh_host_key_fingerprint !== $device->ssh_observed_fingerprint);
+    @endphp
+    <details class="card device-ssh-security" id="device-ssh-security" @if($mismatch || ($device->ssh_observed_fingerprint && ! $device->ssh_host_key_fingerprint)) open @endif>
+        <summary class="device-ssh-security__summary">
+            <span class="card__title">Segurança SSH</span>
+            <span class="badge badge--{{ $mismatch ? 'warning' : ($device->ssh_host_key_fingerprint ? 'success' : 'neutral') }}">{{ $mismatch ? 'Chave alterada/atenção' : ($device->ssh_host_key_fingerprint ? 'Chave confiada' : 'Não confiada') }}</span>
+            <x-icon name="chevron-down" class="device-ssh-security__chevron" />
+        </summary>
+        <div class="card__body stack">
+            @if ($mismatch)
+                <p class="alert alert--warning">Chave alterada — backups bloqueados até aprovação. Confira a chave antes de confiar novamente.</p>
+            @endif
+            @error('ssh_host_key') <p class="alert alert--warning" role="alert">{{ $message }}</p> @enderror
+            <dl class="device-ssh-security__facts">
+                <div><dt>Algoritmo confiado</dt><dd class="tech-value">{{ $device->ssh_host_key_algorithm ?? '—' }}</dd></div>
+                <div><dt>Fingerprint confiado</dt><dd class="tech-value">{{ $device->ssh_host_key_fingerprint ?? '—' }}</dd></div>
+                <div><dt>Algoritmo observado</dt><dd class="tech-value">{{ $device->ssh_observed_algorithm ?? '—' }}</dd></div>
+                <div><dt>Fingerprint observado</dt><dd class="tech-value">{{ $device->ssh_observed_fingerprint ?? '—' }}</dd></div>
+                @if ($device->ssh_observed_at)
+                    <div><dt>Observada em</dt><dd>{{ app(\App\Services\InstanceTimezone::class)->format($device->ssh_observed_at, 'd/m/Y H:i') }}</dd></div>
+                @endif
+                @if ($device->ssh_host_key_trusted_at)
+                    <div><dt>Confiada em</dt><dd>{{ app(\App\Services\InstanceTimezone::class)->format($device->ssh_host_key_trusted_at, 'd/m/Y H:i') }}</dd></div>
+                @endif
+            </dl>
+            @if ($device->ssh_observed_fingerprint && ($mismatch || ! $device->ssh_host_key_fingerprint))
+                <form method="POST" action="{{ route('devices.ssh-host-key.trust', $device) }}">
+                    @csrf
+                    <button type="submit" class="btn btn--secondary">Confiar nesta chave observada</button>
+                </form>
+            @endif
+        </div>
+    </details>
     @endunless
 
 </div>

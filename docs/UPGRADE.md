@@ -8,7 +8,8 @@ manual, deliberadamente simples.
 
 1. **Backup do banco**: `bash scripts/system-backup.sh` (gera dump +
    manifesto com checksum em `database/backups/`, ver
-   [docs/DISASTER_RECOVERY.md](DISASTER_RECOVERY.md)).
+   [docs/DISASTER_RECOVERY.md](DISASTER_RECOVERY.md)). O host precisa de
+   Docker Compose e Python 3; PHP só é necessário dentro do contêiner `app`.
 2. **Preservar a APP_KEY**: confirme que o valor atual de `APP_KEY` no `.env`
    está salvo em um lugar seguro e separado (cofre de segredos) — nunca gerar
    uma nova chave neste processo.

@@ -40,7 +40,7 @@ class BackupExecutionController extends Controller
     {
         $this->authorize('backup_executions.view');
         $backupExecution->load([
-            'device:id,name', 'backupPolicy:id,name,method',
+            'device:id,name,management_ip,vendor,platform,model,site_id', 'device.site:id,name', 'backupPolicy:id,name,method',
             'credential:id,name,type,username', 'artifact',
         ]);
         $contentAnalysis = null;

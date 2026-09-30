@@ -102,7 +102,7 @@ class ArtifactDeletionTest extends TestCase
             $this->actingAs(User::factory()->create(['role' => $role]));
             $this->get(route('backup-artifacts.download', $artifact))
                 ->assertOk()
-                ->assertDownload()
+                ->assertDownload($artifact->original_filename)
                 ->assertHeader('X-Content-Type-Options', 'nosniff');
         }
 
@@ -116,6 +116,26 @@ class ArtifactDeletionTest extends TestCase
 
         $this->get(route('backup-artifacts.download', $artifact))->assertForbidden();
         $this->assertFileExists($this->path($artifact));
+    }
+
+    public function test_download_rejects_missing_traversal_and_symlink_files(): void
+    {
+        $this->actingAs(User::factory()->admin()->create());
+        $artifact = $this->artifact($this->source());
+        $path = $this->path($artifact);
+        $content = file_get_contents($path);
+        unlink($path);
+        $this->get(route('backup-artifacts.download', $artifact))->assertNotFound();
+
+        $outside = $this->root.'/outside.rsc';
+        file_put_contents($outside, $content);
+        symlink($outside, $path);
+        $this->get(route('backup-artifacts.download', $artifact))->assertNotFound();
+        unlink($path);
+
+        $artifact->update(['relative_path' => '../outside.rsc']);
+        $this->get(route('backup-artifacts.download', $artifact))->assertNotFound();
+        $this->assertSame($content, file_get_contents($outside));
     }
 
     public function test_download_rejects_a_tampered_artifact_without_removing_it(): void
@@ -382,5 +402,21 @@ class ArtifactDeletionTest extends TestCase
         $retentionReflection = new \ReflectionClass(BackupRetention::class);
         $retentionProperty = $retentionReflection->getConstructor()->getParameters()[0];
         $this->assertSame(ArtifactStorage::class, $retentionProperty->getType()->getName());
+    }
+
+    public function test_artifact_list_filters_by_status_and_device_search(): void
+    {
+        $this->actingAs(User::factory()->admin()->create());
+        $available = $this->artifact($this->source());
+        $missing = $this->artifact($this->source());
+        $available->device->update(['name' => 'ROTEADOR-ALFA']);
+        $missing->device->update(['name' => 'ROTEADOR-BETA']);
+        $missing->update(['status' => 'missing']);
+
+        $this->get(route('backup-artifacts.index', ['period' => 'all', 'search' => 'ROTEADOR-ALFA']))
+            ->assertOk()->assertSee('ROTEADOR-ALFA')->assertDontSee('ROTEADOR-BETA');
+
+        $this->get(route('backup-artifacts.index', ['period' => 'all', 'status' => 'missing']))
+            ->assertOk()->assertSee('ROTEADOR-BETA')->assertDontSee('ROTEADOR-ALFA');
     }
 }

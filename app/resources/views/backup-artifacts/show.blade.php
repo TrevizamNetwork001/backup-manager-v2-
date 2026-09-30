@@ -3,13 +3,14 @@
 @section('page-title', 'Artefato #'.$backupArtifact->id)
 @section('page-description', 'Metadados do export validado.')
 @section('page-header')
-<header class="page-header">
+<header class="page-header artifact-detail-page-header">
     <div class="page-header__content">
-        <h1 class="page-header__title">Artefato #{{ $backupArtifact->id }}</h1>
-        <p class="page-header__description">Metadados do export validado.</p>
+        <h1 class="page-header__title">Detalhes do artefato</h1>
+        <p class="page-header__description">Arquivo e integridade do backup #{{ $backupArtifact->id }}.</p>
     </div>
+    <nav class="artifact-breadcrumb" aria-label="Caminho"><a href="{{ route('backup-artifacts.index') }}">Artefatos</a><x-icon name="chevron-right" size="sm" /><span>#{{ $backupArtifact->id }}</span></nav>
     <div class="page-header__actions">
-        <a href="{{ route('backup-artifacts.index') }}" class="btn btn--secondary">Voltar aos artefatos</a>
+        <a href="{{ route('backup-artifacts.index') }}" class="btn btn--secondary"><x-icon name="arrow-right" size="sm" /> Voltar aos artefatos</a>
         @can('backup_artifacts.download')
             @if($backupArtifact->status === 'available')<a href="{{ route('backup-artifacts.download', $backupArtifact) }}" class="btn btn--primary">Baixar arquivo</a>@endif
         @endcan
@@ -17,24 +18,37 @@
 </header>
 @endsection
 @section('content')
-<div class="backup-artifacts-page stack">
+<div class="backup-artifacts-page artifact-show-page stack">
 @if(session('success'))
     <div class="alert alert--success" role="status">{{ session('success') }}</div>
 @endif
-<article class="card">
-    <div class="card__header"><div><h2 class="card__title">Metadados</h2><p class="card__description">Informações do arquivo e sua execução de origem.</p></div><span class="badge badge--{{ $backupArtifact->status === 'available' ? 'success' : ($backupArtifact->status === 'deleted' ? 'neutral' : 'warning') }}">{{ $backupArtifact->statusLabel() }}</span></div>
-    <div class="card__body artifact-details">
-    <p><strong>Arquivo:</strong> {{ $backupArtifact->original_filename ?: 'Artefato #'.$backupArtifact->id }}</p>
-    <p><strong>Equipamento:</strong> {{ $backupArtifact->device->name }}</p>
-    <p><strong>Política:</strong> {{ $backupArtifact->backupPolicy->name }}</p>
-    <p><strong>Execução:</strong> <a href="{{ route('backup-executions.show', $backupArtifact->backup_execution_id) }}">#{{ $backupArtifact->backup_execution_id }}</a></p>
-    @if($backupArtifact->deleted_at)<p><strong>Removido em:</strong> {{ app(\App\Services\InstanceTimezone::class)->format($backupArtifact->deleted_at) }} · <strong>Motivo:</strong> {{ $backupArtifact->deletionReasonLabel() }}</p>@endif
-    @if($backupArtifact->missing_at)<p><strong>Ausência detectada em:</strong> {{ app(\App\Services\InstanceTimezone::class)->format($backupArtifact->missing_at) }}</p>@endif
-    <p><strong>Tipo:</strong> {{ $backupArtifact->type }} · <strong>Storage:</strong> {{ $backupArtifact->storage }}</p>
-    <p><strong>Tamanho:</strong> {{ number_format($backupArtifact->size_bytes) }} bytes</p>
-    <p><strong>SHA256:</strong> <code>{{ $backupArtifact->sha256 }}</code></p>
-    <p><strong>Path relativo:</strong> <code>{{ $backupArtifact->relative_path }}</code></p>
-    <p><strong>Validado em:</strong> {{ app(\App\Services\InstanceTimezone::class)->format($backupArtifact->validated_at) }}</p>
+<section class="artifact-show-hero">
+    <span class="artifact-show-hero__icon"><x-icon name="file" size="lg" /></span>
+    <div class="artifact-show-hero__main">
+        <p>Artefato #{{ $backupArtifact->id }}</p>
+        <h2>{{ $backupArtifact->original_filename ?: 'Arquivo de backup' }}</h2>
+        <span>{{ $backupArtifact->device->name }} @if($backupArtifact->device->site)· {{ $backupArtifact->device->site->name }}@endif</span>
+    </div>
+    <span class="badge badge--{{ $backupArtifact->status === 'available' ? 'success' : ($backupArtifact->status === 'deleted' ? 'neutral' : 'warning') }}">{{ $backupArtifact->statusLabel() }}</span>
+</section>
+<article class="card artifact-show-card">
+    <div class="card__header"><div><h2 class="card__title">Informações do artefato</h2><p class="card__description">Metadados, origem e verificação de integridade.</p></div></div>
+    <div class="card__body">
+        <dl class="artifact-show-details">
+            <div><dt>Arquivo</dt><dd>{{ $backupArtifact->original_filename ?: 'Artefato #'.$backupArtifact->id }}</dd></div>
+            <div><dt>Equipamento</dt><dd>{{ $backupArtifact->device->name }}</dd></div>
+            <div><dt>Fabricante / modelo</dt><dd><span class="vendor-cell"><span>{{ trim(($backupArtifact->device->vendor ?? '').' '.($backupArtifact->device->model ?? '')) ?: '—' }}</span></span></dd></div>
+            <div><dt>Site / POP</dt><dd>{{ $backupArtifact->device->site?->name ?? '—' }}</dd></div>
+            <div><dt>Política</dt><dd>{{ $backupArtifact->backupPolicy->name }}</dd></div>
+            <div><dt>Execução</dt><dd><a class="link" href="{{ route('backup-executions.show', $backupArtifact->backup_execution_id) }}">Execução #{{ $backupArtifact->backup_execution_id }}</a></dd></div>
+            <div><dt>Tipo / armazenamento</dt><dd>{{ $backupArtifact->type }} · {{ $backupArtifact->storage }}</dd></div>
+            <div><dt>Tamanho</dt><dd>{{ number_format($backupArtifact->size_bytes, 0, ',', '.') }} bytes ({{ number_format($backupArtifact->size_bytes / 1024, 1, ',', '.') }} KB)</dd></div>
+            <div><dt>SHA256</dt><dd class="text-technical">{{ $backupArtifact->sha256 }}</dd></div>
+            <div><dt>Validado em</dt><dd>{{ app(\App\Services\InstanceTimezone::class)->format($backupArtifact->validated_at) }}</dd></div>
+            <div class="artifact-show-details__wide"><dt>Path relativo</dt><dd class="text-technical">{{ $backupArtifact->relative_path }}</dd></div>
+            @if($backupArtifact->deleted_at)<div><dt>Removido em</dt><dd>{{ app(\App\Services\InstanceTimezone::class)->format($backupArtifact->deleted_at) }} · {{ $backupArtifact->deletionReasonLabel() }}</dd></div>@endif
+            @if($backupArtifact->missing_at)<div><dt>Ausência detectada em</dt><dd>{{ app(\App\Services\InstanceTimezone::class)->format($backupArtifact->missing_at) }}</dd></div>@endif
+        </dl>
     </div>
 
     @can('backup_artifacts.delete')

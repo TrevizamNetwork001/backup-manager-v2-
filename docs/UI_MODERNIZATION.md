@@ -2,6 +2,10 @@
 
 O estado implementado em 26/09/2026 está registrado em [CHANGES_2026-09-26.md](CHANGES_2026-09-26.md), incluindo Dashboard, FTP, listas, Configurações, Saúde do sistema, paginação e Auditoria. As seções abaixo registram a direção visual e a fundação original do design system.
 
+As alterações de artefatos, execuções, equipamentos e FTP de 30/09/2026 estão registradas em [CHANGES_2026-09-30.md](CHANGES_2026-09-30.md).
+
+A implementação da tela de acesso, com suas referências, responsividade, autenticação e foco dos campos, está registrada em [LOGIN_SCREEN.md](LOGIN_SCREEN.md).
+
 ## Direção do produto
 
 **Backup Manager — infraestrutura técnica, confiável, precisa e operacional.**

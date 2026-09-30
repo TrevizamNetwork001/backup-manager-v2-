@@ -8,34 +8,10 @@
     <div class="modal__body form-create-modal__body">
 @endif
 
-<div class="form-create-grid">
+<div class="form-create-grid device-form-grid">
 
-    <div class="form-field form-span-2">
-        <label class="form-label" for="site_id">Site / POP *</label>
-
-        <select class="form-control" id="site_id" name="site_id" required>
-            <option value="">Selecione...</option>
-
-            @foreach($sites as $site)
-                <option
-                    value="{{ $site->id }}"
-                    @selected((string) old('site_id', $device->site_id ?? '') === (string) $site->id)
-                >
-                    {{ $site->name }}
-                    @if($site->code)
-                        — {{ $site->code }}
-                    @endif
-                </option>
-            @endforeach
-        </select>
-
-        @error('site_id')
-            <span class="form-error">{{ $message }}</span>
-        @enderror
-    </div>
-
-    <div class="form-field form-span-2">
-        <label class="form-label" for="name">Nome *</label>
+    <div class="form-field">
+        <label class="form-label" for="name">Nome do equipamento *</label>
 
         <input class="form-control"
             id="name"
@@ -47,24 +23,8 @@
             autofocus
         >
 
+        <small class="form-help">Identificador principal nas telas e no histórico.</small>
         @error('name')
-            <span class="form-error">{{ $message }}</span>
-        @enderror
-    </div>
-
-    <div class="form-field">
-        <label class="form-label" for="hostname">Nome do host</label>
-
-        <input class="form-control"
-            id="hostname"
-            name="hostname"
-            type="text"
-            value="{{ old('hostname', $device->hostname ?? '') }}"
-            maxlength="255"
-            placeholder="router-borda-01"
-        >
-
-        @error('hostname')
             <span class="form-error">{{ $message }}</span>
         @enderror
     </div>
@@ -88,26 +48,58 @@
     </div>
 
     <div class="form-field">
+        <label class="form-label" for="site_id">Site / POP *</label>
+
+        <select class="form-control" id="site_id" name="site_id" required>
+            <option value="">Selecione...</option>
+
+            @foreach($sites as $site)
+                <option
+                    value="{{ $site->id }}"
+                    @selected((string) old('site_id', $device->site_id ?? '') === (string) $site->id)
+                >
+                    {{ $site->name }}
+                    @if($site->code)
+                        — {{ $site->code }}
+                    @endif
+                </option>
+            @endforeach
+        </select>
+
+        @error('site_id')
+            <span class="form-error">{{ $message }}</span>
+        @enderror
+    </div>
+
+    <div class="form-field">
+        <label class="form-label" for="platform">Tipo *</label>
+        <select class="form-control" id="platform" name="platform" required>
+            <option value="network" @selected(old('platform', $device->platform ?? 'network') === 'network')>Roteador / switch</option>
+            <option value="olt" @selected(old('platform', $device->platform ?? 'network') === 'olt')>OLT</option>
+        </select>
+        @error('platform')
+            <span class="form-error">{{ $message }}</span>
+        @enderror
+    </div>
+
+    <div class="form-field">
         <label class="form-label" for="vendor">Fabricante *</label>
 
-        <input class="form-control"
-            id="vendor"
-            name="vendor"
-            type="text"
-            value="{{ old('vendor', $device->vendor ?? '') }}"
-            maxlength="100"
-            placeholder="MikroTik"
-            required
-        >
+        @php
+            $vendorValue = old('vendor', $device->vendor ?? '');
+            $selectedVendor = is_string($vendorValue) ? \App\Models\Device::normalizeVendor($vendorValue) : '';
+        @endphp
+        <select class="form-control" id="vendor" name="vendor" required>
+            <option value="" @selected($selectedVendor === '')>Selecione...</option>
+            @foreach(\App\Models\Device::vendorOptions($device->vendor ?? null) as $vendor)
+                <option value="{{ $vendor }}" @selected($selectedVendor === $vendor)>{{ $vendor }}{{ in_array($vendor, \App\Models\Device::VENDORS, true) ? '' : ' (legado)' }}</option>
+            @endforeach
+        </select>
 
         @error('vendor')
             <span class="form-error">{{ $message }}</span>
         @enderror
     </div>
-    <div class="form-field"><label class="form-label" for="platform">Tipo *</label><select class="form-control" id="platform" name="platform" required>
-        <option value="network" @selected(old('platform', $device->platform ?? 'network') === 'network')>Roteador / switch</option>
-        <option value="olt" @selected(old('platform', $device->platform ?? 'network') === 'olt')>OLT</option>
-    </select>@error('platform') <span class="form-error">{{ $message }}</span> @enderror</div>
 
     <div class="form-field">
         <label class="form-label" for="model">Modelo</label>
@@ -126,7 +118,25 @@
         @enderror
     </div>
 
-    <div class="form-field form-span-2">
+    <div class="form-field">
+        <label class="form-label" for="hostname">Hostname técnico (opcional)</label>
+
+        <input class="form-control"
+            id="hostname"
+            name="hostname"
+            type="text"
+            value="{{ old('hostname', $device->hostname ?? '') }}"
+            maxlength="255"
+            placeholder="router-borda-01"
+        >
+
+        <small class="form-help">Informe se for diferente do nome. A conexão usa o IP de gerenciamento.</small>
+        @error('hostname')
+            <span class="form-error">{{ $message }}</span>
+        @enderror
+    </div>
+
+    <div class="form-field">
         <label class="form-label" for="os_version">Versão / OS</label>
 
         <input class="form-control"
@@ -179,7 +189,6 @@
             </span>
         </label>
     </div>
-
 </div>
 
 @if($createModal ?? false)

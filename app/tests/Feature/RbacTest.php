@@ -137,6 +137,46 @@ class RbacTest extends TestCase
 
     // AUTH
 
+    public function test_only_admin_can_request_privileged_ftp_inspection_from_the_detail_page(): void
+    {
+        $account = $this->ftpAccount($this->device());
+        foreach (['operator', 'viewer', 'auditor'] as $role) {
+            $this->actingAs(User::factory()->create(['role' => $role]));
+            $this->get(route('ftp.show', [$account, 'deletion_preview' => 1]))->assertOk();
+            $this->assertSame(0, DB::table('audit_events')->where('action', 'ftp.physical.request')->count());
+        }
+
+        $this->actingAs(User::factory()->admin()->create());
+        $this->get(route('ftp.show', [$account, 'deletion_preview' => 1]))->assertOk();
+        $this->assertSame(1, DB::table('audit_events')->where('action', 'ftp.physical.request')->count());
+    }
+
+    public function test_ftp_rotation_and_status_enforce_all_four_roles(): void
+    {
+        $account = $this->ftpAccount($this->device());
+        foreach (['viewer', 'auditor', 'operator', 'admin'] as $role) {
+            $this->actingAs(User::factory()->create(['role' => $role]));
+            $before = $account->fresh()->secret;
+            $password = 'RotatedPassword-'.$role;
+            $rotation = $this->post(route('ftp.rotate', $account), [
+                'password' => $password, 'password_confirmation' => $password,
+            ]);
+            if (in_array($role, ['viewer', 'auditor'], true)) {
+                $rotation->assertForbidden();
+                $this->assertSame($before, $account->fresh()->secret);
+                $this->patch(route('ftp.status', $account), ['is_active' => 0])->assertForbidden();
+                $this->assertTrue($account->fresh()->is_active);
+            } else {
+                $rotation->assertOk()->assertHeader('Cache-Control', 'no-store, private');
+                $this->assertSame($password, $account->fresh()->secret);
+                $this->patch(route('ftp.status', $account), ['is_active' => 0])->assertRedirect();
+                $this->assertFalse($account->fresh()->is_active);
+                $this->patch(route('ftp.status', $account), ['is_active' => 1])->assertRedirect();
+                $this->assertTrue($account->fresh()->is_active);
+            }
+        }
+    }
+
     public function test_login_and_logout_end_the_authenticated_session(): void
     {
         $user = User::factory()->admin()->create(['password' => 'ValidPassword123!']);

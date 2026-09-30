@@ -6,10 +6,40 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Device extends Model
 {
     use HasFactory;
+
+    public const VENDORS = [
+        'C-DATA', 'Cisco', 'Datacom', 'FiberHome', 'Huawei', 'Intelbras',
+        'Juniper', 'MikroTik', 'Parks', 'Ubiquiti', 'VSOL', 'ZTE',
+    ];
+
+    public static function normalizeVendor(string $vendor): string
+    {
+        $vendor = trim($vendor);
+        foreach (self::VENDORS as $canonical) {
+            if (mb_strtolower($vendor) === mb_strtolower($canonical)) {
+                return $canonical;
+            }
+        }
+
+        return $vendor;
+    }
+
+    /** @return list<string> */
+    public static function vendorOptions(?string $legacyVendor = null): array
+    {
+        $vendors = self::VENDORS;
+        $legacyVendor = self::normalizeVendor($legacyVendor ?? '');
+        if ($legacyVendor !== '' && ! in_array($legacyVendor, $vendors, true)) {
+            $vendors[] = $legacyVendor;
+        }
+
+        return $vendors;
+    }
 
     protected $fillable = [
         'site_id',
@@ -49,6 +79,15 @@ class Device extends Model
             || ($vendor === 'vsol' && $this->platform === 'olt');
     }
 
+    public function technicalHostnameForDisplay(): ?string
+    {
+        $hostname = trim((string) $this->hostname);
+
+        return $hostname !== '' && mb_strtolower($hostname) !== mb_strtolower(trim($this->name))
+            ? $hostname
+            : null;
+    }
+
     public function site(): BelongsTo
     {
         return $this->belongsTo(Site::class);
@@ -59,12 +98,12 @@ class Device extends Model
         return $this->hasMany(Credential::class);
     }
 
-    public function ftpAccount(): \Illuminate\Database\Eloquent\Relations\HasOne
+    public function ftpAccount(): HasOne
     {
         return $this->hasOne(FtpAccount::class);
     }
 
-    public function oltFtpIntegration(): \Illuminate\Database\Eloquent\Relations\HasOne
+    public function oltFtpIntegration(): HasOne
     {
         return $this->hasOne(OltFtpIntegration::class);
     }

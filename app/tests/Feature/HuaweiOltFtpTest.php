@@ -563,7 +563,7 @@ class HuaweiOltFtpTest extends TestCase
 
         $this->get(route('devices.edit', $device))->assertOk()
             ->assertSee('Usuário FTP')->assertSee('Confirmar senha')->assertDontSee('Gerar automaticamente')
-            ->assertDontSee('O que fazer agora')->assertDontSee('SSH Host Key');
+            ->assertDontSee('O que fazer agora')->assertDontSee('Segurança SSH');
 
         $account = new FtpAccount(['account_uuid' => (string) Str::uuid(), 'home_layout' => 'legacy', 'purpose' => 'backup', 'device_id' => $device->id, 'username' => 'bmdev'.$device->id, 'is_active' => true]);
         $account->secret = 'synthetic-only-secret';
@@ -598,7 +598,7 @@ class HuaweiOltFtpTest extends TestCase
             ->assertSee('data-wizard-panel="4" aria-label="Configuração da OLT"', false)
             ->assertSee('Diretório remoto:')
             ->assertSee('Avançar para teste')
-            ->assertDontSee('SSH Host Key')
+            ->assertDontSee('Segurança SSH')
             ->assertDontSee('O que fazer agora')
             ->assertDontSee('synthetic-only-secret');
 
@@ -608,7 +608,7 @@ class HuaweiOltFtpTest extends TestCase
 
         $device->update(['platform' => 'network']);
         $this->get(route('devices.edit', $device))->assertOk()
-            ->assertSee('SSH Host Key')
+            ->assertSee('Segurança SSH')
             ->assertDontSee('Configuração Huawei OLT / FTP');
     }
 

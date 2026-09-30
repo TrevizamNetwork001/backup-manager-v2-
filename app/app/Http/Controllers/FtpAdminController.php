@@ -2,13 +2,15 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\BackupPolicy;
 use App\Models\Device;
 use App\Models\FtpAccount;
-use App\Services\FtpAccountManager;
+use App\Services\AuditEvents;
 use App\Services\FtpAccountDeletionService;
+use App\Services\FtpAccountManager;
 use App\Services\FtpServerSettings;
 use App\Services\HuaweiFtpBackupPolicy;
-use App\Services\AuditEvents;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
@@ -34,6 +36,7 @@ class FtpAdminController extends Controller
                 ->groupBy('ftp_account_id')->pluck('last_received_at', 'ftp_account_id');
         $devices = Device::query()->whereDoesntHave('ftpAccount')->orderBy('name')->get(['id', 'name', 'management_ip']);
         $server = app(FtpServerSettings::class)->get();
+
         return response()->view('ftp.index', compact('accounts', 'devices', 'receipts', 'server', 'ftpCoreReady'));
     }
 
@@ -41,7 +44,7 @@ class FtpAdminController extends Controller
     {
         $this->authorize('ftp.view');
         $ftpAccount->load('device');
-        $huaweiPolicy = app(\App\Services\HuaweiFtpBackupPolicy::class);
+        $huaweiPolicy = app(HuaweiFtpBackupPolicy::class);
         $isHuaweiBackup = ($ftpAccount->purpose ?? 'backup') === 'backup' && (bool) $ftpAccount->device?->isHuaweiFtpEligible();
         $policyReady = $isHuaweiBackup && $huaweiPolicy->active($ftpAccount->device) !== null;
         $accountReady = $isHuaweiBackup && $ftpAccount->is_active && ! $ftpAccount->deletion_mode && $ftpAccount->device->is_active;
@@ -57,14 +60,17 @@ class FtpAdminController extends Controller
         $lastReceipt = $history->first();
         $deletionPreview = $request->boolean('deletion_preview') || (bool) $ftpAccount->deletion_mode ||
             session('errors')?->has('mode') || session('errors')?->has('confirmation');
-        if ($deletionPreview) $deletion->requestInspection($ftpAccount);
+        if ($deletionPreview && $request->user()->can('ftp.delete')) {
+            $deletion->requestInspection($ftpAccount);
+        }
         $impact = $deletion->preview($ftpAccount);
         $confirmationPhrases = $deletion->confirmationPhrases($ftpAccount);
+
         return response()->view('ftp.show', compact('ftpAccount', 'lastReceipt', 'history', 'impact', 'confirmationPhrases',
             'isHuaweiBackup', 'policyReady', 'accountReady', 'pureDbReady', 'deletionPreview'));
     }
 
-    public function prepare(Request $request, FtpAccount $ftpAccount, HuaweiFtpBackupPolicy $policy, AuditEvents $audit): \Illuminate\Http\RedirectResponse
+    public function prepare(Request $request, FtpAccount $ftpAccount, HuaweiFtpBackupPolicy $policy, AuditEvents $audit): RedirectResponse
     {
         $this->authorize('ftp.manage');
         DB::transaction(function () use ($request, $ftpAccount, $policy, $audit) {
@@ -78,7 +84,7 @@ class FtpAdminController extends Controller
             }
 
             $existingAssociationIds = $device->deviceBackupPolicies()->pluck('id')->all();
-            $existingPolicyIds = \App\Models\BackupPolicy::query()->pluck('id')->all();
+            $existingPolicyIds = BackupPolicy::query()->pluck('id')->all();
             $association = $policy->ensure($device);
             if (Schema::hasTable('audit_events')) {
                 $audit->record('ftp.backup_policy.prepared', 'ftp_account', (string) $account->id,
@@ -93,10 +99,11 @@ class FtpAdminController extends Controller
                     ], $request->user()->id, $request->ip());
             }
         });
+
         return redirect()->route('ftp.show', $ftpAccount)->with('status', 'Backup FTP preparado com sucesso.');
     }
 
-    public function delete(Request $request, FtpAccount $ftpAccount, FtpAccountDeletionService $deletion): \Illuminate\Http\RedirectResponse
+    public function delete(Request $request, FtpAccount $ftpAccount, FtpAccountDeletionService $deletion): RedirectResponse
     {
         $this->authorize('ftp.delete');
         abort_unless(Schema::hasTable('audit_events'), 503, 'A exclusão aguarda a migration FTP-CORE-2.');
@@ -109,6 +116,7 @@ class FtpAdminController extends Controller
             'confirmation.required' => 'Informe a frase de confirmação.',
         ]);
         $deletion->request($ftpAccount, $data['mode'], $data['confirmation'], $request->user()->id, $request->ip());
+
         return redirect()->route('ftp.show', $ftpAccount)->with('status', 'Exclusão solicitada. Aguardando confirmação de revogação pelo PureDB.');
     }
 
@@ -124,10 +132,11 @@ class FtpAdminController extends Controller
         ]);
         $purpose = $data['purpose'] ?? 'backup';
         if ($purpose === 'file_server' && ! empty($data['device_id'])) {
-            throw \Illuminate\Validation\ValidationException::withMessages(['device_id' => 'Servidor de arquivos não usa equipamento nesta fase.']);
+            throw ValidationException::withMessages(['device_id' => 'Servidor de arquivos não usa equipamento nesta fase.']);
         }
         $device = $purpose === 'backup' ? Device::findOrFail($data['device_id']) : null;
         [$account, $secret] = $manager->create($device, $request->all(), $request->user()->id);
+
         return $this->once($account, $secret, 'Conta criada. A sincronização com o PureDB ocorrerá em seguida.', false);
     }
 
@@ -135,14 +144,16 @@ class FtpAdminController extends Controller
     {
         $this->authorize('ftp.manage');
         $secret = $manager->rotate($ftpAccount, $request->all(), $request->user()->id);
+
         return $this->once($ftpAccount, $secret, 'Credencial alterada. Aguarde a sincronização com o PureDB.', true);
     }
 
-    public function status(Request $request, FtpAccount $ftpAccount, FtpAccountManager $manager): \Illuminate\Http\RedirectResponse
+    public function status(Request $request, FtpAccount $ftpAccount, FtpAccountManager $manager): RedirectResponse
     {
         $this->authorize('ftp.manage');
         $data = $request->validate(['is_active' => ['required', 'boolean']]);
         $manager->setActive($ftpAccount, (bool) $data['is_active'], $request->user()->id);
+
         return redirect()->route('ftp.show', $ftpAccount);
     }
 
@@ -153,5 +164,4 @@ class FtpAdminController extends Controller
             ->header('Pragma', 'no-cache')
             ->header('Referrer-Policy', 'no-referrer');
     }
-
 }

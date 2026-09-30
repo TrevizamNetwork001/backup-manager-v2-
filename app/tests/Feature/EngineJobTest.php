@@ -351,7 +351,8 @@ class EngineJobTest extends TestCase
             $this->actingAs(User::factory()->create());
             $this->get(route('backup-artifacts.index'))->assertOk()->assertSee('MK')
                 ->assertDontSee('senha-super-secreta')->assertDontSee('GigabitEthernet');
-            $this->get(route('devices.index'))->assertOk()->assertSee('hUaWeI');
+            $this->get(route('devices.index'))->assertOk()->assertSee('Huawei');
+            $this->assertSame(' hUaWeI ', $job->device->fresh()->vendor);
         } finally {
             unlink($path);
             $dir = dirname($path);
