@@ -81,7 +81,7 @@ class BackupPolicyTest extends TestCase
         $this->assertDatabaseHas('backup_policies', ['id' => $policy->id, 'name' => 'MikroTik Diário']);
 
         $this->put("/backup-policies/{$policy->id}", $this->payload(['name' => 'MikroTik Semanal', 'schedule_type' => 'weekly', 'schedule_weekday' => 2]))
-            ->assertRedirect(route('backup-policies.edit', $policy));
+            ->assertRedirect(route('backup-policies.index'));
         $this->assertDatabaseHas('backup_policies', ['id' => $policy->id, 'name' => 'MikroTik Semanal', 'schedule_weekday' => 2]);
 
         $this->delete("/backup-policies/{$policy->id}")->assertRedirect(route('backup-policies.index'));

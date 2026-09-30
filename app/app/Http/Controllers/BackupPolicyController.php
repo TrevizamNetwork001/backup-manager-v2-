@@ -82,7 +82,7 @@ class BackupPolicyController extends Controller
 
         $backupPolicy->update($validated);
 
-        return redirect()->route('backup-policies.edit', $backupPolicy)
+        return redirect()->route('backup-policies.index')
             ->with('success', 'Política atualizada com sucesso.');
     }
 
