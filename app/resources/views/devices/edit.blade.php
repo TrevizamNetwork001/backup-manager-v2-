@@ -90,8 +90,8 @@
             <form method="POST" action="{{ $wizard['account'] ? route('devices.ftp-account.replace', $device) : route('devices.ftp-account.store', $device) }}" data-account-form @if ($wizard['account'] && ! $errors->has('mode') && ! $errors->has('username') && ! $errors->has('password')) hidden @endif>
                 @csrf
                 <div class="field"><label for="ftp_username">Usuário FTP</label><input id="ftp_username" name="username" value="{{ old('username') }}" minlength="3" maxlength="32" pattern="[a-z][a-z0-9_-]*" autocomplete="off" required>@error('username') <span class="field-error">{{ $message }}</span> @enderror</div>
-                <div class="field"><label for="ftp_password">Senha FTP</label><input id="ftp_password" name="password" type="password" minlength="12" maxlength="40" autocomplete="new-password" required><button type="button" data-generate-olt-password>Gerar</button>@error('password') <span class="field-error">{{ $message }}</span> @enderror</div>
-                <div class="field"><label for="ftp_password_confirmation">Confirmar senha</label><input id="ftp_password_confirmation" name="password_confirmation" type="password" minlength="12" maxlength="40" autocomplete="new-password" required></div>
+                <div class="field"><label for="ftp_password">Senha FTP</label><input id="ftp_password" name="password" type="password" minlength="12" maxlength="40" autocomplete="new-password" required><button type="button" data-generate-olt-password>Gerar</button><button type="button" data-toggle-password="ftp_password">Mostrar</button>@error('password') <span class="field-error">{{ $message }}</span> @enderror</div>
+                <div class="field"><label for="ftp_password_confirmation">Confirmar senha</label><input id="ftp_password_confirmation" name="password_confirmation" type="password" minlength="12" maxlength="40" autocomplete="new-password" required><button type="button" data-toggle-password="ftp_password_confirmation">Mostrar</button></div>
                 <button type="submit">{{ $wizard['account'] ? 'Confirmar substituição' : 'Criar conta FTP' }}</button>
             </form>
         </section>
@@ -107,7 +107,7 @@
                 <div class="olt-wizard-error" role="alert">{{ $wizard['account']->sync_error }}</div>
                 <form method="POST" action="{{ route('devices.ftp-account.retry', $device) }}">@csrf<button type="submit">Tentar novamente</button></form>
             @else
-                <p role="status">Sincronizando conta no PureDB... Esta etapa será atualizada automaticamente.</p>
+                <p role="status" class="wizard-syncing"><span class="wizard-spinner" aria-hidden="true"></span> Sincronizando conta no PureDB... Esta etapa será atualizada automaticamente.</p>
             @endif
         </section>
         <section class="olt-wizard-panel" data-wizard-panel="3" aria-label="Servidor FTP" @if ($wizardStep !== 3) hidden @endif>
@@ -146,11 +146,11 @@
             <h3>Configuração manual do equipamento (VRP)</h3>
             <p><strong>Servidor:</strong> {{ $wizard['host'] }} · <strong>Porta:</strong> {{ $wizard['port'] }} · <strong>Usuário:</strong> {{ $wizard['account']->username }}</p>
             <p>Acesse o equipamento por um console confiável e execute:</p>
-            <pre><code>system-view
+            <pre class="vrp-commands"><code>system-view
 set save-configuration backup-to-server server {{ $wizard['host'] }} transport-type ftp user {{ $wizard['account']->username }} password &lt;senha FTP guardada na criação da conta&gt;
 set save-configuration interval 30</code></pre>
             <p><strong>Não use a opção <code>path</code> desse comando.</strong> A conta FTP já é isolada na própria pasta do equipamento; se o comando enviar o arquivo para um subdiretório (via <code>path</code>), o sistema não vai enxergá-lo — só é observada a raiz da conta.</p>
-            <p>O intervalo (em minutos) e a sintaxe exata podem variar conforme o modelo/firmware do switch ou roteador (em equipamentos maiores, como o NE8000, o comando também aceita <code>delay &lt;minutos&gt;</code> junto do <code>interval</code>). Confirme os comandos aceitos pelo seu equipamento antes de prosseguir.</p>
+            <p>No NE8000, <code>interval</code> aceita de <strong>30 a 43200 minutos</strong> (não dá pra usar um valor menor só pra testar mais rápido); o comando também aceita <code>delay &lt;minutos&gt;</code> junto do <code>interval</code>. Depois de configurar, pode ser necessário rodar <code>commit</code> para aplicar (equipamentos com configuração por candidato mostram <code>[*...]</code> até o commit e <code>[~...]</code> depois). A sintaxe exata varia conforme o modelo/firmware — confirme os comandos aceitos pelo seu equipamento antes de prosseguir.</p>
             @endif
             @if (! $wizard['confirmed'])
             <form method="POST" action="{{ route('devices.olt-ftp.confirm', $device) }}">
@@ -263,6 +263,14 @@ set save-configuration interval 30</code></pre>
                 dialog.querySelector('#ftp_password').value = value;
                 dialog.querySelector('#ftp_password_confirmation').value = value;
             });
+            dialog.querySelectorAll('[data-toggle-password]').forEach((toggle) => {
+                toggle.addEventListener('click', () => {
+                    const input = document.getElementById(toggle.dataset.togglePassword);
+                    const hidden = input.type === 'password';
+                    input.type = hidden ? 'text' : 'password';
+                    toggle.textContent = hidden ? 'Ocultar' : 'Mostrar';
+                });
+            });
             document.getElementById('keep-ftp-account')?.addEventListener('click', () => showStep(2));
             document.getElementById('replace-ftp-account')?.addEventListener('click', () => {
                 dialog.querySelector('[data-account-form]').hidden = false;
@@ -283,6 +291,31 @@ set save-configuration interval 30</code></pre>
             if (dialog.open) poll();
         })();
     </script>
+    <style>
+        .wizard-syncing { display: flex; align-items: center; gap: 8px; }
+        .wizard-spinner {
+            width: 14px;
+            height: 14px;
+            flex: none;
+            border: 2px solid currentColor;
+            border-right-color: transparent;
+            border-radius: 999px;
+            animation: btn-spin .8s linear infinite;
+        }
+        @media (prefers-reduced-motion: reduce) { .wizard-spinner { animation: none; } }
+        .vrp-commands {
+            white-space: pre-wrap;
+            word-break: break-word;
+            overflow-wrap: anywhere;
+            font-family: ui-monospace, "SF Mono", "Cascadia Code", Consolas, "Roboto Mono", monospace;
+            font-size: 13px;
+            line-height: 1.6;
+        }
+        #olt-wizard section[data-wizard-panel="4"] p,
+        #olt-wizard section[data-wizard-panel="4"] .vrp-commands {
+            margin: 0 0 10px;
+        }
+    </style>
     @endif
 
     @unless ($isOlt)
