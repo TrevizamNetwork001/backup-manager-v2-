@@ -280,6 +280,36 @@ Nenhuma mudança foi necessária no motor Python nem no schema do banco —
 `status: unknown` (informativo, nunca bloqueia gravação), e não havia
 nenhuma constraint de banco restringindo o fluxo a `platform = 'olt'`.
 
+## Decisão: OLT VSOL no mesmo fluxo de FTP push
+
+Mesmo padrão acima, estendido para um segundo vendor de OLT. V1 já suportava
+VSOL por dois transportes (`backup_manager/vsol_olt.py`,
+`backup_manager/olt_runtime.py`): **SSH** (`vsol_olt_ssh_ftp`, reaproveitando
+o `connect_device()`/`run_ssh_plan()` genérico já usado para Huawei OLT) e
+**Telnet puro via socket** (`vsol_olt_telnet_cli`, implementação própria sem
+`telnetlib`, validada com testes em `tests/test_vsol_telnet.py`) para
+modelos sem SSH.
+
+`V1 | decisão na V2 | justificativa`: `vsol_olt_ssh_ftp` (V1, transporte
+SSH) | `Device::isHuaweiFtpEligible()` passa a aceitar também
+`vendor=vsol && platform=olt`, reaproveitando o wizard/infra de FTP já
+existente | Equipamento real do usuário tem acesso SSH; o comando de push
+(`write` + `copy startup-config ftp://usuário:senha@host/arquivo`) roda no
+mesmo console manual que já usamos para Huawei OLT — nenhum driver Python
+novo necessário. `vsol_olt_telnet_cli` (V1, transporte Telnet puro) |
+**Não portado nesta fase** | Sem equipamento só-Telnet para homologar agora;
+registrado em `docs/IDEIAS_FUTURAS.md` para quando aparecer essa necessidade
+concreta — a implementação do V1 já existe e é reaproveitável quando isso
+acontecer.
+
+Diferença notável do Huawei: a senha FTP fica embutida na própria linha de
+comando VSOL (`ftp://usuário:senha@host/...`), não digitada num prompt
+separado como no `ftp set` da Huawei — o wizard avisa sobre isso
+explicitamente. Também documentamos uma incerteza real (não confirmada
+ainda com hardware): o V1 exigia extensão `.config` no nome do arquivo por
+convenção própria do script; não está confirmado se é exigência do firmware
+VSOL ou não — o wizard orienta tentar `.config` se `.cfg` for recusado.
+
 ## Antes do polimento de UI
 
 Com os P0/P1 desta fase corrigidos, não há bloqueio técnico remanescente

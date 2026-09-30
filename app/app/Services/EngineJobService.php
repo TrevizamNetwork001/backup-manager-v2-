@@ -457,8 +457,12 @@ class EngineJobService
             }
             $payload = $this->job($id);
             $vendor = mb_strtolower(trim($payload['vendor']));
+            // ftp_push eligibility is never re-derived here from vendor/platform
+            // literals — that duplication is exactly what let VSOL silently fail
+            // this check after Device::isHuaweiFtpEligible() was extended to
+            // cover it (caught by VsolOltFtpTest). Single source of truth.
             $supported = $payload['method'] === 'ssh_pull' && $payload['platform'] === 'network' && in_array($vendor, ['mikrotik', 'huawei'], true)
-                || $payload['method'] === 'ftp_push' && in_array($payload['platform'], ['olt', 'network'], true) && $vendor === 'huawei' && $payload['ftp_account_available'];
+                || $payload['method'] === 'ftp_push' && $payload['ftp_account_available'] && $job->device->isHuaweiFtpEligible();
             if (! $payload['eligible'] || ! $supported || $payload['artifact_mode'] !== 'config') {
                 throw ValidationException::withMessages(['status' => 'Job não é elegível para conclusão.']);
             }

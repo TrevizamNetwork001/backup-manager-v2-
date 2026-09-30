@@ -77,7 +77,7 @@ class BackupPolicyController extends Controller
         if ($validated['method'] === 'ftp_push' && $backupPolicy->deviceBackupPolicies()->exists()) {
             $incompatible = $backupPolicy->deviceBackupPolicies()->whereHas('device', fn ($query) => $query
                 ->whereNotIn('platform', ['olt', 'network'])->orWhereRaw('LOWER(TRIM(vendor)) != ?', ['huawei']))->exists();
-            if ($incompatible) throw ValidationException::withMessages(['method' => 'FTP Push requer um equipamento Huawei.']);
+            if ($incompatible) throw ValidationException::withMessages(['method' => 'FTP Push requer um equipamento compatível (Huawei OLT/rede ou VSOL OLT).']);
         }
 
         $backupPolicy->update($validated);

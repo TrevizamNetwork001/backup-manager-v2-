@@ -74,7 +74,7 @@ class FtpAdminController extends Controller
             }
             $device = Device::query()->lockForUpdate()->findOrFail($account->device_id);
             if (! $device->is_active || ! $device->isHuaweiFtpEligible()) {
-                throw ValidationException::withMessages(['account' => 'O equipamento deve ser um Huawei (OLT, roteador ou switch) ativo.']);
+                throw ValidationException::withMessages(['account' => 'O equipamento deve ser compatível com FTP push (Huawei OLT/rede ou VSOL OLT) e ativo.']);
             }
 
             $existingAssociationIds = $device->deviceBackupPolicies()->pluck('id')->all();

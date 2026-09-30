@@ -34,15 +34,19 @@ class Device extends Model
     }
 
     /**
-     * Single source of truth for "can this device use the Huawei FTP-push
-     * flow" (originally OLT-only, now also available to network devices —
-     * routers/switches — as an alternative to SSH pull, since VRP firmware
-     * supports pushing its own saved-configuration to an FTP server).
+     * Single source of truth for "can this device use the FTP-push flow"
+     * (originally Huawei-OLT-only, hence the name; now covers Huawei network
+     * devices — routers/switches, VRP `save-configuration backup-to-server`
+     * — and VSOL OLT — `copy startup-config ftp://...` over its SSH console.
+     * Same shape either way: an operator-run push into an FTP account the
+     * engine only ever receives from, never connects out to configure).
      */
     public function isHuaweiFtpEligible(): bool
     {
-        return in_array($this->platform, ['olt', 'network'], true)
-            && mb_strtolower(trim($this->vendor)) === 'huawei';
+        $vendor = mb_strtolower(trim($this->vendor));
+
+        return ($vendor === 'huawei' && in_array($this->platform, ['olt', 'network'], true))
+            || ($vendor === 'vsol' && $this->platform === 'olt');
     }
 
     public function site(): BelongsTo

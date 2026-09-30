@@ -36,6 +36,8 @@
     @if ($isHuaweiFtp)
     @php
         $wizard = app(\App\Services\OltFtpWizard::class)->snapshot($device);
+        $vendor = mb_strtolower(trim($device->vendor));
+        $isVsol = $vendor === 'vsol';
         // "a OLT" (feminine) vs. "o equipamento" (masculine) — same gender
         // agreement the pre-existing OLT-only strings already used.
         $equipmentName = $isOlt ? 'OLT' : 'equipamento';
@@ -136,7 +138,12 @@
         </section>
         <section class="olt-wizard-panel" data-wizard-panel="4" aria-label="{{ $isOlt ? 'Configuração da OLT' : 'Configuração do equipamento' }}" @if ($wizardStep !== 4) hidden @endif>
             @if ($wizard['synced'] && $wizard['server'])
-            @if ($isOlt)
+            @if ($isVsol)
+            <h3>Configuração manual da OLT VSOL</h3>
+            <p><strong>Servidor:</strong> {{ $wizard['host'] }} · <strong>Porta:</strong> {{ $wizard['port'] }} · <strong>Usuário FTP:</strong> {{ $wizard['account']->username }}</p>
+            <p>Acesse a OLT por um console SSH confiável usando as credenciais de gerência do equipamento (não a conta FTP acima). O comando exato de envio, já com o nome de arquivo correto, aparece no próximo passo.</p>
+            <p><strong>Atenção:</strong> nesse equipamento a senha FTP fica embutida na própria linha de comando (formato <code>ftp://usuário:senha@host/arquivo</code>) — evite rodar isso com a tela compartilhada/gravada, e limpe o histórico do shell depois se possível.</p>
+            @elseif ($isOlt)
             <h3>Configuração manual da OLT</h3>
             <p><strong>Servidor:</strong> {{ $wizard['host'] }} · <strong>Porta:</strong> {{ $wizard['port'] }} · <strong>Usuário:</strong> {{ $wizard['account']->username }}</p>
             <p><strong>Diretório remoto:</strong> <code>/</code></p>
@@ -181,6 +188,30 @@ set save-configuration interval 30</code></pre>
                 <p><strong>Último envio recebido:</strong> execução #{{ $wizard['execution']->id }}, status <strong>{{ $wizard['execution']->status }}</strong>.</p>
                 @unless ($wizard['operational'])
                     <p role="status">Aguardando a validação deste envio. Esta tela será atualizada automaticamente.</p>
+                @endunless
+            @elseif ($isVsol)
+                @php
+                    $vsolAuthority = $wizard['port'] == 21 ? $wizard['host'] : $wizard['host'].':'.$wizard['port'];
+                    $vsolFilename = 'bm-exec-'.$wizard['execution']->id.'.cfg';
+                    // Built as one string in PHP, not interpolated inline in the
+                    // template: a literal "@" placed directly before "{{" is
+                    // Blade's own escape syntax ("@{{ ... }}" means "print this
+                    // literally, don't evaluate it") and would swallow the
+                    // variable instead of rendering the host.
+                    $vsolCommand = 'copy startup-config ftp://'.$wizard['account']->username.':<senha FTP>@'.$vsolAuthority.'/'.$vsolFilename;
+                @endphp
+                <h3>Teste de integração</h3>
+                <p><strong>Execução de teste #{{ $wizard['execution']->id }}</strong></p>
+                <p><strong>Arquivo esperado:</strong> <code>{{ $vsolFilename }}</code></p>
+                <p>Execute manualmente na OLT (console SSH da gerência, já autenticado):</p>
+                <pre class="vrp-commands"><code id="olt-test-command">write
+{{ $vsolCommand }}</code></pre>
+                <button type="button" id="copy-olt-test-command" class="secondary-button">Copiar comando</button>
+                <p><strong>Troque <code>&lt;senha FTP&gt;</code> pela senha guardada na criação da conta antes de rodar.</strong> Se o equipamento recusar o nome do arquivo, tente com a extensão <code>.config</code> em vez de <code>.cfg</code> — alguns firmwares VSOL exigem essa extensão especificamente.</p>
+                <p>Os comandos podem variar conforme o firmware e o modelo da OLT.</p>
+                <p><strong>Cada nova tentativa gera um novo número de execução e um novo nome de arquivo. Use sempre o comando exibido nesta tentativa.</strong></p>
+                @unless ($wizard['operational'])
+                    <p role="status">Após executar o comando na OLT, aguarde. Esta tela será atualizada automaticamente quando o arquivo for recebido e validado.{{ in_array($wizard['execution']->status, ['pending', 'queued'], true) ? ' (execução na fila)' : '' }}</p>
                 @endunless
             @else
                 <h3>Teste de integração</h3>

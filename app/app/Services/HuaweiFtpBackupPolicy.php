@@ -45,7 +45,7 @@ class HuaweiFtpBackupPolicy
                 ->whereDoesntHave('deviceBackupPolicies', fn ($query) => $query->where('device_id', $locked->id))
                 ->orderBy('id')->first();
             if (! $policy) {
-                $policy = BackupPolicy::create(['name' => 'Huawei FTP Manual', 'method' => 'ftp_push',
+                $policy = BackupPolicy::create(['name' => 'FTP Push Manual', 'method' => 'ftp_push',
                     'artifact_mode' => 'config', 'schedule_type' => 'manual', 'is_active' => true]);
             }
             return DeviceBackupPolicy::create(['device_id' => $locked->id, 'backup_policy_id' => $policy->id,
