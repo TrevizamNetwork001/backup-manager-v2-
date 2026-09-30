@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>@yield('title', 'Backup Manager')</title>
     <link rel="stylesheet" href="{{ asset('assets/app.css') }}?v={{ filemtime(public_path('assets/app.css')) }}">
 </head>
@@ -141,7 +142,7 @@
                 </div>
             </div>
 
-            <form method="POST" action="{{ route('logout') }}">
+            <form method="POST" action="{{ route('logout') }}" id="logout-form">
                 @csrf
                 <button type="submit" class="logout-button">Sair</button>
             </form>
@@ -168,6 +169,7 @@
     </main>
 
 </div>
+@include('partials.session-timeout-modal')
 <script>
     document.querySelectorAll('.sidebar-nav .nav-link.active').forEach(link => link.setAttribute('aria-current', 'page'));
     const sidebar = document.querySelector('.sidebar');

@@ -15,6 +15,7 @@ use App\Http\Controllers\FtpAdminController;
 use App\Http\Controllers\InstanceSettingsController;
 use App\Http\Controllers\OltFtpWizardController;
 use App\Http\Controllers\ReportController;
+use App\Http\Controllers\SessionKeepAliveController;
 use App\Http\Controllers\SiteController;
 use App\Http\Controllers\SystemHealthController;
 use App\Http\Controllers\UserController;
@@ -27,6 +28,7 @@ Route::middleware('guest')->group(function () {
 
 Route::middleware(['auth', 'active'])->group(function () {
     Route::get('/', DashboardController::class)->name('dashboard');
+    Route::post('session/keep-alive', SessionKeepAliveController::class)->name('session.keep-alive');
     Route::get('backup-health', [DeviceBackupHealthController::class, 'index'])->name('backup-health.index');
     Route::get('ftp', [FtpAdminController::class, 'index'])->name('ftp.index');
     Route::post('ftp/accounts', [FtpAdminController::class, 'store'])->name('ftp.store');
