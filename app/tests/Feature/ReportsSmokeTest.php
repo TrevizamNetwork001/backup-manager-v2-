@@ -25,7 +25,7 @@ class ReportsSmokeTest extends TestCase
     public function test_every_report_page_renders_for_an_admin(): void
     {
         $this->actingAs(User::factory()->admin()->create());
-        foreach (['reports.index', 'reports.executions', 'reports.devices', 'reports.artifacts', 'reports.failures', 'reports.ftp'] as $route) {
+        foreach (['reports.index', 'reports.executions', 'reports.devices', 'reports.documentation', 'reports.artifacts', 'reports.failures', 'reports.ftp'] as $route) {
             $this->get(route($route))->assertOk();
         }
     }
@@ -33,9 +33,10 @@ class ReportsSmokeTest extends TestCase
     public function test_every_export_streams_for_an_admin(): void
     {
         $this->actingAs(User::factory()->admin()->create());
-        foreach (['reports.executions.export', 'reports.devices.export', 'reports.artifacts.export', 'reports.failures.export', 'reports.ftp.export'] as $route) {
+        foreach (['reports.executions.export', 'reports.devices.export', 'reports.documentation.csv', 'reports.artifacts.export', 'reports.failures.export', 'reports.ftp.export'] as $route) {
             $this->get(route($route))->assertOk()->assertHeader('Content-Type', 'text/csv; charset=UTF-8');
         }
+        $this->get(route('reports.documentation.pdf'))->assertOk()->assertHeader('Content-Type', 'application/pdf');
     }
 
     public function test_landing_page_counts_real_records_and_failed_executions(): void
@@ -58,7 +59,7 @@ class ReportsSmokeTest extends TestCase
         app(AuditEvents::class)->record('report.exported', 'report', 'executions', 'executions', 'success', ['filters' => [], 'row_count' => 3], $admin->id);
 
         $this->actingAs($admin)->get(route('reports.index'))->assertOk()
-            ->assertViewHas('counts', ['executions' => 3, 'devices' => 1, 'failures' => 1, 'health' => 1, 'artifacts' => 1, 'ftp' => 1, 'audit' => 1])
+            ->assertViewHas('counts', ['executions' => 3, 'devices' => 1, 'documentation' => 1, 'failures' => 1, 'health' => 1, 'artifacts' => 1, 'ftp' => 1, 'audit' => 1])
             ->assertDontSee('report-test-secret');
     }
 

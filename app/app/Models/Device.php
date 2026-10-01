@@ -13,7 +13,7 @@ class Device extends Model
     use HasFactory;
 
     public const VENDORS = [
-        'C-DATA', 'Cisco', 'Datacom', 'FiberHome', 'Huawei', 'Intelbras',
+        'A10 Networks', 'C-DATA', 'Cisco', 'Datacom', 'FiberHome', 'Hillstone', 'Huawei', 'Intelbras',
         'Juniper', 'MikroTik', 'Parks', 'Ubiquiti', 'VSOL', 'ZTE',
     ];
 
@@ -48,6 +48,8 @@ class Device extends Model
         'management_ip',
         'vendor',
         'platform',
+        'device_kind',
+        'device_function',
         'model',
         'os_version',
         'notes',
@@ -67,7 +69,8 @@ class Device extends Model
      * Single source of truth for "can this device use the FTP-push flow"
      * (originally Huawei-OLT-only, hence the name; now covers Huawei network
      * devices — routers/switches, VRP `save-configuration backup-to-server`
-     * — and VSOL OLT — `copy startup-config ftp://...` over its SSH console.
+     * — and VSOL OLT models that support `copy startup-config ftp://...`.
+     * V1600GT was verified in the field to support SSH backup but not FTP.
      * Same shape either way: an operator-run push into an FTP account the
      * engine only ever receives from, never connects out to configure).
      */
@@ -76,7 +79,14 @@ class Device extends Model
         $vendor = mb_strtolower(trim($this->vendor));
 
         return ($vendor === 'huawei' && in_array($this->platform, ['olt', 'network'], true))
-            || ($vendor === 'vsol' && $this->platform === 'olt');
+            || ($vendor === 'vsol' && $this->platform === 'olt' && ! $this->isVsolV1600Gt());
+    }
+
+    public function isVsolV1600Gt(): bool
+    {
+        return mb_strtolower(trim($this->vendor)) === 'vsol'
+            && $this->platform === 'olt'
+            && mb_strtolower(trim((string) $this->model)) === 'v1600gt';
     }
 
     public function technicalHostnameForDisplay(): ?string

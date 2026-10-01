@@ -10,7 +10,6 @@ use App\Models\User;
 use App\Services\EngineJobService;
 use App\Services\FtpServerSettings;
 use App\Services\HuaweiFtpBackupPolicy;
-use App\Services\OltFtpWizard;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -26,7 +25,7 @@ class VsolOltFtpTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_isHuaweiFtpEligible_covers_vsol_olt_but_not_vsol_network(): void
+    public function test_is_huawei_ftp_eligible_covers_vsol_olt_but_not_vsol_network(): void
     {
         [$device] = $this->fixture();
         $this->assertTrue($device->isHuaweiFtpEligible());
@@ -45,6 +44,24 @@ class VsolOltFtpTest extends TestCase
 
         $this->assertNotNull($device->ftpAccount()->first());
         $this->assertNotNull(app(HuaweiFtpBackupPolicy::class)->active($device->fresh()));
+    }
+
+    public function test_v1600gt_uses_ssh_and_cannot_create_an_ftp_backup_account(): void
+    {
+        [$device] = $this->fixture(false);
+        $device->update(['model' => 'V1600GT']);
+        $this->actingAs(User::factory()->admin()->create());
+
+        $this->assertFalse($device->fresh()->isHuaweiFtpEligible());
+        $this->get(route('devices.edit', $device))->assertOk()->assertDontSee('Integração VSOL OLT / FTP');
+        $this->post(route('devices.ftp-account.store', $device), [
+            'username' => 'vsol'.$device->id, 'password' => 'Strong!Pass12345', 'password_confirmation' => 'Strong!Pass12345',
+        ])->assertStatus(422);
+        $this->post(route('ftp.store'), [
+            'purpose' => 'backup', 'device_id' => $device->id, 'username' => 'vsol'.$device->id,
+            'password' => 'Strong!Pass12345', 'password_confirmation' => 'Strong!Pass12345',
+        ])->assertSessionHasErrors('device_id');
+        $this->assertDatabaseCount('ftp_accounts', 0);
     }
 
     public function test_wizard_shows_vsol_command_and_reaches_operational_via_named_test(): void

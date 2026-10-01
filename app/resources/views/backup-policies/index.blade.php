@@ -24,7 +24,7 @@
         <div class="alert alert--success" role="status">{{ session('success') }}</div>
     @endif
     @if(session('warning'))
-        <div class="alert alert--warning" role="alert">{{ session('warning') }}</div>
+        <div class="alert alert--warning" role="alert" data-auto-dismiss>{{ session('warning') }}</div>
     @endif
 
     <div class="toolbar">
@@ -47,7 +47,7 @@
             <table class="data-table">
                 <thead>
                     <tr>
-                        <th>Nome</th><th>Método</th><th>Artefato</th><th>Agendamento</th>
+                        <th>Nome</th><th>Método</th><th>Artefato</th><th>Início do backup</th>
                         <th>Retenção</th><th>Equipamentos</th><th>Status</th><th class="table-actions-column">Ações</th>
                     </tr>
                 </thead>
@@ -57,9 +57,10 @@
                             <td data-label="Nome"><span class="entity-cell__title">{{ $policy->name }}</span></td>
                             <td data-label="Método">{{ $policy->method === 'ssh_pull' ? 'Coleta via SSH' : 'Envio via FTP' }}</td>
                             <td data-label="Artefato">{{ ['config' => 'Configuração', 'binary' => 'Binário', 'both' => 'Ambos'][$policy->artifact_mode] }}</td>
-                            <td data-label="Agendamento">
-                                @if($policy->schedule_type === 'manual') Manual
-                                @elseif($policy->schedule_type === 'daily') Diário {{ substr($policy->schedule_time, 0, 5) }}
+                            <td data-label="Início do backup">
+                                @if($policy->method === 'ftp_push') Envio pelo equipamento
+                                @elseif($policy->schedule_type === 'manual') Manual
+                                @elseif($policy->schedule_type === 'daily') Todos os dias às {{ substr($policy->schedule_time, 0, 5) }}
                                 @else {{ \App\Models\BackupPolicy::WEEKDAYS[$policy->schedule_weekday] }} {{ substr($policy->schedule_time, 0, 5) }}
                                 @endif
                             </td>
@@ -76,10 +77,10 @@
                                     <summary>Ações</summary>
                                     <div class="table-actions">
                                     @can('backup_policies.manage')
-                                        <a href="{{ route('backup-policies.edit', $policy) }}" class="btn btn--ghost btn--sm">Editar</a>
+                                        <a href="{{ route('backup-policies.edit', [$policy, 'page' => $policies->currentPage()]) }}" class="btn btn--ghost btn--sm">Editar</a>
                                     @endcan
                                     @can('backup_policies.delete')
-                                        <form method="POST" action="{{ route('backup-policies.destroy', $policy) }}" onsubmit="return confirm('Remover esta política? Só é possível sem associações.');">
+                                        <form method="POST" action="{{ route('backup-policies.destroy', $policy) }}" onsubmit="return confirm('Remover esta política do catálogo? Vínculos ativos precisam ser desativados; o histórico será preservado.');">
                                             @csrf
                                             @method('DELETE')
                                             <button type="submit" class="btn btn--ghost btn--sm table-actions__danger">Remover</button>

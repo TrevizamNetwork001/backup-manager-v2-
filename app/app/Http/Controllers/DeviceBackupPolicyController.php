@@ -2,22 +2,25 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\BackupExecution;
 use App\Models\BackupPolicy;
-use App\Models\DeviceBackupPolicy;
 use App\Models\Device;
+use App\Models\DeviceBackupPolicy;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
-use Illuminate\Support\Facades\Schema;
 
 class DeviceBackupPolicyController extends Controller
 {
     public function store(Request $request, BackupPolicy $backupPolicy): RedirectResponse
     {
         $this->authorize('backup_policies.manage');
+        abort_if($backupPolicy->archived_at !== null, 404);
         if ($backupPolicy->method === 'ftp_push' && $backupPolicy->schedule_type !== 'manual') {
-            throw ValidationException::withMessages(['schedule_type' => 'Nesta fase, Huawei OLT via FTP Push suporta somente execução manual.']);
+            throw ValidationException::withMessages(['schedule_type' => 'Nesta fase, FTP Push não usa o agendador do Backup Manager; configure o intervalo no equipamento.']);
         }
         $validated = $request->validate([
             'device_id' => ['required', Rule::exists('devices', 'id')->where('is_active', true), Rule::unique('device_backup_policies')->where('backup_policy_id', $backupPolicy->id)],
@@ -51,38 +54,86 @@ class DeviceBackupPolicyController extends Controller
             throw ValidationException::withMessages(['credential_id' => 'FTP Push não usa credencial SSH.']);
         }
         $validated['credential_id'] = $backupPolicy->method === 'ftp_push' ? null : $validated['credential_id'];
-        $backupPolicy->deviceBackupPolicies()->create($validated);
+        DB::transaction(function () use ($backupPolicy, $validated): void {
+            Device::query()->lockForUpdate()->findOrFail($validated['device_id']);
+            $this->assertNoActiveMethodConflict($validated['device_id'], $backupPolicy, (bool) $validated['is_active']);
+            $backupPolicy->deviceBackupPolicies()->create($validated);
+        });
 
-        return redirect()->route('backup-policies.edit', $backupPolicy)
-            ->with('success', 'Equipamento associado à política.');
+        return $this->returnAfterChange($request, $backupPolicy, $device->id)
+            ->with('success', "Política {$backupPolicy->name} associada ao equipamento {$device->name}.");
     }
 
     public function update(Request $request, BackupPolicy $backupPolicy, DeviceBackupPolicy $association): RedirectResponse
     {
         $this->authorize('backup_policies.manage');
+        abort_if($backupPolicy->archived_at !== null, 404);
         abort_unless($association->backup_policy_id === $backupPolicy->id, 404);
+        abort_if($association->archived_at !== null, 404);
 
         $validated = $request->validate(['is_active' => ['required', 'boolean']]);
         if ($backupPolicy->method === 'ftp_push' && $backupPolicy->schedule_type !== 'manual' && $validated['is_active']) {
-            throw ValidationException::withMessages(['schedule_type' => 'Nesta fase, Huawei OLT via FTP Push suporta somente execução manual.']);
+            throw ValidationException::withMessages(['schedule_type' => 'Nesta fase, FTP Push não usa o agendador do Backup Manager; configure o intervalo no equipamento.']);
         }
-        $association->update($validated);
+        DB::transaction(function () use ($association, $backupPolicy, $validated): void {
+            Device::query()->lockForUpdate()->findOrFail($association->device_id);
+            $this->assertNoActiveMethodConflict($association->device_id, $backupPolicy, (bool) $validated['is_active'], $association->id);
+            $association->update($validated);
+        });
 
-        return redirect()->route('backup-policies.edit', $backupPolicy)
-            ->with('success', 'Associação atualizada.');
+        return $this->returnAfterChange($request, $backupPolicy, $association->device_id, true)
+            ->with('success', "Política {$backupPolicy->name} ".($association->is_active ? 'ativada' : 'desativada').' para o equipamento.');
     }
 
-    public function destroy(BackupPolicy $backupPolicy, DeviceBackupPolicy $association): RedirectResponse
+    public function destroy(Request $request, BackupPolicy $backupPolicy, DeviceBackupPolicy $association): RedirectResponse
     {
         $this->authorize('backup_policies.manage');
         abort_unless($association->backup_policy_id === $backupPolicy->id, 404);
-        if ($association->backupExecutions()->exists()) {
-            return redirect()->route('backup-policies.edit', $backupPolicy)
-                ->with('warning', 'Esta associação possui execuções históricas e não pode ser removida.');
-        }
-        $association->delete();
+        abort_if($association->archived_at !== null, 404);
+        $result = DB::transaction(function () use ($association): string {
+            Device::query()->lockForUpdate()->findOrFail($association->device_id);
+            $locked = DeviceBackupPolicy::query()->lockForUpdate()->findOrFail($association->id);
+            if ($locked->backupExecutions()->whereIn('status', BackupExecution::LIVE_STATUSES)->exists()) {
+                return 'busy';
+            }
+            if ($locked->backupExecutions()->exists()) {
+                $locked->update(['is_active' => false, 'archived_at' => now()]);
 
-        return redirect()->route('backup-policies.edit', $backupPolicy)
-            ->with('success', 'Associação removida.');
+                return 'archived';
+            }
+            $locked->delete();
+
+            return 'deleted';
+        });
+        if ($result === 'busy') {
+            return $this->returnAfterChange($request, $backupPolicy, $association->device_id, true)
+                ->with('warning', 'Aguarde a execução em andamento terminar antes de remover esta associação.');
+        }
+
+        return $this->returnAfterChange($request, $backupPolicy, $association->device_id, true)
+            ->with('success', "Política {$backupPolicy->name} removida do equipamento".($result === 'archived' ? '; histórico preservado.' : '.'));
+    }
+
+    private function assertNoActiveMethodConflict(int $deviceId, BackupPolicy $policy, bool $activating, ?int $exceptAssociationId = null): void
+    {
+        if ($activating && $policy->is_active && DeviceBackupPolicy::hasActiveMethod($deviceId, $policy->method, $exceptAssociationId)) {
+            throw ValidationException::withMessages([
+                'is_active' => 'Este equipamento já possui uma política ativa para '.($policy->method === 'ssh_pull' ? 'SSH' : 'FTP').'. Desative o vínculo atual antes de ativar outra política do mesmo método.',
+            ]);
+        }
+    }
+
+    private function returnAfterChange(Request $request, BackupPolicy $backupPolicy, int $deviceId, bool $reopenModal = false): RedirectResponse
+    {
+        if ($request->input('return_to') === 'devices') {
+            $page = $request->integer('page');
+            $url = route('devices.index', $page > 1 ? ['page' => $page] : []);
+
+            $redirect = redirect()->to($url.($reopenModal ? '#device-policy-'.$deviceId : ''));
+
+            return $reopenModal ? $redirect->with('policy_device_id', $deviceId) : $redirect;
+        }
+
+        return redirect()->route('backup-policies.edit', $backupPolicy);
     }
 }

@@ -377,14 +377,68 @@ class BackupRetentionTest extends TestCase
 
     public function test_scheduler_registration_uses_configured_time_and_instance_timezone(): void
     {
-        config()->set('backup.retention_enabled', true);
         config()->set('backup.retention_time', '05:15');
         DB::table('application_settings')->where('id', 1)->update(['timezone' => 'America/Manaus']);
+        $before = collect(Schedule::events())->filter(fn ($event) => str_contains($event->command, 'backups:retention --scheduled'))->count();
         require base_path('routes/console.php');
-        $events = collect(Schedule::events())->filter(fn ($event) => str_contains($event->command, 'backups:retention --apply'));
-        $this->assertCount(1, $events);
-        $event = $events->first();
+        $events = collect(Schedule::events())->filter(fn ($event) => str_contains($event->command, 'backups:retention --scheduled'));
+        $this->assertCount($before + 1, $events);
+        $event = $events->last();
         $this->assertSame('15 5 * * *', $event->expression);
         $this->assertSame('America/Manaus', $event->timezone);
+    }
+
+    public function test_retention_requires_preview_and_confirmation_before_enabling(): void
+    {
+        $this->travelTo($this->clock);
+        $this->actingAs(User::factory()->create(['is_admin' => true]));
+        $source = $this->source(30);
+        $old = $this->artifact($source, 40);
+        $this->artifact($source, 1);
+
+        $this->get(route('settings.edit'))->assertOk()->assertSee('Retenção de backups')->assertSee('Desligada');
+        $this->patch(route('settings.retention.update'), ['enabled' => '1', 'confirmed' => '1'])
+            ->assertSessionHasErrors('enabled');
+        $this->assertDatabaseHas('application_settings', ['id' => 1, 'retention_enabled' => false]);
+
+        $this->post(route('settings.retention.preview'))->assertRedirect(route('settings.edit').'#retention');
+        $this->get(route('settings.edit'))->assertOk()->assertSee('Backups que seriam removidos')->assertSee('Conferi a prévia');
+        $this->assertFileExists($this->path($old));
+
+        $this->patch(route('settings.retention.update'), ['enabled' => '1'])
+            ->assertSessionHasErrors('enabled');
+        $this->patch(route('settings.retention.update'), ['enabled' => '1', 'confirmed' => '1'])
+            ->assertRedirect(route('settings.edit').'#retention');
+        $this->assertDatabaseHas('application_settings', ['id' => 1, 'retention_enabled' => true]);
+        $this->assertDatabaseHas('audit_events', ['action' => 'backup_retention.setting_changed']);
+        $this->assertFileExists($this->path($old));
+
+        $this->patch(route('settings.retention.update'), ['enabled' => '0'])
+            ->assertRedirect(route('settings.edit').'#retention');
+        $this->assertDatabaseHas('application_settings', ['id' => 1, 'retention_enabled' => false]);
+    }
+
+    public function test_scheduled_cleanup_obeys_setting_and_preserves_latest_backup(): void
+    {
+        $this->travelTo($this->clock);
+        $source = $this->source(30);
+        $old = $this->artifact($source, 40);
+        $latest = $this->artifact($source, 1);
+
+        $this->artisan('backups:retention', ['--scheduled' => true])->expectsOutput('disabled')->assertExitCode(0);
+        $this->assertFileExists($this->path($old));
+
+        DB::table('application_settings')->where('id', 1)->update(['retention_enabled' => true]);
+        $this->artisan('backups:retention', ['--scheduled' => true])->expectsOutputToContain('deleted=1')->assertExitCode(0);
+        $this->assertFileDoesNotExist($this->path($old));
+        $this->assertFileExists($this->path($latest));
+    }
+
+    public function test_non_admin_cannot_preview_or_change_retention(): void
+    {
+        $this->actingAs(User::factory()->create(['is_admin' => false]));
+        $this->post(route('settings.retention.preview'))->assertForbidden();
+        $this->patch(route('settings.retention.update'), ['enabled' => '1', 'confirmed' => '1'])->assertForbidden();
+        $this->assertDatabaseHas('application_settings', ['id' => 1, 'retention_enabled' => false]);
     }
 }

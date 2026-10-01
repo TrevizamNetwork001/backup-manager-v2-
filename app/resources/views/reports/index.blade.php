@@ -6,7 +6,7 @@
 <header class="page-header reports-header">
     <div class="page-header__content">
         <h1 class="page-header__title">Relatórios</h1>
-        <p class="page-header__description">Consultas operacionais com filtros e exportação em CSV.</p>
+        <p class="page-header__description">Consultas operacionais e documentação com exportação em CSV e PDF.</p>
     </div>
 </header>
 @endsection
@@ -16,6 +16,7 @@
     $reports = [
         'executions' => ['title' => 'Execuções', 'icon' => 'play-circle', 'tone' => 'blue', 'route' => 'reports.executions', 'description' => 'Histórico de backups com taxa de sucesso e filtros por site, equipamento, fabricante, política e erro.'],
         'devices' => ['title' => 'Equipamentos', 'icon' => 'server', 'tone' => 'blue', 'route' => 'reports.devices', 'description' => 'Último backup, última falha, saúde e falhas consecutivas por equipamento.'],
+        'documentation' => ['title' => 'Documentação', 'icon' => 'file', 'tone' => 'teal', 'route' => 'reports.documentation', 'description' => 'Inventário e dados de acesso por Site / POP. PDF com senhas, exclusivo do administrador.'],
         'failures' => ['title' => 'Falhas', 'icon' => 'alert', 'tone' => 'red', 'route' => 'reports.failures', 'description' => 'Erros agrupados por código, com equipamentos mais afetados.'],
         'health' => ['title' => 'Status dos backups', 'icon' => 'database', 'tone' => 'teal', 'route' => 'backup-health.index', 'description' => 'Situação dos backups — saudável, atenção, crítico e sem histórico por equipamento.'],
         'artifacts' => ['title' => 'Artefatos', 'icon' => 'file', 'tone' => 'purple', 'route' => 'reports.artifacts', 'description' => 'Arquivos de backup armazenados, tamanho, hash e estado do ciclo de vida.'],
@@ -25,6 +26,7 @@
     $filterKeys = [
         'executions' => ['period', 'date_from', 'date_to', 'site_id', 'device_id', 'vendor', 'backup_policy_id', 'status', 'method', 'error_code'],
         'devices' => ['site_id', 'vendor', 'status', 'policy', 'freshness'],
+        'documentation' => ['site_id'],
         'failures' => ['period', 'date_from', 'date_to', 'site_id', 'vendor'],
         'artifacts' => ['period', 'date_from', 'date_to', 'site_id', 'device_id', 'status', 'min_size', 'max_size'],
         'ftp' => [],
@@ -33,7 +35,7 @@
 <div class="reports-page">
     <div class="reports-grid" aria-label="Tipos de relatório">
         @foreach($reports as $type => $report)
-            @if($type !== 'audit' || auth()->user()->can('audit.view'))
+            @if(($type !== 'audit' || auth()->user()->can('audit.view')) && ($type !== 'documentation' || auth()->user()->hasRole(\App\Support\Rbac::ROLE_ADMIN)))
                 <a class="report-card report-card--{{ $report['tone'] }}" href="{{ route($report['route']) }}">
                     <span class="report-icon"><x-icon :name="$report['icon']" /></span>
                     <div class="report-card__content">
@@ -73,7 +75,11 @@
                             $metadata = $event->metadata ?? [];
                             $filters = array_intersect_key($metadata['filters'] ?? [], array_flip($filterKeys[$event->resource_id]));
                             $reportUrl = route($report['route'], $filters);
-                            $exportUrl = route($report['route'] . '.export', $filters);
+                            $format = $metadata['format'] ?? 'csv';
+                            $exportRoute = $event->resource_id === 'documentation'
+                                ? $report['route'] . ($format === 'pdf' ? '.pdf' : '.csv')
+                                : $report['route'] . '.export';
+                            $exportUrl = route($exportRoute, $filters);
                         @endphp
                         <tr>
                             <td data-label="Relatório">
@@ -83,7 +89,7 @@
                                 </a>
                             </td>
                             <td data-label="Descrição">
-                                <strong class="report-description">CSV exportado</strong>
+                                <strong class="report-description">{{ strtoupper($format) }} exportado</strong>
                                 <span class="report-meta">
                                     Filtro: {{ $event->resource_id === 'devices' && $filters !== [] ? 'Personalizado' : \App\Support\ReportPeriod::label($filters['period'] ?? null) }}
                                     @if(isset($metadata['row_count']))
@@ -99,7 +105,7 @@
                             <td data-label="Ações">
                                 <div class="report-actions">
                                     @can('reports.export')
-                                        <a class="btn btn--secondary btn--sm btn--icon" href="{{ $exportUrl }}" aria-label="Exportar novamente {{ $report['title'] }} em CSV" title="Exportar novamente em CSV"><x-icon name="backup" /></a>
+                                        <a class="btn btn--secondary btn--sm btn--icon" href="{{ $exportUrl }}" aria-label="Exportar novamente {{ $report['title'] }} em {{ strtoupper($format) }}" title="Exportar novamente em {{ strtoupper($format) }}"><x-icon name="backup" /></a>
                                     @endcan
                                     <details class="row-menu report-row-menu">
                                         <summary aria-label="Mais ações para {{ $report['title'] }}"><x-icon name="more-horizontal" /></summary>
@@ -114,13 +120,13 @@
                             </td>
                         </tr>
                     @empty
-                        <tr><td colspan="5" class="reports-empty"><x-icon name="report" size="lg" /><strong>Nenhum relatório exportado ainda.</strong><span>Selecione um relatório acima e exporte em CSV para consultar o histórico aqui.</span></td></tr>
+                        <tr><td colspan="5" class="reports-empty"><x-icon name="report" size="lg" /><strong>Nenhum relatório exportado ainda.</strong><span>Selecione um relatório acima e exporte para consultar o histórico aqui.</span></td></tr>
                     @endforelse
                 </tbody>
             </table>
         </div>
         @if($recentReports->isNotEmpty())
-            <p class="reports-recent__note">A exportação em CSV gera um novo arquivo com os dados atuais e os filtros da consulta original.</p>
+            <p class="reports-recent__note">Uma nova exportação gera um arquivo com os dados atuais e os filtros da consulta original.</p>
         @endif
     </section>
 </div>

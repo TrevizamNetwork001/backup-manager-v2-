@@ -37,7 +37,7 @@ class HuaweiOltFtpTest extends TestCase
         $root = sys_get_temp_dir().'/olt-content-test-'.bin2hex(random_bytes(8));
         mkdir($root, 0700);
         config()->set('backup.storage_root', $root);
-        $known = file_get_contents(dirname(__DIR__, 3).'/engine/tests/fixtures/ma5800_ftp.cfg');
+        $known = file_get_contents($this->ma5800FixturePath());
         $r19 = str_replace([' sysname OLT-LAB', 'MA5800V100R021C10B066'],
             [' no-sysname OLT-LAB', 'MA5800V100R019C11B072'], $known);
         try {
@@ -125,7 +125,7 @@ class HuaweiOltFtpTest extends TestCase
         $path = $root.'/'.$receipt['relative_path'];
         mkdir(dirname($path), 0700, true);
         try {
-            file_put_contents($path, file_get_contents(dirname(__DIR__, 3).'/engine/tests/fixtures/ma5800_ftp.cfg'));
+            file_put_contents($path, file_get_contents($this->ma5800FixturePath()));
             $artifact = $engine->complete($job->id, $receipt['relative_path'], $newWorker);
             $this->assertSame('OLT-auto.cfg', $artifact->original_filename);
             $this->assertSame(hash_file('sha256', $path), $artifact->sha256);
@@ -608,7 +608,7 @@ class HuaweiOltFtpTest extends TestCase
 
         $device->update(['platform' => 'network']);
         $this->get(route('devices.edit', $device))->assertOk()
-            ->assertSee('Segurança SSH')
+            ->assertDontSee('Segurança SSH')
             ->assertDontSee('Configuração Huawei OLT / FTP');
     }
 
@@ -787,11 +787,10 @@ class HuaweiOltFtpTest extends TestCase
         ])->assertSessionHasNoErrors();
         $this->assertNull(DeviceBackupPolicy::firstOrFail()->credential_id);
         $job = $this->runningJob($policy, $device);
-        // FEATURES-FINAL: platform=network is now a valid FTP-push target too
-        // (Huawei router/switch), so switching platform alone must NOT
-        // revoke eligibility anymore — only the vendor check still does.
+        // A manual OLT FTP job cannot become a manual network FTP job:
+        // routers and switches send their files spontaneously.
         $device->update(['platform' => 'network']);
-        $this->assertTrue(app(EngineJobService::class)->job($job->id)['eligible']);
+        $this->assertFalse(app(EngineJobService::class)->job($job->id)['eligible']);
         $device->update(['vendor' => 'ZTE']);
         $this->assertFalse(app(EngineJobService::class)->job($job->id)['eligible']);
     }
@@ -826,7 +825,7 @@ class HuaweiOltFtpTest extends TestCase
             } catch (ValidationException) {
                 $this->assertSame('running', $job->fresh()->status);
             }
-            $valid = file_get_contents(dirname(__DIR__, 3).'/engine/tests/fixtures/ma5800_ftp.cfg');
+            $valid = file_get_contents($this->ma5800FixturePath());
             $ftpMaxBytes = config('backup.ftp_max_bytes');
             config()->set('backup.ftp_max_bytes', strlen($valid) - 1);
             file_put_contents($path, $valid);
@@ -870,7 +869,9 @@ class HuaweiOltFtpTest extends TestCase
         $payload = ['name' => 'OLT manual', 'method' => 'ftp_push', 'artifact_mode' => 'config',
             'schedule_type' => 'manual', 'retention_count' => 2, 'is_active' => 1];
         $this->get(route('backup-policies.create'))->assertOk()
-            ->assertSee('O agendamento do auto-backup fica na OLT. O teste do assistente usa execução manual.');
+            ->assertSee('Modelo pré-definido')
+            ->assertSee('Configuração via FTP · envio pelo equipamento · 90 dias')
+            ->assertSee('Para receber backup FTP todos os dias, configure o envio automático em cada equipamento Huawei. O Backup Manager recebe os arquivos; esta política não agenda o envio. O teste da OLT continua manual.');
         $this->post(route('backup-policies.store'), $payload)->assertSessionHasNoErrors();
         $policy = BackupPolicy::firstOrFail();
         $this->assertSame('manual', $policy->schedule_type);
@@ -958,7 +959,7 @@ class HuaweiOltFtpTest extends TestCase
         $path = $root.'/'.$relative;
         mkdir(dirname($path), 0700, true);
         try {
-            file_put_contents($path, file_get_contents(dirname(__DIR__, 3).'/engine/tests/fixtures/ma5800_ftp.cfg'));
+            file_put_contents($path, file_get_contents($this->ma5800FixturePath()));
             app(EngineJobService::class)->complete($execution->id, $relative);
             $this->get(route('devices.olt-ftp.status', $device))->assertJsonPath('state', 'operational');
             $this->get(route('devices.olt-ftp.status', $device))->assertJsonPath('current_step', 6);
@@ -1219,5 +1220,12 @@ class HuaweiOltFtpTest extends TestCase
         $second = $device->fresh()->oltFtpIntegration->testExecution;
         $this->assertNotSame($first->id, $second->id);
         $this->assertSame('succeeded', $first->fresh()->status);
+    }
+
+    private function ma5800FixturePath(): string
+    {
+        $containerPath = '/engine/tests/fixtures/ma5800_ftp.cfg';
+
+        return is_file($containerPath) ? $containerPath : dirname(__DIR__, 3).'/engine/tests/fixtures/ma5800_ftp.cfg';
     }
 }

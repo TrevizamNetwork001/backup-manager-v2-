@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Device;
 use App\Models\Site;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -138,6 +139,37 @@ class SiteTest extends TestCase
         ]);
     }
 
+    public function test_edit_site_uses_the_same_modal_layout_as_create(): void
+    {
+        $site = Site::create(['name' => 'POP Antigo', 'code' => 'OLD', 'is_active' => true]);
+        $this->actingAs(User::factory()->create());
+
+        $this->get(route('sites.index'))->assertOk()
+            ->assertSee('id="site-create-dialog"', false)
+            ->assertDontSee('id="site-edit-dialog"', false);
+
+        $this->get(route('sites.edit', $site))->assertOk()
+            ->assertSee('id="site-edit-dialog"', false)
+            ->assertDontSee('id="site-create-dialog"', false)
+            ->assertSee('form-create-modal__body')
+            ->assertSee('POP Antigo')
+            ->assertSee('Salvar alterações');
+    }
+
+    public function test_invalid_edit_reopens_modal_with_submitted_values(): void
+    {
+        $site = Site::create(['name' => 'POP Antigo', 'code' => 'OLD', 'is_active' => true]);
+        $this->actingAs(User::factory()->create());
+
+        $this->from(route('sites.edit', $site))->put(route('sites.update', $site), [
+            'name' => '', 'code' => 'new', 'is_active' => '1',
+        ])->assertRedirect(route('sites.edit', $site))->assertSessionHasErrors('name');
+
+        $this->get(route('sites.edit', $site))->assertOk()
+            ->assertSee('id="site-edit-dialog"', false)
+            ->assertSee('value="NEW"', false);
+    }
+
     public function test_authenticated_user_can_delete_site(): void
     {
         // Destroy is admin-only (sites.delete) since ADMIN-3.
@@ -162,7 +194,7 @@ class SiteTest extends TestCase
     {
         $this->actingAs(User::factory()->admin()->create());
         $site = Site::create(['name' => 'POP Com Equipamento', 'is_active' => true]);
-        \App\Models\Device::create(['site_id' => $site->id, 'name' => 'Router preso',
+        Device::create(['site_id' => $site->id, 'name' => 'Router preso',
             'management_ip' => '192.0.2.99', 'vendor' => 'MikroTik', 'is_active' => true]);
 
         $this->delete("/sites/{$site->id}")

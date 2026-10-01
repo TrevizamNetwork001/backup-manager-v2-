@@ -4,7 +4,7 @@
     @method('PUT')
 @endif
 
-@if($createModal ?? false)
+@if(($createModal ?? false) || ($editModal ?? false))
     <div class="modal__body form-create-modal__body">
 @endif
 
@@ -98,13 +98,15 @@
 
 </div>
 
-@if($createModal ?? false)
+@if(($createModal ?? false) || ($editModal ?? false))
     </div>
 @endif
 
-<div class="form-actions {{ ($createModal ?? false) ? 'modal__footer form-create-modal__footer' : '' }}">
+<div class="form-actions {{ (($createModal ?? false) || ($editModal ?? false)) ? 'modal__footer form-create-modal__footer' : '' }}">
     @if($createModal ?? false)
         <button type="button" class="btn btn--ghost" data-close-site-create>Cancelar</button>
+    @elseif($editModal ?? false)
+        <button type="button" class="btn btn--ghost" data-close-site-edit>Cancelar</button>
     @else
         <a href="{{ route('sites.index') }}" class="btn btn--ghost">Cancelar</a>
     @endif

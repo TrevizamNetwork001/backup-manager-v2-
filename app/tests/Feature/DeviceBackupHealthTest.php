@@ -110,6 +110,31 @@ class DeviceBackupHealthTest extends TestCase
         $this->assertSame('consecutive_failures', $summary['problem_devices'][0]['reason']);
     }
 
+    public function test_dashboard_graph_counts_each_active_device_with_an_unresolved_failure_once(): void
+    {
+        $failed = $this->deviceWithPolicy('1', 'daily');
+        $healthy = $this->deviceWithPolicy('2', 'daily');
+        $inactive = $this->deviceWithPolicy('3', 'daily');
+        $inactive->update(['is_active' => false]);
+        $this->failExecution($failed);
+        $this->failExecution($failed);
+        BackupExecution::query()->where('device_id', $failed->id)->latest('id')->firstOrFail()
+            ->update(['status' => 'retry_wait']);
+        $this->succeed($healthy, now());
+
+        $this->actingAs(User::factory()->viewer()->create());
+        $this->get(route('dashboard'))->assertOk()
+            ->assertViewHas('failedBackupDevices', 1)
+            ->assertViewHas('activeWithoutFailure', 1)
+            ->assertSee('Falha no backup')
+            ->assertDontSee(route('backup-health.index', ['filter' => 'failed']));
+
+        $this->succeed($failed, now());
+        $this->get(route('dashboard'))->assertOk()
+            ->assertViewHas('failedBackupDevices', 0)
+            ->assertViewHas('activeWithoutFailure', 2);
+    }
+
     public function test_manual_only_device_with_history_is_healthy_regardless_of_age(): void
     {
         $device = $this->deviceWithPolicy('1', 'manual');
@@ -176,7 +201,7 @@ class DeviceBackupHealthTest extends TestCase
 
         $this->actingAs(User::factory()->viewer()->create());
         $this->get(route('devices.index'))->assertOk()
-            ->assertSee('Policy 1')
+            ->assertDontSee('Policy 1')
             ->assertSee('Coleta via SSH')
             ->assertSee('Saudável')
             ->assertSee('Não avaliado');

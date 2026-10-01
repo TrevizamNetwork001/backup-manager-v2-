@@ -2,6 +2,10 @@
 
 Data: 2026-09-28 (America/Sao_Paulo). Repositório: `/opt/backup-manager-v2`.
 
+**Adendo de 30/09/2026:** desde a data original deste relatório, a V2 passou a suportar recebimento FTP espontâneo de Huawei VRP em `platform=network`. A antiga análise detalhada abaixo, iniciada antes dessa implementação, contém conclusões superadas sobre esse fluxo. Para operação atual, use [FTP e SSH: troca segura de método](FTP_SSH_METHOD_SWITCH.md), que documenta o comportamento e a correção da execução manual inválida `UNSUPPORTED_POLICY`.
+
+**OLT-SANCA / VSOL V1600GT, 30/09/2026:** o equipamento real não aceitou FTP e foi mantido exclusivamente em SSH pull. Conta, integração e associação FTP foram removidas; cinco tentativas FTP falhadas sem artifacts foram removidas a pedido do operador e a limpeza foi auditada. A V2 agora impede novo fluxo FTP de backup para o modelo V1600GT. O driver VSOL/OLT/FTP permanece no registry para outros modelos que venham a ser homologados; sua existência não comprova suporte FTP da V1600GT. Consulte [as alterações operacionais](CHANGES_2026-09-30.md).
+
 **Resultado atualizado: Huawei OLT via FTP, MikroTik via SSH e Huawei Router/Switch via SSH estão HOMOLOGADOS REALMENTE, conforme confirmação explícita do usuário. Esses três fluxos estão encerrados para esta homologação e não devem ser repetidos.**
 
 A confirmação do usuário atualiza o status de campo e prevalece sobre as pendências de coleta registradas na primeira versão deste relatório. Não foram fornecidos novos IDs, datas de execução ou hashes dessa homologação; não se inventam esses dados. O download autenticado pela interface e um novo disparo controlado pelo scheduler continuam pendentes, independentemente do sucesso da coleta.
@@ -25,7 +29,7 @@ Na coluna “homologado real?”, **HOMOLOGADO REAL** identifica os três fluxos
 - `../backup-manager-local/backup_manager/equipment_page_views.py`: a V1 também mistura nome amigável/hostname na apresentação; seu formulário usa `hostname` como nome amigável e `ip_address` para conexão. Essa ambiguidade não deve virar contrato da V2.
 - `../backup-manager-local/README.md`: comandos operacionais dos drivers SSH, incluindo Huawei VRP.
 
-Na V2, `engine/registry_setup.py` registra exatamente `mikrotik/network/ssh_pull`, `huawei/network/ssh_pull` e `huawei/olt/ftp_push`. `EngineJobService::receiveFtp()` rejeita equipamentos diferentes de OLT Huawei com `unsupported_device`. Não existe portabilidade automática da integração MikroTik FTP da V1, nem suporte comprovado a FTP de Huawei router/switch por analogia com OLT.
+Na V2, o registry registra MikroTik/rede/SSH, Huawei/rede/SSH, Huawei/OLT/FTP, VSOL/OLT/SSH e VSOL/OLT/FTP. Huawei VRP/rede também recebe FTP espontâneo pelo scanner, com criação de execução `ftp_received` no Laravel; esse fluxo não é um job `ftp_push` despachado pelo registry. Não existe portabilidade automática da integração MikroTik FTP da V1.
 
 ## Padronização do Fabricante/Vendor no cadastro
 
@@ -51,7 +55,7 @@ Validação controlada final: **86 testes / 995 assertions, OK**, abrangendo `De
 | Huawei OLT FTP — teste manual | SUPORTADO com `bm-exec-<ID>.cfg` | Fluxo OLT HOMOLOGADO REAL; variante manual coberta em testes controlados | Confirmação não individualiza a variante do wizard; operador executa comando na OLT | Sem mudança | Não repetir teste na OLT nesta fase |
 | Huawei OLT FTP — artifact/download | SUPORTADO | Fluxo FTP HOMOLOGADO REAL; download web autenticado pendente | Mesmo defeito no nome do download | Correção compartilhada | Baixar artifact existente pela interface, sem novo upload |
 | FTP backup MikroTik/router/switch | NÃO IMPLEMENTADO na V2 | Não | Cadastro aceita conta vinculada; tela podia declarar “Conta apta para receber backups” sem driver | Detalhe deixa de declarar prontidão; aviso no detalhe e criação explica limite | Evolução própria para V2.1; não habilitada nesta etapa |
-| FTP backup Huawei router/switch | NÃO IMPLEMENTADO na V2 | Não | O driver OLT não cobre `network`; recebimento rejeita `unsupported_device` | Mesmo esclarecimento de UX | V2.1: levantar fluxo específico; não implementar nesta fase |
+| FTP backup Huawei router/switch | SUPORTADO como recebimento espontâneo | Uploads reais #101 e #103 concluíram com artifact; manual #102 falhou por caminho de UI incorreto | VRP inicia o upload segundo seu intervalo; Backup Manager não oferece “enviar agora” | Ver [documentação operacional](FTP_SSH_METHOD_SWITCH.md) | Melhorar orientação de migração SSH→FTP; não repetir uploads já homologados |
 | FTP genérico `file_server` — recepção | PARCIAL no fluxo completo solicitado: recepção/recibo existem | Login/upload/chroot em laboratório real; armazenamento/scanner controlados | Não cria `BackupExecution`/`BackupArtifact`; não possui download web | Sem inventar driver | Integração ponta a ponta com daemon + scanner + recibo; download é evolução |
 | Conta FTP — criar | SUPORTADO | Conta operacional integra o fluxo OLT HOMOLOGADO REAL; criação HTTP/provisionamento também testados em laboratório | Confirmação do fluxo não certifica cada variante administrativa de criação | Sem mudança | Não recriar conta para repetir OLT; revisar somente variante administrativa ainda não homologada |
 | Conta FTP — rotacionar | SUPORTADO | Laboratório real: antiga rejeitada e nova aceita; HTTP/RBAC controlados | Operador precisa atualizar senha no emissor; aguardar sincronização | Sem mudança na rotação | Cadeia completa web → PureDB → equipamento, por caso |
@@ -69,7 +73,9 @@ Validação controlada final: **86 testes / 995 assertions, OK**, abrangendo `De
 | Retention de artifacts | SUPORTADO: dias/quantidade, dry-run/apply, protege último válido | Controlado com arquivos temporários | Instância informa que retenção ainda não executou; registro automático depende de configuração | Sem mudança; nenhuma aplicação sobre arquivos operacionais | Revisar dry-run operacional e política antes de qualquer apply |
 | RBAC admin/operator/viewer/auditor | SUPORTADO, falha corrigida | HTTP controlado; sem novas contas na instância | `GET ftp.show?deletion_preview=1` emitia `ftp.physical.request` para não-admin | Solicitação privilegiada exige `ftp.delete`; regressão reproduziu falha antes e passou depois | Navegador com sessões de homologação dos quatro papéis |
 
-## FTP de roteadores e switches
+## Análise inicial de FTP de roteadores e switches (histórica; conclusões superadas em 30/09)
+
+> As tabelas e conclusões desta seção são o levantamento anterior à implementação do recebimento Huawei VRP/network. Para a situação vigente, consulte o adendo no início do documento e `FTP_SSH_METHOD_SWITCH.md`. As partes sobre MikroTik FTP e `file_server` continuam válidas.
 
 ### Conclusão e classificação por caso
 
@@ -218,7 +224,7 @@ As três coletas homologadas saem da lista de pendências. Não se solicita nova
 2. **Download autenticado de artifact pela interface web:** usar artifact já existente de um fluxo homologado, abrir detalhe e acionar o botão em sessão autorizada; conferir nome, bytes e SHA-256. Não depende de nova coleta. Backend e casos de arquivo ausente/path safety já têm testes controlados; download no navegador continua pendente. Matriz atual: admin/operator/viewer podem baixar; auditor não.
 3. **UX de cadastro e listagem de equipamento:** ajustes funcionais e regressões concluídos: nome principal, hostname distinto junto ao IP, grid solicitado, Segurança SSH recolhida e modal de criação independente do último registro listado. Criação/edição/legado/busca validados em ambiente controlado. Resta conferência visual no navegador; valores existentes e schema preservados.
 4. **Lifecycle FTP somente nos pontos ainda não homologados:** preservar a conta/policy e o recebimento OLT já homologados. Revisar as lacunas administrativas identificadas abaixo; nenhuma rotação/desativação/exclusão de conta operacional está autorizada por esta atualização. Usar contas descartáveis e autorização específica para ações operacionais. Não repetir login/upload da OLT para revalidar a coleta.
-5. **Confirmar limites de suporte:** revisão do registry, rotas e gate de recebimento mantém FTP Push router/switch como NÃO IMPLEMENTADO na V2 e FUTURO para V2.1. Download web de arquivos FTP genéricos também não existe; `file_server` recebe arquivos/recibos, sem gerar backup artifact. Não implementar esses recursos nesta fase.
+5. **Confirmar limites de suporte:** Huawei VRP/network FTP espontâneo está implementado; MikroTik FTP continua futuro. Download web de arquivos FTP genéricos também não existe; `file_server` recebe arquivos/recibos, sem gerar backup artifact.
 
 Retention e RBAC conservam as evidências controladas e limites registrados na tabela; não são justificativa para reabrir as três coletas ou ampliar o escopo operacional desta atualização. Retention operacional não foi aplicada.
 
@@ -245,4 +251,4 @@ Para concluir cada pendência operacional, registrar data, autorização, IDs re
 - Histórico FTP completo com paginação/filtros; política explícita de retenção de arquivos genéricos, incoming e quarentena.
 - Avaliar FTPS, automação no emissor e credenciais/sessões abertas conforme necessidade operacional. Nenhum desses recursos foi habilitado ou homologado aqui.
 
-**HOMOLOGADO REAL:** Huawei OLT via FTP, MikroTik via SSH e Huawei Router/Switch via SSH, confirmados pelo usuário e sem repetição. **Ainda falta:** disparo real controlado pelo scheduler, download autenticado pela interface, conferência visual da UX e somente as lacunas administrativas FTP não homologadas. Limites de suporte permanecem explícitos; FTP Push router/switch fica para V2.1. **v2.0.0 permanece sem marcação; sem push.**
+**HOMOLOGADO REAL:** Huawei OLT via FTP, Huawei VRP/router-switch via SSH e recebimentos Huawei VRP FTP #101 e #103 confirmados pelo painel/execuções em 30/09. MikroTik SSH também permanece homologado. **Ainda falta:** disparo real controlado pelo scheduler, download autenticado pela interface e conferência visual da UX. MikroTik FTP continua futuro. **v2.0.0 permanece sem marcação; sem push.**

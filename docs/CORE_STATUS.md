@@ -1,5 +1,9 @@
 # Estado do core — Backup Manager V2
 
+## Atualização funcional — 01/10/2026
+
+O registro completo das alterações de 01/10 está em [CHANGES_2026-10-01.md](CHANGES_2026-10-01.md): documentação PDF/CSV, SSH e confiança de chave, políticas padrão editáveis, bloqueio de duplicações do mesmo método, arquivamento com histórico, ajustes FTP, controle de acesso aos downloads, interface responsiva, desempenho e gráfico de três cores do dashboard. A última validação automatizada teve 421 testes Laravel aprovados, 1 ignorado e 107 testes Python aprovados. As pendências operacionais e de decisão de permissão estão descritas no mesmo registro; esta atualização não substitui os gates de release abaixo.
+
 ## RELEASE-1.1 — 28/09/2026
 
 **NOT READY para `v2.0.0` enquanto a aplicação real e a custódia externa
@@ -326,6 +330,15 @@ em `DeviceBackupPolicyController` (permitir `ssh_pull` também para
 push pra VSOL OLT fica registrada no código para o caso de outro modelo
 VSOL realmente suportar FTP no futuro, mas o caminho validado e recomendado
 hoje é o SSH pull.
+
+**Operação de 30/09/2026:** a OLT-SANCA (VSOL V1600GT) ficou apenas com a
+associação `SSH OLT-VSOL` ativa. Sua conta FTP, a associação FTP indevida e
+o registro residual do assistente foram removidos após inspeção que confirmou ausência de arquivos; cinco
+tentativas manuais FTP falhadas, sem artifacts, foram apagadas a pedido do
+operador e a limpeza foi auditada. A V1600GT agora é inelegível para FTP no
+código. A elegibilidade de outros modelos VSOL OLT permanece para eventual
+homologação, sem presumir suporte FTP da V1600GT. Detalhes e inventário das políticas
+estão em `docs/CHANGES_2026-09-30.md`.
 
 ## Antes do polimento de UI
 

@@ -78,8 +78,47 @@ class BackupExecutionTest extends TestCase
 
         $this->get(route('dashboard'))->assertOk()
             ->assertSee('Duração')
-            ->assertSee('2m 14s')
+            ->assertSee('134s')
             ->assertSee('—');
+    }
+
+    public function test_ftp_duration_starts_at_receipt_and_history_shows_only_attempt_number(): void
+    {
+        $this->actingAs(User::factory()->admin()->create());
+        $execution = BackupExecution::createManual($this->association());
+        $execution->update([
+            'origin' => 'ftp_received',
+            'status' => 'succeeded',
+            'attempt' => 2,
+            'max_attempts' => 3,
+            'received_at' => '2026-10-01 13:47:54',
+            'started_at' => '2026-10-01 13:48:00',
+            'finished_at' => '2026-10-01 13:48:00',
+        ]);
+
+        $this->assertSame(6, $execution->fresh()->durationSeconds());
+        $this->get(route('backup-executions.index'))->assertOk()
+            ->assertSee('6s')
+            ->assertSee('data-label="Tentativa">2</td>', false)
+            ->assertDontSee('2 / 3')
+            ->assertDontSee('<th>Erro</th>', false);
+        $this->get(route('dashboard'))->assertOk()->assertSee('6s');
+    }
+
+    public function test_history_shows_portuguese_error_only_when_present(): void
+    {
+        $this->actingAs(User::factory()->admin()->create());
+        $execution = BackupExecution::createManual($this->association());
+        $execution->forceFill([
+            'status' => 'failed',
+            'error_code' => 'SSH_AUTH_FAILED',
+            'error_message' => 'Autenticação SSH falhou.',
+        ])->save();
+
+        $this->get(route('backup-executions.index'))->assertOk()
+            ->assertSee('<th>Erro</th>', false)
+            ->assertSee('Autenticação SSH falhou.')
+            ->assertDontSee('<code>SSH_AUTH_FAILED</code>', false);
     }
 
     public function test_dashboard_chart_accepts_presets_and_historical_dates(): void

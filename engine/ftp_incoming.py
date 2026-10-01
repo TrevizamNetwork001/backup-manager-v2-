@@ -63,7 +63,13 @@ def existing_files(root_name):
         if home.is_symlink() or not home.is_dir():
             continue
         for path in home.iterdir():
-            info = path.lstat()
+            try:
+                info = path.lstat()
+            except FileNotFoundError:
+                # FTP clients can rename/remove an upload while startup is
+                # taking this snapshot. A vanished file must not prevent the
+                # long-running engine from starting.
+                continue
             identity = (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns)
             preserved[(device_root.name, path.name)] = (identity, started)
     return preserved

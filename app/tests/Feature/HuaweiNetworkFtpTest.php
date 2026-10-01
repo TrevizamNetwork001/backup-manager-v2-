@@ -15,6 +15,7 @@ use App\Services\OltFtpWizard;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\TestCase;
 
 /**
@@ -32,7 +33,7 @@ class HuaweiNetworkFtpTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_isHuaweiFtpEligible_covers_network_and_olt_but_not_other_vendors(): void
+    public function test_is_huawei_ftp_eligible_covers_network_and_olt_but_not_other_vendors(): void
     {
         [$device] = $this->fixture();
         $this->assertTrue($device->isHuaweiFtpEligible());
@@ -92,6 +93,26 @@ class HuaweiNetworkFtpTest extends TestCase
         }
     }
 
+    public function test_ftp_receiver_resumes_a_stale_receipt_in_retry_wait(): void
+    {
+        [$device] = $this->fixture();
+        app(HuaweiFtpBackupPolicy::class)->ensure($device);
+        $engine = app(EngineJobService::class);
+        $token = str_repeat('a', 32);
+        $firstWorker = str_repeat('b', 32);
+        $nextWorker = str_repeat('c', 32);
+        $received = $engine->receiveFtp($device->id, $token, 'router.cfg', time(), $firstWorker);
+        DB::table('backup_executions')->where('id', $received['id'])->update(['heartbeat_at' => now()->subMinutes(10)]);
+
+        $this->assertSame(1, $engine->recoverStale());
+        $this->assertSame('retry_wait', BackupExecution::findOrFail($received['id'])->status);
+        $retried = $engine->receiveFtp($device->id, $token, 'router.cfg', time(), $nextWorker);
+        $this->assertSame($received['id'], $retried['id']);
+        $this->assertSame('running', $retried['status']);
+        $this->assertSame($nextWorker, BackupExecution::findOrFail($received['id'])->worker_id);
+        $this->assertSame(2, BackupExecution::findOrFail($received['id'])->attempt);
+    }
+
     public function test_wizard_reaches_operational_by_watching_for_the_next_spontaneous_push_not_a_named_test(): void
     {
         [$device] = $this->fixture();
@@ -107,7 +128,7 @@ class HuaweiNetworkFtpTest extends TestCase
 
         // No on-demand "startTest" for network devices — VRP has no
         // "send now with this exact filename" command.
-        $this->expectException(\Symfony\Component\HttpKernel\Exception\HttpException::class);
+        $this->expectException(HttpException::class);
         $wizard->startTest($device->fresh());
     }
 

@@ -20,10 +20,10 @@
 
 @section('content')
 <div class="devices-list stack">
-    @if(session('success'))
+    @if(session('success') && ! session('policy_device_id'))
         <div class="alert alert--success" role="status">{{ session('success') }}</div>
     @endif
-    @if(session('warning'))
+    @if(session('warning') && ! session('policy_device_id'))
         <div class="alert alert--warning" role="alert">{{ session('warning') }}</div>
     @endif
     @if($sites->isEmpty())
@@ -68,7 +68,9 @@
                 </thead>
                 <tbody>
                     @foreach($devices as $device)
-                        @php($health = $healthByDevice->get($device->id))
+                        @php
+                            $health = $healthByDevice->get($device->id);
+                        @endphp
                         <tr data-list-row="devices-rows" data-search="{{ mb_strtolower($device->name.' '.$device->hostname.' '.$device->management_ip.' '.$device->vendor.' '.$device->model.' '.$device->site->name) }}">
                             <td data-label="Equipamento">
                                 <div class="entity-cell">
@@ -106,6 +108,12 @@
                                 <details class="row-menu"><summary>Ações</summary><div class="table-actions">
                                     @can('devices.manage')
                                         <a href="{{ route('devices.edit', $device) }}" class="btn btn--ghost btn--sm">Editar</a>
+                                        @if($device->isHuaweiFtpEligible())
+                                            <button type="button" class="btn btn--ghost btn--sm" data-open-device-access="{{ $device->id }}">FTP</button>
+                                        @endif
+                                    @endcan
+                                    @can('backup_policies.manage')
+                                        <button type="button" class="btn btn--ghost btn--sm" data-open-device-policy="{{ $device->id }}">Política de backup</button>
                                     @endcan
                                     @can('devices.delete')
                                         <form method="POST" action="{{ route('devices.destroy', $device) }}" onsubmit="return confirm('Remover este equipamento? Só é possível sem histórico ou vínculos.');">
@@ -128,6 +136,38 @@
     @endif
 </div>
 @can('devices.manage')
+@foreach($devices as $device)
+    @if($device->isHuaweiFtpEligible())
+    <dialog class="modal form-create-modal device-access-dialog" id="device-access-dialog-{{ $device->id }}" aria-labelledby="device-access-title-{{ $device->id }}">
+        <div class="modal__surface">
+            <div class="modal__header">
+                <div><h2 class="modal__title" id="device-access-title-{{ $device->id }}">FTP</h2><p class="modal__description">{{ $device->name }} · {{ $device->management_ip }}</p></div>
+                <button type="button" class="modal__close" data-close-device-access aria-label="Fechar"><x-icon name="close" /></button>
+            </div>
+            <div class="modal__body form-create-modal__body device-access-dialog__body">
+                <section class="device-access-dialog__section">
+                    <h3>Backup via FTP</h3>
+                    <p>Configure o envio de backup deste equipamento no assistente FTP.</p>
+                </section>
+            </div>
+            <div class="modal__footer form-create-modal__footer">
+                <button type="button" class="btn btn--ghost" data-close-device-access>Cancelar</button>
+                <a href="{{ route('devices.edit', [$device, 'olt_wizard' => 1]) }}" class="btn btn--primary">Abrir assistente FTP</a>
+            </div>
+        </div>
+    </dialog>
+    @endif
+@endforeach
+<script>
+(() => {
+    document.querySelectorAll('[data-open-device-access]').forEach(button => {
+        const dialog = document.getElementById(`device-access-dialog-${button.dataset.openDeviceAccess}`);
+        button.addEventListener('click', () => dialog.showModal());
+        dialog.querySelectorAll('[data-close-device-access]').forEach(close => close.addEventListener('click', () => dialog.close()));
+        dialog.addEventListener('click', event => { if (event.target === dialog) dialog.close(); });
+    });
+})();
+</script>
 <dialog class="modal form-create-modal" id="device-create-dialog" aria-labelledby="device-create-title">
     <div class="modal__surface">
         <div class="modal__header">
@@ -145,7 +185,58 @@
     document.querySelectorAll('[data-open-device-create]').forEach(button => button.addEventListener('click', () => dialog.showModal()));
     dialog.querySelectorAll('[data-close-device-create]').forEach(button => button.addEventListener('click', () => dialog.close()));
     dialog.addEventListener('click', event => { if (event.target === dialog) dialog.close(); });
-    @if ($errors->any()) dialog.showModal(); @endif
+    @if ($errors->any() && ! old('policy_device_id')) dialog.showModal(); @endif
+})();
+</script>
+@endcan
+@can('backup_policies.manage')
+    @foreach($devices as $device)
+        @include('devices._policy_modal', [
+            'device' => $device,
+            'availablePolicies' => $policies->filter(fn ($policy) => ! $device->deviceBackupPolicies->contains('backup_policy_id', $policy->id)
+                && ! $device->deviceBackupPolicies->contains(fn ($association) => $association->is_active && $association->backupPolicy?->is_active && $association->backupPolicy->method === $policy->method)
+                && ($policy->method === 'ssh_pull'
+                    ? ($device->platform !== 'olt' || mb_strtolower(trim($device->vendor)) === 'vsol') && $sshCredentialsByDevice->has($device->id)
+                    : $policy->method === 'ftp_push' && $policy->schedule_type === 'manual' && $device->isHuaweiFtpEligible() && $device->ftpAccount?->is_active)),
+            'sshCredentials' => $sshCredentialsByDevice->get($device->id, collect()),
+        ])
+    @endforeach
+<script>
+(() => {
+    document.querySelectorAll('[data-open-device-policy]').forEach(button => {
+        const dialog = document.getElementById(`device-policy-${button.dataset.openDevicePolicy}`);
+        button.addEventListener('click', () => dialog.showModal());
+    });
+    document.querySelectorAll('.device-policy-dialog').forEach(dialog => {
+        dialog.querySelectorAll('[data-close-device-policy]').forEach(button => button.addEventListener('click', () => dialog.close()));
+        dialog.addEventListener('click', event => { if (event.target === dialog) dialog.close(); });
+        dialog.addEventListener('close', () => {
+            if (location.hash === `#${dialog.id}`) history.replaceState(null, '', location.pathname + location.search);
+        });
+        const form = dialog.querySelector('[data-device-policy-form]');
+        if (!form) return;
+        const policy = form.querySelector('[data-device-policy-select]');
+        const credentialField = form.querySelector('[data-device-policy-credential-field]');
+        const credential = form.querySelector('[data-device-policy-credential]');
+        const addSection = dialog.querySelector('[data-device-policy-add]');
+        const submit = dialog.querySelector('[data-device-policy-submit]');
+        const sync = () => {
+            const selected = policy.selectedOptions[0];
+            const isSsh = selected?.dataset.method === 'ssh_pull';
+            form.action = selected?.dataset.storeUrl || '';
+            credentialField.hidden = !isSsh;
+            credential.disabled = !isSsh;
+            credential.required = isSsh;
+            if (!isSsh) credential.value = '';
+            submit.hidden = !addSection.open;
+            submit.disabled = !addSection.open || !selected?.dataset.storeUrl;
+        };
+        addSection.addEventListener('toggle', sync);
+        policy.addEventListener('change', sync);
+        sync();
+    });
+    const requestedDevice = @json(old('policy_device_id')) || location.hash.match(/^#device-policy-(\d+)$/)?.[1];
+    if (requestedDevice) document.getElementById(`device-policy-${requestedDevice}`)?.showModal();
 })();
 </script>
 @endcan

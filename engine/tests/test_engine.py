@@ -22,6 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import backup_engine
 import drivers.mikrotik_ssh as mikrotik_ssh
 import drivers.huawei_vrp_ssh as huawei_vrp_ssh
+import drivers.vsol_ssh as vsol_ssh
 from drivers.mikrotik_ssh import BackupError, VerifiedHostKeyPolicy, _mikrotik_transport, export_config
 from drivers.huawei_vrp_ssh import export_config as export_huawei_config
 from drivers.huawei_vrp_ssh import _read_prompt
@@ -35,6 +36,14 @@ class EngineTests(unittest.TestCase):
                         username='backup', method='ssh_pull', artifact_mode='config',
                         vendor='MiKroTik', platform='network', eligible=True,
                         relative_path='Backup Manager/POP-CENTRO/MK/22-09-2026/MK_20260922121530.rsc')
+
+    def test_vsol_login_accepts_async_notification_after_login_prompt(self):
+        initial = ("User Access Verification\r\n\r\nLogin: \r\n"
+                   "2026/10/01 09:03:33   User Login   Logined from 192.0.2.20 on ssh\r\n")
+        with patch.object(vsol_ssh, '_receive', return_value=initial), \
+             patch.object(vsol_ssh, '_send', side_effect=['Password: ', 'OLT#']) as send:
+            self.assertEqual('OLT#', vsol_ssh._login(object(), 'backup', 'secret'))
+            self.assertEqual(['backup', 'secret'], [call.args[1] for call in send.call_args_list])
 
     def test_storage_uses_exclusive_publish_and_rejects_traversal_and_invalid_data(self):
         with tempfile.TemporaryDirectory() as root:

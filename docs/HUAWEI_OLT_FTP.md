@@ -28,6 +28,8 @@ O wizard e o teste homologado com `bm-exec-<execution-id>.cfg` continuam operand
 
 `devices.platform=olt`, vendor Huawei e política `ftp_push/config` selecionam o recebimento OLT. `platform=network` mantém Huawei VRP (`ssh_pull/config`) e MikroTik sem alteração de driver. O campo pequeno `platform` é explícito para impedir que qualquer Huawei com FTP Push seja tratado como OLT. OLT não usa credencial SSH na associação: `credential_id` é nulo; a conta FTP é outro domínio.
 
+Huawei VRP em `platform=network` também pode enviar configuração espontaneamente para uma conta FTP. Esse fluxo não usa o comando manual `backup configuration ftp ...` do wizard de OLT: o equipamento inicia o envio conforme o intervalo definido no próprio VRP e o scanner cria a execução `ftp_received`. A policy FTP não dispara uma coleta manual no roteador. O fluxo observado em 30/09 está documentado em [FTP e SSH: troca segura de método](FTP_SSH_METHOD_SWITCH.md).
+
 O dispatcher chama `engine/drivers/huawei_olt_ftp.py` apenas para orquestrar a coleta do arquivo; `engine/ftp_incoming.py` implementa a inspeção do volume. Não há transporte SSH/Telnet nesse driver.
 
 No diagnóstico manual, o operador executa o comando de backup com o nome mostrado na página da execução. O scheduler ignora `ftp_push`, inclusive dados legados diários ou semanais. Uma execução manual sem upload termina em `FTP_RECEIVE_TIMEOUT`.

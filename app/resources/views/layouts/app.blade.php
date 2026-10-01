@@ -186,6 +186,9 @@
     document.querySelectorAll('.row-menu, .chart-filter-menu').forEach(menu => {
         menu.addEventListener('toggle', () => {
             if (!menu.open) return;
+            document.querySelectorAll('.row-menu[open], .chart-filter-menu[open]').forEach(other => {
+                if (other !== menu) other.open = false;
+            });
             const panel = menu.querySelector('.table-actions, .chart-filters');
             if (!panel) return;
             panel.style.removeProperty('top');
@@ -199,6 +202,17 @@
                 panel.style.top = 'calc(100% + 4px)';
                 panel.style.bottom = 'auto';
             }
+        });
+    });
+    document.addEventListener('click', event => {
+        document.querySelectorAll('.row-menu[open], .chart-filter-menu[open]').forEach(menu => {
+            if (!menu.contains(event.target)) menu.open = false;
+        });
+    });
+    document.addEventListener('keydown', event => {
+        if (event.key !== 'Escape') return;
+        document.querySelectorAll('.row-menu[open], .chart-filter-menu[open]').forEach(menu => {
+            menu.open = false;
         });
     });
     document.querySelectorAll('[data-list-search]').forEach(input => {
@@ -229,7 +243,7 @@
             }
         });
     });
-    document.querySelectorAll('.alert--success[role="status"], .alert-success').forEach((notice) => {
+    document.querySelectorAll('.alert--success[role="status"], .alert-success, .alert[data-auto-dismiss]').forEach((notice) => {
         const dismiss = document.createElement('button');
         dismiss.type = 'button';
         dismiss.className = 'alert__dismiss';

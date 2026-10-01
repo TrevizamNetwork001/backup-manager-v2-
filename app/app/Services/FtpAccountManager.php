@@ -6,21 +6,25 @@ use App\Models\Device;
 use App\Models\FtpAccount;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
-use Illuminate\Support\Str;
 
 class FtpAccountManager
 {
-    public function __construct(private AuditEvents $auditEvents)
-    {
-    }
+    public function __construct(private AuditEvents $auditEvents) {}
 
     public function create(?Device $device, array $input, int $actorId): array
     {
         $values = $this->credentials($input, $device);
+
         return DB::transaction(function () use ($device, $values, $actorId) {
-            if ($device) Device::query()->lockForUpdate()->findOrFail($device->id);
+            if ($device) {
+                $device = Device::query()->lockForUpdate()->findOrFail($device->id);
+            }
+            if ($values['purpose'] === 'backup' && $device?->isVsolV1600Gt()) {
+                throw ValidationException::withMessages(['device_id' => 'A OLT VSOL V1600GT usa backup por SSH; FTP não é suportado.']);
+            }
             if ($device && $device->ftpAccount()->exists()) {
                 throw ValidationException::withMessages(['device_id' => 'Este equipamento já possui uma conta FTP.']);
             }
@@ -34,6 +38,7 @@ class FtpAccountManager
                 app(HuaweiFtpBackupPolicy::class)->ensure($device);
             }
             $this->audit($account, $actorId, 'create');
+
             return [$account, $secret];
         });
     }
@@ -47,7 +52,9 @@ class FtpAccountManager
         $secret = $values['password'];
         DB::transaction(function () use ($account, $secret, $actorId) {
             $locked = FtpAccount::query()->lockForUpdate()->findOrFail($account->id);
-            if ($locked->deletion_mode) throw ValidationException::withMessages(['account' => 'Conta em exclusão.']);
+            if ($locked->deletion_mode) {
+                throw ValidationException::withMessages(['account' => 'Conta em exclusão.']);
+            }
             $locked->secret = $secret;
             $locked->provisioned_at = null;
             $locked->sync_error = null;
@@ -55,6 +62,7 @@ class FtpAccountManager
             $locked->save();
             $this->audit($locked, $actorId, 'rotate');
         });
+
         return $secret;
     }
 
@@ -62,8 +70,12 @@ class FtpAccountManager
     {
         DB::transaction(function () use ($account, $active, $actorId) {
             $locked = FtpAccount::query()->lockForUpdate()->findOrFail($account->id);
-            if ($locked->deletion_mode) throw ValidationException::withMessages(['account' => 'Conta em exclusão.']);
-            if ($locked->is_active === $active) return;
+            if ($locked->deletion_mode) {
+                throw ValidationException::withMessages(['account' => 'Conta em exclusão.']);
+            }
+            if ($locked->is_active === $active) {
+                return;
+            }
             $locked->is_active = $active;
             $locked->provisioned_at = null;
             $locked->sync_error = null;
@@ -93,6 +105,7 @@ class FtpAccountManager
         if ($values['purpose'] === 'file_server' && $device) {
             throw ValidationException::withMessages(['device_id' => 'Servidor de arquivos não usa equipamento nesta fase.']);
         }
+
         return $values;
     }
 

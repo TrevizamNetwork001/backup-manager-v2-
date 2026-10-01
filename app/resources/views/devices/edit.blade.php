@@ -17,8 +17,13 @@
         $isHuaweiFtp = $device->isHuaweiFtpEligible();
         $isOlt = $device->platform === 'olt';
         $isVsol = mb_strtolower(trim($device->vendor)) === 'vsol';
+        $deviceFormErrors = $errors->hasAny(['site_id', 'name', 'hostname', 'management_ip', 'vendor', 'platform', 'device_kind', 'device_function', 'model', 'os_version', 'notes', 'is_active']);
+        $autoOpenDeviceEdit = $deviceFormErrors || (! $errors->any() && ! request()->boolean('olt_wizard') && ! session('success'));
     @endphp
 
+    @if(session('success'))
+        <div class="alert alert--success" role="status">{{ session('success') }}</div>
+    @endif
     <article class="card">
 
         <div class="card__header">
@@ -28,11 +33,32 @@
             </div>
         </div>
 
-        <form class="card__body" method="POST" action="{{ route('devices.update', $device) }}">
-            @include('devices._form')
-        </form>
+        <div class="card__body"><button type="button" class="btn btn--secondary" data-open-device-edit>Editar dados do equipamento</button></div>
 
     </article>
+
+    <dialog class="modal form-create-modal" id="device-edit-dialog" aria-labelledby="device-edit-title">
+        <div class="modal__surface">
+            <div class="modal__header">
+                <div><h2 class="modal__title" id="device-edit-title">Editar equipamento</h2><p class="modal__description">Atualize a identificação, o acesso e os dados operacionais.</p></div>
+                <a href="{{ route('devices.index') }}" class="modal__close" data-close-device-edit aria-label="Fechar"><x-icon name="close" /></a>
+            </div>
+            <form method="POST" action="{{ route('devices.update', $device) }}">
+                @include('devices._form', ['editModal' => true])
+            </form>
+        </div>
+    </dialog>
+    <script>
+    (() => {
+        const dialog = document.getElementById('device-edit-dialog');
+        document.querySelectorAll('[data-open-device-edit]').forEach(button => button.addEventListener('click', () => dialog.showModal()));
+        const returnToList = () => location.replace(@json(route('devices.index')));
+        dialog.querySelectorAll('[data-close-device-edit]').forEach(link => link.addEventListener('click', event => { event.preventDefault(); returnToList(); }));
+        dialog.addEventListener('click', event => { if (event.target === dialog) returnToList(); });
+        dialog.addEventListener('cancel', event => { event.preventDefault(); returnToList(); });
+        @if($autoOpenDeviceEdit) dialog.showModal(); @endif
+    })();
+    </script>
 
     @if ($isHuaweiFtp)
     @php
@@ -49,7 +75,7 @@
         <div class="card__header"><div><h2 class="card__title">Integração {{ $vendorLabel }} {{ $isOlt ? 'OLT' : 'Rede' }} / FTP</h2><p class="card__description">Estado: {{ $wizard['operational'] ? 'Operacional' : 'Configuração pendente' }}</p></div></div>
         <div class="card__body"><button type="button" class="btn btn--secondary" id="open-olt-wizard">Abrir configuração guiada</button></div>
     </article>
-    <dialog id="olt-wizard" class="olt-wizard" aria-labelledby="olt-wizard-title" data-state="{{ $wizard['state'] }}" data-current-step="{{ $wizard['current_step'] }}" data-execution-id="{{ $wizard['execution']?->id }}" data-execution-status="{{ $wizard['execution']?->status }}">
+    <dialog id="olt-wizard" class="olt-wizard device-ftp-wizard" aria-labelledby="olt-wizard-title" data-state="{{ $wizard['state'] }}" data-current-step="{{ $wizard['current_step'] }}" data-execution-id="{{ $wizard['execution']?->id }}" data-execution-status="{{ $wizard['execution']?->status }}">
         @php
             $wizardStep = $wizard['current_step'];
         @endphp
@@ -58,7 +84,7 @@
                 <h2 id="olt-wizard-title">Configuração {{ $vendorLabel }} {{ $isOlt ? 'OLT' : 'Rede' }} / FTP</h2>
                 <p id="olt-wizard-count">Etapa {{ $wizardStep }} de 6</p>
             </div>
-            <button type="button" id="close-olt-wizard" class="secondary-button" aria-label="Fechar configuração">Fechar</button>
+            <button type="button" id="close-olt-wizard" class="modal__close" aria-label="Fechar configuração"><x-icon name="close" /></button>
         </div>
         <div class="olt-wizard-body">
         <div class="olt-wizard-progress" role="progressbar" aria-label="Progresso da configuração" aria-valuemin="1" aria-valuemax="6" aria-valuenow="{{ $wizardStep }}">
@@ -238,9 +264,9 @@ set save-configuration interval 30</code></pre>
         @error('wizard') <p class="olt-wizard-error" role="alert">{{ $message }}</p> @enderror
         @error('olt_configured') <p class="olt-wizard-error" role="alert">Marque a confirmação após configurar a OLT.</p> @enderror
         </div>
-        <div class="olt-wizard-navigation">
-            <button type="button" id="back-olt-wizard" class="secondary-button">Voltar</button>
-            <button type="button" id="next-olt-wizard" @if ($wizardStep >= 4) hidden @endif>Avançar</button>
+        <div class="olt-wizard-navigation modal__footer form-create-modal__footer">
+            <button type="button" id="back-olt-wizard" class="btn btn--ghost secondary-button">Voltar</button>
+            <button type="button" id="next-olt-wizard" class="btn btn--primary" @if ($wizardStep >= 4) hidden @endif>Avançar</button>
         </div>
     </dialog>
     <script>
@@ -284,13 +310,34 @@ set save-configuration interval 30</code></pre>
                 const command = document.getElementById('olt-test-command').textContent.trim();
                 try { await navigator.clipboard.writeText(command); } catch (_) { return; }
             });
-            document.getElementById('close-olt-wizard').addEventListener('click', () => dialog.close());
-            document.getElementById('finish-olt-wizard')?.addEventListener('click', () => dialog.close());
+            const returnToDevices = () => location.replace(@json(route('devices.index')));
+            document.getElementById('close-olt-wizard').addEventListener('click', returnToDevices);
+            document.getElementById('finish-olt-wizard')?.addEventListener('click', returnToDevices);
+            dialog.addEventListener('cancel', event => { event.preventDefault(); returnToDevices(); });
             showStep(selectedStep);
             if (new URLSearchParams(location.search).has('olt_wizard') || {{ ($ftpSecret ?? false) || $errors->has('wizard') || $errors->has('olt_configured') || $errors->has('ftp_host') || $errors->has('ftp_passive_address') || $errors->has('ftp_port') || $errors->has('username') || $errors->has('password') ? 'true' : 'false' }}) dialog.showModal();
             dialog.querySelector('[data-generate-olt-password]')?.addEventListener('click', () => {
-                const bytes = new Uint8Array(16); crypto.getRandomValues(bytes);
-                const value = Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
+                // 16 chars, mixed categories: several Huawei VRP models only
+                // accept a *plain-text* password up to 16 characters on
+                // `set save-configuration backup-to-server` — a longer
+                // string is treated as an already-encrypted blob and
+                // rejected ("Wrong encrypted password"), homologated
+                // against real switches. A pure-hex 32-char password (the
+                // old generator) both overshoots that limit and lacks
+                // symbols some devices also require.
+                const pools = ['ABCDEFGHJKLMNPQRSTUVWXYZ', 'abcdefghjkmnpqrstuvwxyz', '23456789', '!@#$%^*-_=+'];
+                const all = pools.join('');
+                const length = 16;
+                const randomBytes = (count) => { const b = new Uint8Array(count); crypto.getRandomValues(b); return b; };
+                const chars = Array.from(randomBytes(length), (b) => all[b % all.length]);
+                const picks = randomBytes(pools.length);
+                pools.forEach((pool, i) => { chars[i] = pool[picks[i] % pool.length]; });
+                const shuffleBytes = randomBytes(length);
+                for (let i = chars.length - 1; i > 0; i--) {
+                    const j = shuffleBytes[i] % (i + 1);
+                    [chars[i], chars[j]] = [chars[j], chars[i]];
+                }
+                const value = chars.join('');
                 dialog.querySelector('#ftp_password').value = value;
                 dialog.querySelector('#ftp_password_confirmation').value = value;
             });
@@ -348,48 +395,6 @@ set save-configuration interval 30</code></pre>
         }
     </style>
     @endif
-
-    {{-- VSOL OLT can use ssh_pull (this section's whole reason for being),
-         unlike Huawei OLT which never does SSH at all — see
-         Device::isHuaweiFtpEligible() / docs/CORE_STATUS.md. --}}
-    @unless ($isOlt && ! $isVsol)
-    @php
-        $mismatch = $device->ssh_host_key_fingerprint && $device->ssh_observed_fingerprint &&
-            ($device->ssh_host_key_algorithm !== $device->ssh_observed_algorithm ||
-             $device->ssh_host_key_fingerprint !== $device->ssh_observed_fingerprint);
-    @endphp
-    <details class="card device-ssh-security" id="device-ssh-security" @if($mismatch || ($device->ssh_observed_fingerprint && ! $device->ssh_host_key_fingerprint)) open @endif>
-        <summary class="device-ssh-security__summary">
-            <span class="card__title">Segurança SSH</span>
-            <span class="badge badge--{{ $mismatch ? 'warning' : ($device->ssh_host_key_fingerprint ? 'success' : 'neutral') }}">{{ $mismatch ? 'Chave alterada/atenção' : ($device->ssh_host_key_fingerprint ? 'Chave confiada' : 'Não confiada') }}</span>
-            <x-icon name="chevron-down" class="device-ssh-security__chevron" />
-        </summary>
-        <div class="card__body stack">
-            @if ($mismatch)
-                <p class="alert alert--warning">Chave alterada — backups bloqueados até aprovação. Confira a chave antes de confiar novamente.</p>
-            @endif
-            @error('ssh_host_key') <p class="alert alert--warning" role="alert">{{ $message }}</p> @enderror
-            <dl class="device-ssh-security__facts">
-                <div><dt>Algoritmo confiado</dt><dd class="tech-value">{{ $device->ssh_host_key_algorithm ?? '—' }}</dd></div>
-                <div><dt>Fingerprint confiado</dt><dd class="tech-value">{{ $device->ssh_host_key_fingerprint ?? '—' }}</dd></div>
-                <div><dt>Algoritmo observado</dt><dd class="tech-value">{{ $device->ssh_observed_algorithm ?? '—' }}</dd></div>
-                <div><dt>Fingerprint observado</dt><dd class="tech-value">{{ $device->ssh_observed_fingerprint ?? '—' }}</dd></div>
-                @if ($device->ssh_observed_at)
-                    <div><dt>Observada em</dt><dd>{{ app(\App\Services\InstanceTimezone::class)->format($device->ssh_observed_at, 'd/m/Y H:i') }}</dd></div>
-                @endif
-                @if ($device->ssh_host_key_trusted_at)
-                    <div><dt>Confiada em</dt><dd>{{ app(\App\Services\InstanceTimezone::class)->format($device->ssh_host_key_trusted_at, 'd/m/Y H:i') }}</dd></div>
-                @endif
-            </dl>
-            @if ($device->ssh_observed_fingerprint && ($mismatch || ! $device->ssh_host_key_fingerprint))
-                <form method="POST" action="{{ route('devices.ssh-host-key.trust', $device) }}">
-                    @csrf
-                    <button type="submit" class="btn btn--secondary">Confiar nesta chave observada</button>
-                </form>
-            @endif
-        </div>
-    </details>
-    @endunless
 
 </div>
 

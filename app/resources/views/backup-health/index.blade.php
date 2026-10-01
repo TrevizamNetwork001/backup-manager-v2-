@@ -2,6 +2,17 @@
 @section('title', 'Status dos backups — Backup Manager')
 @section('page-title', 'Status dos backups')
 @section('page-description', 'Situação dos backups dos equipamentos ativos.')
+@section('page-header')
+<header class="page-header">
+    <div class="page-header__content">
+        <h1 class="page-header__title">Status dos backups</h1>
+        <p class="page-header__description">Situação dos backups dos equipamentos ativos.</p>
+    </div>
+    <div class="page-header__actions">
+        <a class="btn btn--ghost" href="{{ route('dashboard') }}">Voltar ao Dashboard</a>
+    </div>
+</header>
+@endsection
 @section('content')
 @php
     $statuses = ['warning' => 'Atenção', 'critical' => 'Crítico', 'unknown' => 'Sem histórico'];
@@ -13,24 +24,23 @@
         'manual_never_backed_up' => 'Nenhum backup registrado (sem agendamento ativo)',
     ];
 @endphp
-<div class="page-width backup-health-page">
-    <a class="backup-health-back" href="{{ route('dashboard') }}">← Voltar ao Dashboard</a>
+<div class="backup-health-page stack">
     <div class="backup-health-counts">
         @foreach (['healthy' => 'Em dia', 'warning' => 'Atenção', 'critical' => 'Crítico', 'unknown' => 'Sem histórico'] as $status => $label)
-            <div class="backup-health-count backup-health-count--{{ $status }}"><span>{{ $label }}</span><strong>{{ $summary['counts'][$status] }}</strong></div>
+            <div class="card backup-health-count backup-health-count--{{ $status }}"><span>{{ $label }}</span><strong>{{ $summary['counts'][$status] }}</strong></div>
         @endforeach
     </div>
-    <article class="panel form-panel">
-        <div class="panel-header"><div><h2>Equipamentos para acompanhar</h2><p>Equipamentos inativos não entram nesta avaliação. Um equipamento manual sem backup aparece como “Sem histórico”.</p></div></div>
+    <section class="card" aria-labelledby="backup-health-devices-title">
+        <div class="card__header"><div><h2 class="card__title" id="backup-health-devices-title">Equipamentos para acompanhar</h2><p class="card__description">Equipamentos inativos não entram nesta avaliação. Um equipamento manual sem backup aparece como “Sem histórico”.</p></div></div>
         @if ($devices->isEmpty())
-            <p class="muted-text">Nenhum equipamento precisa de acompanhamento.</p>
+            <div class="empty-state"><div class="empty-state__icon" aria-hidden="true"><x-icon name="check-circle" /></div><h3 class="empty-state__title">Nenhum equipamento precisa de acompanhamento.</h3></div>
         @else
-            <div class="table-responsive"><table class="data-table">
+            <div class="table-shell" role="region" aria-label="Equipamentos para acompanhar" tabindex="0"><table class="data-table">
                 <thead><tr><th>Equipamento</th><th>Situação</th><th>Motivo</th><th>Histórico</th></tr></thead>
                 <tbody>
                     @foreach ($devices as $device)
                         <tr>
-                            <td data-label="Equipamento">{{ $device['name'] }}</td>
+                            <td data-label="Equipamento"><span class="entity-cell__title">{{ $device['name'] }}</span></td>
                             <td data-label="Situação"><span class="badge badge--{{ \App\Support\HealthStatus::from($device['status'])->badgeVariant() }}">{{ $statuses[$device['status']] ?? $device['status'] }}</span></td>
                             <td data-label="Motivo">{{ $reasons[$device['reason']] ?? $device['reason'] }}</td>
                             <td data-label="Histórico"><a class="table-action" href="{{ route('backup-executions.index', ['device_id' => $device['device_id']]) }}">Ver execuções</a></td>
@@ -38,8 +48,10 @@
                     @endforeach
                 </tbody>
             </table></div>
-            {{ $devices->links() }}
+            @if($devices->hasPages())
+                <div class="pagination-container">{{ $devices->links() }}</div>
+            @endif
         @endif
-    </article>
+    </section>
 </div>
 @endsection

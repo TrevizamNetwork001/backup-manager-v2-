@@ -12,7 +12,9 @@
     </div>
     <div class="page-header__actions">
         @can('sites.manage')
+        @unless(isset($editingSite))
             <button type="button" class="btn btn--primary" data-open-site-create><x-icon name="add" size="sm" /> Novo Site / POP</button>
+        @endunless
         @endcan
     </div>
 </header>
@@ -50,7 +52,9 @@
             </p>
 
             @can('sites.manage')
+            @unless(isset($editingSite))
             <div class="empty-state__actions"><button type="button" class="btn btn--secondary" data-open-site-create>Cadastrar primeiro Site / POP</button></div>
+            @endunless
             @endcan
         </div>
 
@@ -101,7 +105,7 @@
                                 @canany(['sites.manage', 'sites.delete'])
                                 <details class="row-menu"><summary>Ações</summary><div class="table-actions">
                                     @can('sites.manage')
-                                    <a href="{{ route('sites.edit', $site) }}" class="btn btn--ghost btn--sm">Editar</a>
+                                    <a href="{{ route('sites.edit', ['site' => $site, 'page' => $sites->currentPage()]) }}" class="btn btn--ghost btn--sm">Editar</a>
                                     @endcan
                                     @can('sites.delete')
                                     <form
@@ -136,6 +140,7 @@
 
 </div>
 @can('sites.manage')
+@unless(isset($editingSite))
 <dialog class="modal form-create-modal" id="site-create-dialog" aria-labelledby="site-create-title">
     <div class="modal__surface">
         <div class="modal__header">
@@ -143,7 +148,7 @@
             <button type="button" class="modal__close" data-close-site-create aria-label="Fechar"><x-icon name="close" /></button>
         </div>
         <form method="POST" action="{{ route('sites.store') }}">
-            @include('sites._form', ['createModal' => true])
+            @include('sites._form', ['createModal' => true, 'site' => null])
         </form>
     </div>
 </dialog>
@@ -153,8 +158,32 @@
     document.querySelectorAll('[data-open-site-create]').forEach(button => button.addEventListener('click', () => dialog.showModal()));
     dialog.querySelectorAll('[data-close-site-create]').forEach(button => button.addEventListener('click', () => dialog.close()));
     dialog.addEventListener('click', event => { if (event.target === dialog) dialog.close(); });
-    @if ($errors->any()) dialog.showModal(); @endif
+    @if ($errors->any() && !isset($editingSite)) dialog.showModal(); @endif
 })();
 </script>
+@endunless
+@isset($editingSite)
+<dialog class="modal form-create-modal" id="site-edit-dialog" aria-labelledby="site-edit-title">
+    <div class="modal__surface">
+        <div class="modal__header">
+            <div><h2 class="modal__title" id="site-edit-title">Editar Site / POP</h2><p class="modal__description">Atualize a identificação desta localização.</p></div>
+            <button type="button" class="modal__close" data-close-site-edit aria-label="Fechar"><x-icon name="close" /></button>
+        </div>
+        <form method="POST" action="{{ route('sites.update', ['site' => $editingSite, 'page' => request('page')]) }}">
+            @include('sites._form', ['site' => $editingSite, 'editModal' => true])
+        </form>
+    </div>
+</dialog>
+<script>
+(() => {
+    const dialog = document.getElementById('site-edit-dialog');
+    const indexUrl = @json(route('sites.index', ['page' => request('page')]));
+    dialog.querySelectorAll('[data-close-site-edit]').forEach(button => button.addEventListener('click', () => dialog.close()));
+    dialog.addEventListener('click', event => { if (event.target === dialog) dialog.close(); });
+    dialog.addEventListener('close', () => window.location.assign(indexUrl));
+    dialog.showModal();
+})();
+</script>
+@endisset
 @endcan
 @endsection

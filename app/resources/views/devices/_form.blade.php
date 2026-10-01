@@ -4,7 +4,7 @@
     @method('PUT')
 @endif
 
-@if($createModal ?? false)
+@if(($createModal ?? false) || ($editModal ?? false))
     <div class="modal__body form-create-modal__body">
 @endif
 
@@ -72,12 +72,34 @@
     </div>
 
     <div class="form-field">
-        <label class="form-label" for="platform">Tipo *</label>
-        <select class="form-control" id="platform" name="platform" required>
-            <option value="network" @selected(old('platform', $device->platform ?? 'network') === 'network')>Roteador / switch</option>
-            <option value="olt" @selected(old('platform', $device->platform ?? 'network') === 'olt')>OLT</option>
+        @php
+            $selectedKind = old('device_kind', $device->device_kind ?? (($device->platform ?? null) === 'olt' ? 'olt' : null));
+        @endphp
+        <label class="form-label" for="device_kind">Tipo *</label>
+        <select class="form-control" id="device_kind" name="device_kind" required>
+            <option value="" @selected($selectedKind === null || $selectedKind === '')>Selecione...</option>
+            <option value="olt" @selected($selectedKind === 'olt')>OLT</option>
+            <option value="switch" @selected($selectedKind === 'switch')>Switch</option>
+            <option value="router" @selected($selectedKind === 'router')>Roteador</option>
+            <option value="firewall" @selected($selectedKind === 'firewall')>Firewall</option>
+            @if($selectedKind === 'network')
+                <option value="network" selected>Roteador / switch (não classificado)</option>
+            @endif
         </select>
+        @error('device_kind')
+            <span class="form-error">{{ $message }}</span>
+        @enderror
         @error('platform')
+            <span class="form-error">{{ $message }}</span>
+        @enderror
+    </div>
+
+    <div class="form-field">
+        <label class="form-label" for="device_function">Função</label>
+        <input class="form-control" id="device_function" name="device_function" type="text"
+            value="{{ old('device_function', $device->device_function ?? '') }}" maxlength="100" placeholder="Ex.: BGP, BNG, Core">
+        <small class="form-help">Informe a função do equipamento, como BGP, BNG, Core, Firewall, CGNAT ou Acesso.</small>
+        @error('device_function')
             <span class="form-error">{{ $message }}</span>
         @enderror
     </div>
@@ -114,24 +136,6 @@
         >
 
         @error('model')
-            <span class="form-error">{{ $message }}</span>
-        @enderror
-    </div>
-
-    <div class="form-field">
-        <label class="form-label" for="hostname">Hostname técnico (opcional)</label>
-
-        <input class="form-control"
-            id="hostname"
-            name="hostname"
-            type="text"
-            value="{{ old('hostname', $device->hostname ?? '') }}"
-            maxlength="255"
-            placeholder="router-borda-01"
-        >
-
-        <small class="form-help">Informe se for diferente do nome. A conexão usa o IP de gerenciamento.</small>
-        @error('hostname')
             <span class="form-error">{{ $message }}</span>
         @enderror
     </div>
@@ -191,13 +195,15 @@
     </div>
 </div>
 
-@if($createModal ?? false)
+@if(($createModal ?? false) || ($editModal ?? false))
     </div>
 @endif
 
-<div class="form-actions {{ ($createModal ?? false) ? 'modal__footer form-create-modal__footer' : '' }}">
+<div class="form-actions {{ (($createModal ?? false) || ($editModal ?? false)) ? 'modal__footer form-create-modal__footer' : '' }}">
     @if($createModal ?? false)
         <button type="button" class="btn btn--ghost" data-close-device-create>Cancelar</button>
+    @elseif($editModal ?? false)
+        <a href="{{ route('devices.index') }}" class="btn btn--ghost" data-close-device-edit>Cancelar</a>
     @else
         <a href="{{ route('devices.index') }}" class="btn btn--ghost">Cancelar</a>
     @endif

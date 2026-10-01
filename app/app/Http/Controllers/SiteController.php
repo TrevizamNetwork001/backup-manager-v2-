@@ -50,8 +50,11 @@ class SiteController extends Controller
     public function edit(Site $site): View
     {
         $this->authorize('sites.manage');
+        $sites = Site::query()
+            ->orderBy('name')
+            ->paginate(20);
 
-        return view('sites.edit', compact('site'));
+        return view('sites.index', ['sites' => $sites, 'editingSite' => $site]);
     }
 
     public function update(Request $request, Site $site): RedirectResponse
@@ -75,7 +78,7 @@ class SiteController extends Controller
         $site->update($validated);
 
         return redirect()
-            ->route('sites.index')
+            ->route('sites.index', ['page' => $request->query('page')])
             ->with('success', 'Site / POP atualizado com sucesso.');
     }
 
@@ -86,6 +89,7 @@ class SiteController extends Controller
         $deviceCount = $site->devices()->count();
         if ($deviceCount > 0) {
             $names = $site->devices()->orderBy('name')->limit(5)->pluck('name')->implode(', ');
+
             return redirect()->route('sites.index')->with('warning',
                 "Remova ou realoque {$deviceCount} equipamento(s) antes de excluir este Site / POP: {$names}".
                 ($deviceCount > 5 ? '…' : '.'));

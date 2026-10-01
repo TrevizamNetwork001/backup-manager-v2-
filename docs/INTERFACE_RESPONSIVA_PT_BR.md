@@ -146,3 +146,11 @@ Commits desta entrega:
 Alterações locais de recuperação, scripts de backup do sistema, instruções
 do projeto e remoções de referências fora desta revisão permanecem na área
 de trabalho.
+
+## Complemento de 01/10/2026
+
+Em larguras de 721 a 900 px, o menu da aplicação recolhe para que notebooks estreitos e tablets em paisagem tenham a largura total para o conteúdo. O modal **Equipamentos → Política de backup** foi alinhado ao modal **Novo equipamento**, com cabeçalho, grade de identificação, linhas de vínculo e rodapé do mesmo padrão; em celular, campos e ações cabem em uma coluna. A lista FTP mostra somente o nome do device na coluna **Equipamento**, sem um traço de fabricante ausente.
+
+O dashboard usa três cores no gráfico **Status dos equipamentos**: verde para ativos sem falha pendente, vermelho para ativos cujo último resultado relevante de backup falhou ou aguarda nova tentativa e cinza para inativos. O gráfico não abre outra página. O resultado é derivado de uma consulta por equipamento, sem contar várias falhas do mesmo device várias vezes.
+
+Nginx passou a comprimir assets e a aplicar cache de sete dias; a resposta de `app.css` foi verificada com gzip. A medição interna de páginas autenticadas ficou entre 30 e 99 ms; não houve nova captura em navegador ou aparelho físico nesta rodada. O registro completo, incluindo políticas e migrações, está em [CHANGES_2026-10-01.md](CHANGES_2026-10-01.md).

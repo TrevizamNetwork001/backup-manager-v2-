@@ -51,14 +51,20 @@ class ArtisanSession:
 
     def close(self):
         if self.process is not None:
-            self.process.stdin.close()
-            try:
-                self.process.wait(timeout=1)
-            except subprocess.TimeoutExpired:
-                self.process.kill()
-                self.process.wait()
-            self.process.stdout.close()
+            process = self.process
             self.process = None
+            try:
+                try:
+                    process.stdin.close()
+                except OSError:
+                    pass
+                try:
+                    process.wait(timeout=1)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait()
+            finally:
+                process.stdout.close()
         self.buffer = b''
 
     def __exit__(self, *args):

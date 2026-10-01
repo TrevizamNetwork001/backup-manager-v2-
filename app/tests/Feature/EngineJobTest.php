@@ -149,7 +149,7 @@ class EngineJobTest extends TestCase
         $this->assertSame('ssh-rsa', $device->ssh_host_key_algorithm);
         $this->assertNotNull($device->ssh_host_key_trusted_at);
         $this->assertSame($user->id, $device->ssh_host_key_trusted_by);
-        $this->get(route('devices.edit', $device))->assertOk()->assertSee($fingerprint)
+        $this->get(route('credentials.edit', $job->credential_id))->assertOk()->assertSee($fingerprint)
             ->assertDontSee('senha-super-secreta')->assertDontSee('SHA256:'.str_repeat('Z', 43));
     }
 
@@ -166,7 +166,7 @@ class EngineJobTest extends TestCase
         $device = $job->device->fresh();
         $this->assertSame('SHA256:'.str_repeat('C', 43), $device->ssh_host_key_fingerprint);
         $this->assertSame($trustedAt->toDateTimeString(), $device->ssh_host_key_trusted_at->toDateTimeString());
-        $this->get(route('devices.edit', $device))->assertSee('Chave alterada')->assertDontSee('senha-super-secreta');
+        $this->get(route('credentials.edit', $job->credential_id))->assertSee('Chave alterada')->assertDontSee('senha-super-secreta');
     }
 
     public function test_heartbeat_and_recovery_respect_threshold_and_terminal_state(): void

@@ -1,4 +1,4 @@
-# Relatórios e exportação CSV
+# Relatórios e exportação CSV/PDF
 
 Atualização consolidada de responsividade, edição e traduções:
 [INTERFACE_RESPONSIVA_PT_BR.md](INTERFACE_RESPONSIVA_PT_BR.md).
@@ -7,7 +7,7 @@ identificadores originais no banco, nos filtros e na auditoria.
 
 ## Entrega
 
-`/reports` reúne execuções, equipamentos, artifacts, falhas e contas FTP. As
+`/reports` reúne execuções, equipamentos, documentação, artifacts, falhas e contas FTP. As
 rotas exigem autenticação, conta ativa e as permissões `reports.view` ou
 `reports.export`. A navegação e a exportação usam as mesmas consultas e
 filtros; listagens de execuções, equipamentos e artifacts paginam 25 itens.
@@ -16,6 +16,8 @@ filtros; listagens de execuções, equipamentos e artifacts paginam 25 itens.
   e código de erro. Exibe resumo de status e duração.
 - **Equipamentos:** saúde calculada pelo mesmo `DeviceBackupHealth` usado no
   dashboard, com filtros de site, vendor, saúde, política e frescor.
+- **Documentação:** inventário e dados de acesso por Site / POP, exclusivo do
+  administrador. CSV sem senhas; PDF com as senhas cadastradas.
 - **Artifacts:** período, site, equipamento, status e faixa de tamanho.
 - **Falhas:** somente execuções terminais com `error_code`; agrupa por código
   e por equipamento. A classificação retryable usa os códigos do engine.
@@ -171,6 +173,35 @@ registrada em `backup.content_analyzed`; não altera a aceitação do artifact.
 O parser lê apenas o início do cabeçalho e devolve um token de versão
 validado, nunca a linha original, serial ou conteúdo com segredos. A
 detecção de versão antes do backup continua fora de escopo.
+
+## Documentação de equipamentos — 01/10/2026
+
+`/reports/documentation` permite ao administrador selecionar um Site / POP ou
+todos. O CSV mantém inventário, estado, acessos e políticas, sem senhas. O PDF
+apresenta cada dispositivo com site, IP de acesso ou MGNT, fabricante/modelo,
+versão quando preenchida, tipo/função e cada acesso em linhas separadas
+(método, usuário, porta e senha cadastrada), incluindo FTP de backup. Campos
+vazios são omitidos; estado e políticas não aparecem no PDF.
+O título de cada bloco usa **Equipamento**. Nome, senha e demais linhas do
+mesmo equipamento permanecem juntos ao paginar. O cabeçalho mostra a
+quantidade de POPs e equipamentos e a data de geração, sem a expressão
+“Contém senhas”; o arquivo ainda contém as senhas cadastradas.
+
+Consulta e exportações são restritas ao perfil Administrador. CSV e PDF enviam
+`no-store`; o PDF também envia `no-cache`. As exportações registram
+`report.exported` com formato, filtro, contagem e indicação de presença de
+segredos, sem guardar o conteúdo do arquivo. O histórico de Relatórios permite
+repetir uma exportação no formato original usando os dados atuais.
+
+O PDF é gerado no próprio aplicativo, sem nova dependência. Os testes
+direcionados verificaram filtro por Site / POP, senhas somente no PDF, campos
+vazios omitidos e restrição ao administrador. `DeviceDocumentationReportTest`,
+`ReportsSmokeTest` e `ReportsAuthorizationTest`: 9 testes e 148 asserções
+aprovados; views Blade compilaram e o Pint passou nos arquivos PHP alterados.
+
+Em `/reports/failures`, a lista de códigos e equipamentos falhos passou a
+usar linhas adaptáveis, inclusive no celular, sem a barra horizontal da
+tabela anterior. Filtros e exportação mantêm os critérios existentes.
 
 ## Decisão sobre lixeira e prazo de graça
 

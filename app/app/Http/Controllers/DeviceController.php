@@ -2,6 +2,9 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\BackupExecution;
+use App\Models\BackupPolicy;
+use App\Models\Credential;
 use App\Models\Device;
 use App\Models\Site;
 use App\Services\DeviceBackupHealth;
@@ -19,7 +22,9 @@ class DeviceController extends Controller
     {
         $this->authorize('devices.view');
         $devices = Device::query()
-            ->with('site')
+            ->with(['site', 'ftpAccount', 'deviceBackupPolicies' => fn ($query) => $query
+                ->with(['backupPolicy:id,name,method,is_active', 'credential:id,name,type,is_active'])
+                ->withCount('backupExecutions')])
             ->orderBy('name')
             ->paginate(20);
         $healthByDevice = collect($backupHealth->rows())
@@ -27,7 +32,16 @@ class DeviceController extends Controller
             ->keyBy('device_id');
         $sites = Site::query()->where('is_active', true)->orderBy('name')->get();
 
-        return view('devices.index', compact('devices', 'healthByDevice', 'sites'));
+        $policies = BackupPolicy::query()->where('is_active', true)->whereNull('archived_at')->orderBy('name')->get();
+        $sshCredentialsByDevice = Credential::query()
+            ->whereIn('device_id', $devices->pluck('id'))
+            ->where('type', 'ssh')
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get(['id', 'device_id', 'name', 'username'])
+            ->groupBy('device_id');
+
+        return view('devices.index', compact('devices', 'healthByDevice', 'sites', 'policies', 'sshCredentialsByDevice'));
     }
 
     public function create(): View
@@ -58,6 +72,8 @@ class DeviceController extends Controller
             'management_ip' => ['required', 'ip', 'max:45', 'unique:devices,management_ip'],
             'vendor' => ['required', 'string', 'max:100', Rule::in(Device::VENDORS)],
             'platform' => ['required', Rule::in(['network', 'olt'])],
+            'device_kind' => ['nullable', Rule::in(['router', 'switch', 'firewall', 'olt', 'network'])],
+            'device_function' => ['nullable', 'string', 'max:100'],
             'model' => ['nullable', 'string', 'max:255'],
             'os_version' => ['nullable', 'string', 'max:255'],
             'notes' => ['nullable', 'string', 'max:2000'],
@@ -109,6 +125,8 @@ class DeviceController extends Controller
             ],
             'vendor' => ['required', 'string', 'max:100', Rule::in(Device::vendorOptions($device->vendor))],
             'platform' => ['required', Rule::in(['network', 'olt'])],
+            'device_kind' => ['nullable', Rule::in(['router', 'switch', 'firewall', 'olt', 'network'])],
+            'device_function' => ['nullable', 'string', 'max:100'],
             'model' => ['nullable', 'string', 'max:255'],
             'os_version' => ['nullable', 'string', 'max:255'],
             'notes' => ['nullable', 'string', 'max:2000'],
@@ -123,6 +141,19 @@ class DeviceController extends Controller
         }
         DB::transaction(function () use ($device, $validated) {
             $locked = Device::query()->lockForUpdate()->findOrFail($device->id);
+            $classificationChanged = $locked->vendor !== $validated['vendor'] ||
+                ($locked->platform ?? 'network') !== ($validated['platform'] ?? 'network');
+            if ($classificationChanged && (
+                $locked->deviceBackupPolicies()->exists() ||
+                BackupExecution::query()->where('device_id', $locked->id)->exists() ||
+                (Schema::hasTable('ftp_accounts') && $locked->ftpAccount()->exists()) ||
+                $locked->oltFtpIntegration()->exists()
+            )) {
+                throw ValidationException::withMessages([
+                    'vendor' => 'Fabricante e tipo não podem mudar enquanto houver políticas, execuções ou integração FTP vinculadas. Cadastre o equipamento como um novo registro para preservar o histórico.',
+                    'platform' => 'Fabricante e tipo não podem mudar enquanto houver políticas, execuções ou integração FTP vinculadas. Cadastre o equipamento como um novo registro para preservar o histórico.',
+                ]);
+            }
             if ($locked->management_ip !== $validated['management_ip']) {
                 $locked->ssh_observed_algorithm = null;
                 $locked->ssh_observed_fingerprint = null;
@@ -139,6 +170,12 @@ class DeviceController extends Controller
     public function trustHostKey(Request $request, Device $device): RedirectResponse
     {
         $this->authorize('devices.manage');
+        $returnCredential = null;
+        if ($request->input('return_to') === 'credential_test') {
+            $validated = $request->validate(['credential_id' => ['required', 'integer', 'exists:credentials,id']]);
+            $returnCredential = Credential::query()->where('device_id', $device->id)
+                ->where('type', 'ssh')->findOrFail($validated['credential_id']);
+        }
         DB::transaction(function () use ($request, $device) {
             $locked = Device::query()->lockForUpdate()->findOrFail($device->id);
             if (! $locked->ssh_observed_algorithm || ! $locked->ssh_observed_fingerprint) {
@@ -150,6 +187,17 @@ class DeviceController extends Controller
             $locked->ssh_host_key_trusted_by = $request->user()->id;
             $locked->save();
         });
+
+        if ($request->input('return_to') === 'devices') {
+            return redirect()->route('devices.index')->with('success', 'Chave SSH confiada.');
+        }
+        if ($request->input('return_to') === 'credentials') {
+            return redirect()->route('credentials.index')->with('success', 'Chave SSH confiada.');
+        }
+        if ($returnCredential) {
+            return redirect()->route('credentials.edit', ['credential' => $returnCredential, 'ssh_test' => 1])
+                ->with('success', 'Chave SSH confiada. Faça agora o teste da conexão SSH.');
+        }
 
         return redirect()->route('devices.edit', $device)->with('success', 'Chave SSH confiada.');
     }
@@ -178,16 +226,23 @@ class DeviceController extends Controller
     {
         $request->merge([
             'name' => trim((string) $request->input('name')),
-            'hostname' => trim((string) $request->input('hostname')) ?: null,
             'management_ip' => trim((string) $request->input('management_ip')),
             'vendor' => is_string($request->input('vendor'))
                 ? Device::normalizeVendor($request->input('vendor'))
                 : $request->input('vendor'),
-            'platform' => $request->input('platform', 'network'),
+            'platform' => in_array($request->input('device_kind'), ['router', 'switch', 'firewall', 'olt'], true)
+                ? ($request->input('device_kind') === 'olt' ? 'olt' : 'network')
+                : $request->input('platform', 'network'),
+            'device_function' => is_string($request->input('device_function'))
+                ? (trim($request->input('device_function')) ?: null)
+                : $request->input('device_function'),
             'model' => trim((string) $request->input('model')) ?: null,
             'os_version' => trim((string) $request->input('os_version')) ?: null,
             'notes' => trim((string) $request->input('notes')) ?: null,
             'is_active' => $request->boolean('is_active'),
         ]);
+        if ($request->exists('hostname')) {
+            $request->merge(['hostname' => trim((string) $request->input('hostname')) ?: null]);
+        }
     }
 }

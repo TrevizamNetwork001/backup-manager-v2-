@@ -86,6 +86,15 @@ class BackupExecution extends Model
         return $this->hasOne(BackupArtifact::class);
     }
 
+    public function durationSeconds(): ?int
+    {
+        $start = $this->origin === 'ftp_received' ? ($this->received_at ?? $this->started_at) : $this->started_at;
+
+        return $start && $this->finished_at
+            ? max(0, (int) $start->diffInSeconds($this->finished_at))
+            : null;
+    }
+
     public static function createManual(DeviceBackupPolicy $association): self
     {
         return DB::transaction(function () use ($association) {
@@ -95,6 +104,11 @@ class BackupExecution extends Model
             }
             $association = DeviceBackupPolicy::query()->with($relations)
                 ->lockForUpdate()->findOrFail($association->id);
+            if ($association->backupPolicy->method === 'ftp_push' && $association->device->platform !== 'olt') {
+                throw ValidationException::withMessages([
+                    'association' => 'Roteadores e switches Huawei enviam backups automaticamente pelo FTP; não é possível iniciar uma execução manual.',
+                ]);
+            }
             if (! $association->is_active || ! $association->backupPolicy->is_active ||
                 ! $association->device->is_active ||
                 ($association->backupPolicy->method === 'ssh_pull' && ! $association->credential?->is_active) ||

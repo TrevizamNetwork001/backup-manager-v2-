@@ -52,12 +52,13 @@
         <section class="reference-panel status-panel">
             <h2>Status dos equipamentos</h2>
             <div class="device-status">
-                <div class="device-ring {{ $deviceCount === 0 ? 'is-empty' : '' }}" style="--active: {{ $deviceCount ? $activeDevices / $deviceCount * 100 : 0 }}%">
+                <div class="device-ring {{ $deviceCount === 0 ? 'is-empty' : '' }}" style="--healthy: {{ $ringHealthyPercent }}%; --failed-end: {{ $ringFailedEndPercent }}%">
                     <div class="device-ring__content"><strong>{{ $deviceCount }}</strong><span>equipamentos</span></div>
                 </div>
                 <div class="status-legend">
-                    <div><i class="green-dot"></i><span>Ativos</span><strong>{{ $activeDevices }}</strong><small>{{ $activeDevicePercent }}%</small></div>
-                    <div><i class="red-dot"></i><span>Inativos</span><strong>{{ $inactiveDevices }}</strong><small>{{ $inactiveDevicePercent }}%</small></div>
+                    <div><i class="green-dot"></i><span>Ativos sem falha</span><strong>{{ $activeWithoutFailure }}</strong><small>{{ $activeWithoutFailurePercent }}%</small></div>
+                    <div><i class="red-dot"></i><span>Falha no backup</span><strong>{{ $failedBackupDevices }}</strong><small>{{ $failedDevicePercent }}%</small></div>
+                    <div><i class="slate-dot"></i><span>Inativos</span><strong>{{ $inactiveDevices }}</strong><small>{{ $inactiveDevicePercent }}%</small></div>
                 </div>
             </div>
         </section>
@@ -80,16 +81,14 @@
                 <tbody>
                 @forelse ($recentExecutions as $execution)
                     @php
-                        $durationSeconds = $execution->started_at && $execution->finished_at
-                            ? max(0, (int) $execution->started_at->diffInSeconds($execution->finished_at))
-                            : null;
+                        $durationSeconds = $execution->durationSeconds();
                     @endphp
                     <tr>
                         <td data-label="Início">{{ ($execution->started_at ?? $execution->created_at)?->setTimezone($instanceTimezone)->format('d/m/Y H:i') }}</td>
                         <td data-label="Equipamento">{{ $execution->device?->name ?? '—' }}</td>
                         <td data-label="Tipo">{{ $execution->origin === 'ftp_received' ? 'FTP' : 'Backup' }}</td>
                         <td data-label="Status"><span class="badge badge--{{ $execution->status === 'succeeded' ? 'success' : (in_array($execution->status, ['failed', 'timed_out']) ? 'danger' : 'neutral') }}">{{ \App\Support\OperationalLabels::EXECUTION_STATUSES[$execution->status] ?? $execution->status }}</span></td>
-                        <td data-label="Duração" class="duration-cell">{{ $durationSeconds === null ? '—' : (intdiv($durationSeconds, 3600) ? intdiv($durationSeconds, 3600).'h ' : '').intdiv($durationSeconds % 3600, 60).'m '.($durationSeconds % 60).'s' }}</td>
+                        <td data-label="Duração" class="duration-cell">{{ $durationSeconds === null ? '—' : $durationSeconds.'s' }}</td>
                     </tr>
                 @empty
                     <tr><td colspan="5" class="empty-table">Nenhuma execução registrada.</td></tr>

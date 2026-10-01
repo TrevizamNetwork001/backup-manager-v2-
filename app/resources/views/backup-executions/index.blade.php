@@ -70,19 +70,21 @@
                 <p class="empty-state__description">Ajuste os filtros para consultar o histórico de backups.</p>
             </div>
         @else
+            @php
+                $hasErrors = $executions->getCollection()->contains(fn ($execution) => $execution->error_code || $execution->error_message);
+            @endphp
             <div class="table-shell" role="region" aria-label="Histórico de execuções de backup" tabindex="0">
                 <table class="data-table">
                     <thead>
                         <tr>
                             <th>Hora</th><th>Equipamento</th><th>Política</th><th>Método</th><th>Status</th>
-                            <th>Duração</th><th>Tentativa</th><th>Erro</th>
+                            <th>Duração</th><th>Tentativa</th>@if($hasErrors)<th>Erro</th>@endif
                         </tr>
                     </thead>
                     <tbody>
                         @foreach($executions as $execution)
                             @php
-                                $duration = $execution->started_at && $execution->finished_at
-                                    ? max(0, (int) $execution->started_at->diffInSeconds($execution->finished_at)) : null;
+                                $duration = $execution->durationSeconds();
                                 $statusLabel = \App\Support\OperationalLabels::EXECUTION_STATUSES[$execution->status] ?? $execution->status;
                                 $statusVariant = $execution->status === 'succeeded' ? 'success' : (in_array($execution->status, ['failed', 'timed_out'], true) ? 'danger' : (in_array($execution->status, ['retry_wait', 'running'], true) ? 'warning' : 'neutral'));
                             @endphp
@@ -92,9 +94,9 @@
                                 <td data-label="Política">{{ $execution->backupPolicy->name }}</td>
                                 <td data-label="Método">{{ $execution->backupPolicy->method === 'ftp_push' ? 'Envio via FTP' : 'Coleta via SSH' }}</td>
                                 <td data-label="Status"><span class="badge badge--{{ $statusVariant }}">{{ $statusLabel }}</span></td>
-                                <td data-label="Duração" class="tech-value">{{ $duration === null ? '—' : (intdiv($duration, 3600) ? intdiv($duration, 3600).'h ' : '').intdiv($duration % 3600, 60).'m '.($duration % 60).'s' }}</td>
-                                <td data-label="Tentativa">{{ $execution->attempt }} / {{ $execution->max_attempts ?? '—' }}</td>
-                                <td data-label="Erro"><code>{{ $execution->error_code ?: '—' }}</code></td>
+                                <td data-label="Duração" class="tech-value">{{ $duration === null ? '—' : $duration.'s' }}</td>
+                                <td data-label="Tentativa">{{ $execution->attempt }}</td>
+                                @if($hasErrors)<td data-label="Erro">@if($execution->error_code || $execution->error_message)<span title="{{ $execution->error_code }}">{{ $execution->error_message ?: 'Falha durante o backup.' }}</span>@endif</td>@endif
                             </tr>
                         @endforeach
                     </tbody>

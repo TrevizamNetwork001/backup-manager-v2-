@@ -7,6 +7,7 @@ use App\Services\AuditEvents;
 use App\Support\Rbac;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
@@ -66,7 +67,9 @@ class UserController extends Controller
     {
         $this->authorize('users.manage');
 
-        return view('users.edit', compact('user'));
+        $users = User::query()->orderBy('name')->paginate(20);
+
+        return view('users.index', ['users' => $users, 'editingUser' => $user]);
     }
 
     public function update(Request $request, User $user, AuditEvents $audit): RedirectResponse
@@ -154,7 +157,7 @@ class UserController extends Controller
      * previously let two admins disable/demote each other at the same
      * moment and leave zero active admins).
      */
-    private function lockedActiveAdmins(): \Illuminate\Support\Collection
+    private function lockedActiveAdmins(): Collection
     {
         return User::query()->where('role', Rbac::ROLE_ADMIN)->where('is_active', true)
             ->lockForUpdate()->get(['id']);

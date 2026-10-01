@@ -17,6 +17,7 @@ use App\Services\CsvExporter;
 use App\Services\InstanceTimezone;
 use App\Support\HealthStatus;
 use App\Support\OperationalLabels;
+use App\Support\Rbac;
 use App\Support\ReportPeriod;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
@@ -37,6 +38,7 @@ class ReportController extends Controller
         $counts = [
             'executions' => BackupExecution::query()->count(),
             'devices' => $deviceCount,
+            'documentation' => $deviceCount,
             'failures' => BackupExecution::query()->where('status', 'failed')->count(),
             'health' => $deviceCount,
             'artifacts' => BackupArtifact::query()->count(),
@@ -50,7 +52,9 @@ class ReportController extends Controller
                 ->with('actor:id,name')
                 ->where('action', 'report.exported')
                 ->where('resource_type', 'report')
-                ->whereIn('resource_id', ['executions', 'devices', 'failures', 'artifacts', 'ftp'])
+                ->whereIn('resource_id', $request->user()->hasRole(Rbac::ROLE_ADMIN)
+                    ? ['executions', 'devices', 'documentation', 'failures', 'artifacts', 'ftp']
+                    : ['executions', 'devices', 'failures', 'artifacts', 'ftp'])
                 ->when(! $canViewAudit, fn ($query) => $query->where('actor_user_id', $request->user()->id))
                 ->latest('created_at')
                 ->latest('id')
@@ -102,8 +106,7 @@ class ReportController extends Controller
                     $execution->backupPolicy?->name,
                     OperationalLabels::METHODS[$execution->backupPolicy?->method ?? ''] ?? $execution->backupPolicy?->method,
                     OperationalLabels::EXECUTION_STATUSES[$execution->status] ?? $execution->status,
-                    $execution->started_at && $execution->finished_at
-                        ? $execution->started_at->diffInSeconds($execution->finished_at) : '',
+                    $execution->durationSeconds() ?? '',
                     $execution->attempt,
                     $execution->artifact?->size_bytes,
                     $execution->error_code,

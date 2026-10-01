@@ -21,7 +21,7 @@
 @section('content')
 <div class="users-list stack">
 
-@if(session('success'))
+@if(session('success') && !isset($editingUser))
     <div class="alert alert--success" role="status">{{ session('success') }}</div>
 @endif
 <div class="toolbar">
@@ -106,7 +106,7 @@
             <button type="button" class="modal__close" data-close-user-create aria-label="Fechar"><x-icon name="close" /></button>
         </div>
         <form method="POST" action="{{ route('users.store') }}">
-            @include('users._form', ['createModal' => true])
+            @include('users._form', ['createModal' => true, 'editingUser' => null])
         </form>
     </div>
 </dialog>
@@ -116,8 +116,69 @@
     document.querySelectorAll('[data-open-user-create]').forEach(button => button.addEventListener('click', () => dialog.showModal()));
     dialog.querySelectorAll('[data-close-user-create]').forEach(button => button.addEventListener('click', () => dialog.close()));
     dialog.addEventListener('click', event => { if (event.target === dialog) dialog.close(); });
-    @if ($errors->any()) dialog.showModal(); @endif
+    @if ($errors->any() && !isset($editingUser)) dialog.showModal(); @endif
 })();
 </script>
 @endcan
+@isset($editingUser)
+<dialog class="modal form-create-modal" id="user-edit-dialog" aria-labelledby="user-edit-title">
+    <div class="modal__surface">
+        <div class="modal__header">
+            <div><h2 class="modal__title" id="user-edit-title">Editar usuário</h2><p class="modal__description">Atualize os dados de {{ $editingUser->name }}.</p></div>
+            <a href="{{ route('users.index') }}" class="modal__close" aria-label="Fechar"><x-icon name="close" /></a>
+        </div>
+        <form method="POST" action="{{ route('users.update', $editingUser) }}">
+            @include('users._form', ['editModal' => true])
+        </form>
+    </div>
+</dialog>
+<dialog class="modal form-create-modal" id="user-password-dialog" aria-labelledby="user-password-title">
+    <div class="modal__surface">
+        <div class="modal__header">
+            <div><h2 class="modal__title" id="user-password-title">Redefinir senha</h2><p class="modal__description">Defina uma nova senha para {{ $editingUser->name }}. O usuário não será notificado por e-mail.</p></div>
+            <a href="{{ route('users.edit', $editingUser) }}" class="modal__close" aria-label="Fechar"><x-icon name="close" /></a>
+        </div>
+        <form method="POST" action="{{ route('users.reset-password', $editingUser) }}">
+            @csrf
+            <div class="modal__body form-create-modal__body">
+                @if($errors->has('password'))<div class="alert alert--warning" role="alert">{{ $errors->first('password') }}</div>@endif
+                <div class="user-create-grid">
+                    <div class="form-field">
+                        <label class="form-label" for="reset-password">Nova senha *</label>
+                        <input class="form-control" id="reset-password" name="password" type="password" minlength="10" maxlength="72" autocomplete="new-password" required>
+                    </div>
+                    <div class="form-field">
+                        <label class="form-label" for="reset-password-confirmation">Confirmar nova senha *</label>
+                        <input class="form-control" id="reset-password-confirmation" name="password_confirmation" type="password" minlength="10" maxlength="72" autocomplete="new-password" required>
+                    </div>
+                </div>
+            </div>
+            <div class="modal__footer form-create-modal__footer">
+                <a href="{{ route('users.edit', $editingUser) }}" class="btn btn--ghost">Cancelar</a>
+                <button type="submit" class="btn btn--primary">Redefinir senha</button>
+            </div>
+        </form>
+    </div>
+</dialog>
+<script>
+(() => {
+    const editDialog = document.getElementById('user-edit-dialog');
+    const passwordDialog = document.getElementById('user-password-dialog');
+    const closeToList = () => { window.location.href = @json(route('users.index')); };
+    editDialog.showModal();
+    editDialog.addEventListener('click', event => { if (event.target === editDialog) closeToList(); });
+    passwordDialog.addEventListener('click', event => { if (event.target === passwordDialog) window.location.href = @json(route('users.edit', $editingUser)); });
+    editDialog.addEventListener('cancel', event => { event.preventDefault(); closeToList(); });
+    passwordDialog.addEventListener('cancel', event => { event.preventDefault(); window.location.href = @json(route('users.edit', $editingUser)); });
+    document.getElementById('open-user-password').addEventListener('click', () => {
+        editDialog.close();
+        passwordDialog.showModal();
+    });
+    @if($errors->has('password'))
+        editDialog.close();
+        passwordDialog.showModal();
+    @endif
+})();
+</script>
+@endisset
 @endsection

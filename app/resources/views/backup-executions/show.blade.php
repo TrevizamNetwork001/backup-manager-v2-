@@ -55,11 +55,18 @@
         </div>
     </section>
 
-    @if($backupExecution->origin === 'manual' && $backupExecution->backupPolicy->method === 'ftp_push')
+    @if($backupExecution->origin === 'manual' && $backupExecution->backupPolicy->method === 'ftp_push' && $backupExecution->device->platform === 'olt')
         <section class="alert alert--info execution-instruction" aria-label="Orientação de envio FTP">
             <h3 class="alert__title">Envio manual pela OLT</h3>
             <p class="alert__description">Na OLT previamente configurada, envie o arquivo <code>bm-exec-{{ $backupExecution->id }}.cfg</code> para <code>{{ app(\App\Services\FtpServerSettings::class)->get()['host'] ?: 'IP_DO_SERVIDOR_FTP' }}</code>. O arquivo precisa chegar enquanto esta execução estiver ativa; a V2 não inicia o envio pela OLT.</p>
             <p class="alert__description">Execute manualmente: <code>backup configuration ftp {{ app(\App\Services\FtpServerSettings::class)->get()['host'] ?: 'IP_DO_SERVIDOR_FTP' }} bm-exec-{{ $backupExecution->id }}.cfg</code></p>
+        </section>
+    @endif
+
+    @if($backupExecution->origin === 'manual' && $backupExecution->backupPolicy->method === 'ftp_push' && $backupExecution->device->platform === 'network')
+        <section class="alert alert--info execution-instruction" aria-label="Orientação de envio FTP">
+            <h3 class="alert__title">Envio FTP automático pelo roteador</h3>
+            <p class="alert__description">Este equipamento envia os backups conforme o intervalo configurado no próprio Huawei. Não use uma execução manual FTP para roteadores ou switches; aguarde o próximo envio automático, que aparecerá como uma execução com origem “FTP recebido”.</p>
         </section>
     @endif
 
@@ -82,8 +89,8 @@
             <h3 class="alert__title" id="execution-error-title">Detalhes do erro</h3>
             @if($backupExecution->error_code)<p class="alert__description"><strong>Código:</strong> <code>{{ $backupExecution->error_code }}</code></p>@endif
             @if($backupExecution->error_message)<p class="alert__description">{{ $backupExecution->error_message }}</p>@endif
-            @if(in_array($backupExecution->error_code, ['SSH_HOST_KEY_UNKNOWN', 'SSH_HOST_KEY_MISMATCH'], true) && $backupExecution->device && auth()->user()->can('devices.manage'))
-                <a href="{{ route('devices.edit', $backupExecution->device) }}#device-ssh-security" class="btn btn--secondary">Aprovar chave SSH do equipamento</a>
+            @if(in_array($backupExecution->error_code, ['SSH_HOST_KEY_UNKNOWN', 'SSH_HOST_KEY_MISMATCH'], true) && $backupExecution->credential_id && auth()->user()->can('credentials.manage'))
+                <a href="{{ route('credentials.index') }}" class="btn btn--secondary">Ver chave SSH em Credenciais</a>
             @endif
         </section>
     @endif

@@ -3,10 +3,11 @@
 @section('title', 'Relatório de falhas — Backup Manager')
 
 @section('page-header')
-<header class="page-header">
+<header class="page-header failures-header">
     <div class="page-header__content">
+        <p class="failures-header__eyebrow"><a href="{{ route('reports.index') }}">Relatórios</a> / Falhas</p>
         <h1 class="page-header__title">Relatório de falhas</h1>
-        <p class="page-header__description"><a href="{{ route('reports.index') }}">Relatórios</a></p>
+        <p class="page-header__description">Códigos de erro e equipamentos mais afetados · {{ \App\Support\ReportPeriod::label($filters['period'] ?? null) }}</p>
     </div>
     @can('reports.export')
         <a class="btn btn--primary" href="{{ route('reports.failures.export', $filters) }}">Exportar CSV</a>
@@ -15,68 +16,88 @@
 @endsection
 
 @section('content')
-<div class="stack report-detail-page">
-    <section class="card">
+<div class="stack report-detail-page failures-report">
+    <section class="card failures-filter-card" aria-label="Filtros do relatório">
         <div class="card__body">
-            <form method="GET" action="{{ route('reports.failures') }}" class="grid grid--4">
+            <form method="GET" action="{{ route('reports.failures') }}" class="failures-filter-form">
                 <div class="form-field">
                     <label class="form-label" for="period">Período</label>
                     <select class="form-control" id="period" name="period">
-                        <option value="">Todos</option>
+                        <option value="">Todos os períodos</option>
                         @foreach(\App\Support\ReportPeriod::OPTIONS as $option)
                             <option value="{{ $option }}" @selected(($filters['period'] ?? '') === $option)>{{ \App\Support\ReportPeriod::label($option) }}</option>
                         @endforeach
                     </select>
                 </div>
-                <div class="form-field" style="align-self: end;">
-                    <button type="submit" class="btn btn--primary">Filtrar</button>
+                <div class="failures-filter-actions">
+                    <button type="submit" class="btn btn--primary">Aplicar filtro</button>
+                    @if(array_filter($filters))
+                        <a class="btn btn--secondary" href="{{ route('reports.failures') }}">Limpar</a>
+                    @endif
                 </div>
             </form>
         </div>
     </section>
 
-    <div class="grid grid--2">
-        <section class="card">
-            <div class="card__header"><h2 class="card__title">Top erros</h2></div>
-            <div class="table-shell" role="region" aria-label="Erros por código" tabindex="0">
-                <table class="data-table">
-                    <thead><tr><th>Código</th><th>Ocorrências</th><th>Permite nova tentativa</th><th>Última ocorrência</th></tr></thead>
-                    <tbody>
-                        @forelse($byErrorCode as $row)
-                            <tr>
-                                <td data-label="Código"><code>{{ $row['error_code'] }}</code></td>
-                                <td data-label="Ocorrências">{{ $row['total'] }}</td>
-                                <td data-label="Permite nova tentativa"><span class="badge badge--{{ $row['retryable'] ? 'info' : 'neutral' }}">{{ $row['retryable'] ? 'Sim' : 'Não' }}</span></td>
-                                <td data-label="Última ocorrência">{{ app(\App\Services\InstanceTimezone::class)->format(\Carbon\CarbonImmutable::parse($row['last_seen_at'])) }}</td>
-                            </tr>
-                        @empty
-                            <tr><td colspan="4" class="empty-table">Nenhuma falha na janela selecionada.</td></tr>
-                        @endforelse
-                    </tbody>
-                </table>
+    <section class="card failures-section" aria-labelledby="failures-codes-title">
+        <div class="card__header failures-section__header">
+            <div>
+                <span class="failures-section__eyebrow">Visão por código</span>
+                <h2 class="card__title" id="failures-codes-title">Erros mais frequentes</h2>
+                <p class="card__description">Ocorrências de backup agrupadas pelo código de erro.</p>
             </div>
-        </section>
+            <span class="failures-section__count">{{ count($byErrorCode) }} {{ count($byErrorCode) === 1 ? 'código' : 'códigos' }}</span>
+        </div>
+        @if($byErrorCode !== [])
+            <ol class="failures-list">
+                @foreach($byErrorCode as $row)
+                    <li class="failures-list__item">
+                        <div class="failures-list__identity">
+                            <span class="failures-list__rank">{{ str_pad((string) $loop->iteration, 2, '0', STR_PAD_LEFT) }}</span>
+                            <div class="failures-list__name">
+                                <a href="{{ route('reports.executions', ['error_code' => $row['error_code']]) }}"><code>{{ $row['error_code'] }}</code></a>
+                                <span class="failures-list__detail">Última ocorrência: {{ app(\App\Services\InstanceTimezone::class)->format(\Carbon\CarbonImmutable::parse($row['last_seen_at'])) }}</span>
+                            </div>
+                        </div>
+                        <div class="failures-list__meta">
+                            <span class="badge badge--{{ $row['retryable'] ? 'info' : 'neutral' }}">{{ $row['retryable'] ? 'Permite nova tentativa' : 'Sem nova tentativa' }}</span>
+                            <strong class="failures-list__total">{{ number_format($row['total'], 0, ',', '.') }} <span>{{ $row['total'] == 1 ? 'falha' : 'falhas' }}</span></strong>
+                        </div>
+                    </li>
+                @endforeach
+            </ol>
+        @else
+            <div class="failures-empty"><x-icon name="alert" /><p>Nenhuma falha no período selecionado.</p></div>
+        @endif
+    </section>
 
-        <section class="card">
-            <div class="card__header"><h2 class="card__title">Equipamentos mais afetados</h2></div>
-            <div class="table-shell" role="region" aria-label="Equipamentos mais afetados" tabindex="0">
-                <table class="data-table">
-                    <thead><tr><th>Equipamento</th><th>Fabricante</th><th>Falhas</th><th>Última ocorrência</th></tr></thead>
-                    <tbody>
-                        @forelse($byDevice as $row)
-                            <tr>
-                                <td data-label="Equipamento">{{ $row->name }}</td>
-                                <td data-label="Fabricante">{{ $row->vendor }}</td>
-                                <td data-label="Falhas">{{ $row->total }}</td>
-                                <td data-label="Última ocorrência">{{ app(\App\Services\InstanceTimezone::class)->format(\Carbon\CarbonImmutable::parse($row->last_seen_at)) }}</td>
-                            </tr>
-                        @empty
-                            <tr><td colspan="4" class="empty-table">Nenhuma falha na janela selecionada.</td></tr>
-                        @endforelse
-                    </tbody>
-                </table>
+    <section class="card failures-section" aria-labelledby="failures-devices-title">
+        <div class="card__header failures-section__header">
+            <div>
+                <span class="failures-section__eyebrow">Visão por equipamento</span>
+                <h2 class="card__title" id="failures-devices-title">Equipamentos mais afetados</h2>
+                <p class="card__description">Dispositivos com mais falhas no período selecionado.</p>
             </div>
-        </section>
-    </div>
+            <span class="failures-section__count">{{ count($byDevice) }} {{ count($byDevice) === 1 ? 'equipamento' : 'equipamentos' }}</span>
+        </div>
+        @if($byDevice !== [])
+            <ol class="failures-list">
+                @foreach($byDevice as $row)
+                    <li class="failures-list__item">
+                        <div class="failures-list__identity">
+                            <span class="failures-list__rank">{{ str_pad((string) $loop->iteration, 2, '0', STR_PAD_LEFT) }}</span>
+                            <div class="failures-list__name">
+                                <a href="{{ route('reports.executions', ['device_id' => $row->device_id]) }}">{{ $row->name }}</a>
+                                <span class="failures-list__detail">{{ $row->vendor }} · Última ocorrência: {{ app(\App\Services\InstanceTimezone::class)->format(\Carbon\CarbonImmutable::parse($row->last_seen_at)) }}</span>
+                            </div>
+                        </div>
+                        <strong class="failures-list__total">{{ number_format($row->total, 0, ',', '.') }} <span>{{ $row->total == 1 ? 'falha' : 'falhas' }}</span></strong>
+                    </li>
+                @endforeach
+            </ol>
+        @else
+            <div class="failures-empty"><x-icon name="server" /><p>Nenhum equipamento com falhas no período selecionado.</p></div>
+        @endif
+    </section>
 </div>
 @endsection

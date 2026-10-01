@@ -214,10 +214,10 @@ class DeviceTest extends TestCase
         return new \DOMXPath($document);
     }
 
-    public function test_vendor_select_uses_the_v1_catalog_and_keeps_model_and_type_fields(): void
+    public function test_vendor_select_includes_supported_catalog_and_keeps_model_and_type_fields(): void
     {
         $this->actingAs(User::factory()->operator()->create());
-        $expected = ['C-DATA', 'Cisco', 'Datacom', 'FiberHome', 'Huawei', 'Intelbras',
+        $expected = ['A10 Networks', 'C-DATA', 'Cisco', 'Datacom', 'FiberHome', 'Hillstone', 'Huawei', 'Intelbras',
             'Juniper', 'MikroTik', 'Parks', 'Ubiquiti', 'VSOL', 'ZTE'];
         foreach (['devices.create', 'devices.index'] as $route) {
             $html = $this->html($this->get(route($route))->assertOk()->getContent());
@@ -229,7 +229,9 @@ class DeviceTest extends TestCase
             $this->assertSame(['', ...$expected], $values);
             $this->assertSame(0, $html->query('//input[@name="vendor"]')->length);
             $this->assertSame(1, $html->query('//input[@name="model"][@type="text"]')->length);
-            $this->assertSame(2, $html->query('//select[@name="platform"]/option')->length);
+            $this->assertSame(5, $html->query('//select[@name="device_kind"]/option')->length);
+            $this->assertSame('Firewall', $html->evaluate('string(//select[@name="device_kind"]/option[@value="firewall"])'));
+            $this->assertSame(1, $html->query('//input[@name="device_function"][@type="text"][not(@list)]')->length);
         }
     }
 
@@ -239,7 +241,7 @@ class DeviceTest extends TestCase
         $this->actingAs(User::factory()->operator()->create());
         $data = ['site_id' => $site->id, 'name' => 'Router', 'management_ip' => '192.0.2.10',
             'model' => 'Modelo livre sem catálogo', 'is_active' => 1];
-        $cases = array_merge(Device::VENDORS, ['HUAWEI', 'huawei', 'Mikrotik', 'mikrotik', ' MiKroTik ']);
+        $cases = array_merge(Device::VENDORS, ['HUAWEI', 'huawei', 'Mikrotik', 'mikrotik', ' MiKroTik ', ' a10 networks ', 'HILLSTONE']);
         foreach ($cases as $index => $vendor) {
             $ip = '192.0.2.'.(10 + $index);
             $this->post(route('devices.store'), array_replace($data, ['vendor' => $vendor, 'management_ip' => $ip]))
@@ -262,7 +264,7 @@ class DeviceTest extends TestCase
             'vendor' => ' hUaWeI ', 'platform' => 'olt', 'is_active' => true]);
         $html = $this->html($this->get(route('devices.edit', $device))->assertOk()->getContent());
         $this->assertSame('Huawei', $html->evaluate('string(//select[@name="vendor"]/option[@selected]/@value)'));
-        $this->assertSame(13, $html->query('//select[@name="vendor"]/option')->length);
+        $this->assertSame(15, $html->query('//select[@name="vendor"]/option')->length);
         $this->assertSame(' hUaWeI ', $device->fresh()->vendor);
         $this->put(route('devices.update', $device), ['site_id' => $site->id, 'name' => 'Router atualizado',
             'management_ip' => $device->management_ip, 'vendor' => 'HUAWEI', 'platform' => 'olt', 'is_active' => 1])
@@ -331,14 +333,81 @@ class DeviceTest extends TestCase
         $this->assertSame('POST', $html->evaluate('string('.$form.'/@method)'));
         $this->assertSame(route('devices.store'), $html->evaluate('string('.$form.'/@action)'));
         $this->assertSame(0, $html->query($form.'//input[@name="_method"]')->length);
-        foreach (['name', 'hostname', 'management_ip'] as $field) {
+        foreach (['name', 'management_ip'] as $field) {
             $this->assertSame('', $html->evaluate('string('.$form.'//input[@name="'.$field.'"]/@value)'));
         }
         $this->assertSame(1, $html->query($form.'//input[@name="name"][@required]')->length);
-        $this->assertSame(0, $html->query($form.'//input[@name="hostname"][@required]')->length);
-        $this->assertSame('network', $html->evaluate('string('.$form.'//select[@name="platform"]/option[@selected]/@value)'));
-        $this->assertSame(1, $html->query($form.'//select[@name="platform"]/option[@selected]')->length);
+        $this->assertSame(0, $html->query($form.'//input[@name="hostname"]')->length);
+        $this->assertSame('', $html->evaluate('string('.$form.'//select[@name="device_kind"]/option[@selected]/@value)'));
+        $this->assertSame(1, $html->query($form.'//select[@name="device_kind"]/option[@selected]')->length);
         $this->assertSame('Cadastrar equipamento', trim($html->evaluate('string('.$form.'//button[@type="submit"])')));
+    }
+
+    public function test_device_kind_and_function_are_saved_and_edit_uses_the_create_modal_layout(): void
+    {
+        $site = Site::create(['name' => 'POP', 'is_active' => true]);
+        $this->actingAs(User::factory()->operator()->create());
+        $data = ['site_id' => $site->id, 'name' => 'NE8000 M8', 'management_ip' => '192.0.2.10',
+            'vendor' => 'Huawei', 'model' => 'NE8000 M8', 'device_kind' => 'router',
+            'device_function' => 'BGP', 'is_active' => 1];
+
+        $this->post(route('devices.store'), $data)->assertRedirect(route('devices.index'))->assertSessionHasNoErrors();
+        $device = Device::where('name', 'NE8000 M8')->firstOrFail();
+        $this->assertSame('network', $device->platform);
+        $this->assertSame('router', $device->device_kind);
+        $this->assertSame('BGP', $device->device_function);
+
+        $html = $this->html($this->get(route('devices.edit', $device))->assertOk()->getContent());
+        $form = '//dialog[@id="device-edit-dialog"]//form';
+        $this->assertSame(1, $html->query($form.'/div[contains(@class, "form-create-modal__body")]')->length);
+        $this->assertSame('PUT', $html->evaluate('string('.$form.'//input[@name="_method"]/@value)'));
+        $this->assertSame('router', $html->evaluate('string('.$form.'//select[@name="device_kind"]/option[@selected]/@value)'));
+        $this->assertSame('BGP', $html->evaluate('string('.$form.'//input[@name="device_function"]/@value)'));
+        $this->assertSame(0, $html->query($form.'//input[@name="hostname"]')->length);
+        $this->assertSame(route('devices.index'), $html->evaluate('string('.$form.'//a[@data-close-device-edit][normalize-space()="Cancelar"]/@href)'));
+        $this->assertSame(route('devices.index'), $html->evaluate('string(//dialog[@id="device-edit-dialog"]//a[@aria-label="Fechar"]/@href)'));
+        $this->assertSame(0, $html->query($form.'//button[@data-show-device-settings]')->length);
+
+        $this->put(route('devices.update', $device), array_replace($data, ['name' => 'NE8000 M4', 'device_function' => 'BNG']))
+            ->assertRedirect(route('devices.index'))->assertSessionHasNoErrors();
+        $this->assertDatabaseHas('devices', ['id' => $device->id, 'name' => 'NE8000 M4',
+            'device_kind' => 'router', 'device_function' => 'BNG', 'platform' => 'network']);
+
+        $this->post(route('devices.store'), array_replace($data, ['management_ip' => '192.0.2.11',
+            'device_kind' => 'olt', 'device_function' => 'Acesso']))->assertSessionHasNoErrors();
+        $this->assertDatabaseHas('devices', ['management_ip' => '192.0.2.11', 'device_kind' => 'olt',
+            'device_function' => 'Acesso', 'platform' => 'olt']);
+        $this->post(route('devices.store'), array_replace($data, ['management_ip' => '192.0.2.13',
+            'device_kind' => 'firewall', 'device_function' => 'Firewall']))->assertSessionHasNoErrors();
+        $this->assertDatabaseHas('devices', ['management_ip' => '192.0.2.13', 'device_kind' => 'firewall',
+            'platform' => 'network']);
+        $this->post(route('devices.store'), array_replace($data, ['management_ip' => '192.0.2.12',
+            'device_kind' => 'invalid']))->assertSessionHasErrors('device_kind');
+    }
+
+    public function test_equipment_actions_keep_only_compatible_ftp_in_a_small_modal(): void
+    {
+        $site = Site::create(['name' => 'POP', 'is_active' => true]);
+        $huawei = Device::create(['site_id' => $site->id, 'name' => 'Huawei Switch',
+            'management_ip' => '192.0.2.20', 'vendor' => 'Huawei', 'platform' => 'network', 'is_active' => true]);
+        $vsol = Device::create(['site_id' => $site->id, 'name' => 'VSOL V1600GT',
+            'management_ip' => '192.0.2.21', 'vendor' => 'VSOL', 'model' => 'V1600GT', 'platform' => 'olt', 'is_active' => true]);
+        $vsol->ssh_observed_algorithm = 'ssh-rsa';
+        $vsol->ssh_observed_fingerprint = 'SHA256:'.str_repeat('A', 43);
+        $vsol->save();
+        $this->actingAs(User::factory()->operator()->create());
+
+        $html = $this->html($this->get(route('devices.index'))->assertOk()->getContent());
+        $this->assertSame(1, $html->query('//button[@data-open-device-access="'.$huawei->id.'"]')->length);
+        $this->assertSame(1, $html->query('//dialog[@id="device-access-dialog-'.$huawei->id.'"][contains(@class, "form-create-modal")]')->length);
+        $this->assertSame(1, $html->query('//dialog[@id="device-access-dialog-'.$huawei->id.'"]//div[contains(@class, "form-create-modal__body")]')->length);
+        $this->assertSame(0, $html->query('//button[@data-open-device-access="'.$vsol->id.'"]')->length);
+        $ftp = $this->html($this->get(route('devices.edit', [$huawei, 'olt_wizard' => 1]))->assertOk()->getContent());
+        $this->assertSame(1, $ftp->query('//dialog[@id="olt-wizard"][contains(@class, "device-ftp-wizard")]')->length);
+        $this->assertSame(1, $ftp->query('//dialog[@id="olt-wizard"]//button[@id="close-olt-wizard"][contains(@class, "modal__close")]')->length);
+        $this->assertSame(route('devices.edit', [$huawei, 'olt_wizard' => 1]),
+            $html->evaluate('string(//dialog[@id="device-access-dialog-'.$huawei->id.'"]//a[contains(., "Abrir assistente FTP")]/@href)'));
+        $this->assertSame(0, $html->query('//dialog[@id="device-access-dialog-'.$vsol->id.'"]')->length);
     }
 
     public function test_optional_hostname_is_preserved_when_the_equipment_is_renamed(): void
@@ -351,9 +420,11 @@ class DeviceTest extends TestCase
         $device = Device::firstOrFail();
         $this->assertSame('Router A', $device->hostname);
         $edit = $this->html($this->get(route('devices.edit', $device))->assertOk()->getContent());
-        $this->assertSame('Router A', $edit->evaluate('string(//input[@name="hostname"]/@value)'));
+        $this->assertSame(0, $edit->query('//input[@name="hostname"]')->length);
 
-        $this->put(route('devices.update', $device), array_replace($data, ['name' => 'Router B']))->assertRedirect();
+        $update = $data;
+        unset($update['hostname']);
+        $this->put(route('devices.update', $device), array_replace($update, ['name' => 'Router B']))->assertRedirect();
         $this->assertSame('Router A', $device->fresh()->hostname);
         $this->get(route('devices.index'))->assertOk()->assertSee('Router A · 192.0.2.10');
 
@@ -390,39 +461,5 @@ class DeviceTest extends TestCase
             $this->assertSame($case['hostname'], Device::where('name', $case['name'])->value('hostname'));
         }
         $this->assertSame('devices-rows', $html->evaluate('string(//input[@data-list-search]/@data-list-search)'));
-    }
-
-    public function test_ssh_security_is_collapsed_and_shows_the_correct_summary(): void
-    {
-        $site = Site::create(['name' => 'POP', 'is_active' => true]);
-        $device = Device::create(['site_id' => $site->id, 'name' => 'Router', 'management_ip' => '192.0.2.10',
-            'vendor' => 'MikroTik', 'is_active' => true]);
-        $this->actingAs(User::factory()->operator()->create());
-        $fingerprint = 'SHA256:'.str_repeat('A', 43);
-        foreach (['untrusted' => 'Não confiada', 'trusted' => 'Chave confiada', 'changed' => 'Chave alterada/atenção', 'algorithm_changed' => 'Chave alterada/atenção'] as $state => $label) {
-            $device->ssh_host_key_algorithm = $state === 'untrusted' ? null : 'ssh-rsa';
-            $device->ssh_host_key_fingerprint = $state === 'untrusted' ? null : $fingerprint;
-            $device->ssh_observed_algorithm = $state === 'algorithm_changed' ? 'ssh-ed25519' : 'ssh-rsa';
-            $device->ssh_observed_fingerprint = $state === 'changed' ? 'SHA256:'.str_repeat('B', 43) : $fingerprint;
-            $device->save();
-            $html = $this->html($this->get(route('devices.edit', $device))->assertOk()->getContent());
-            $details = '//details[@class="card device-ssh-security"]';
-            $this->assertSame(1, $html->query($details)->length);
-            // Opens by itself whenever there's a trust decision pending
-            // (never trusted yet, or the observed key changed) — the whole
-            // point of surfacing it is so a new device's operator lands on
-            // an already-expanded approval card, not a collapsed one they
-            // have to know to click.
-            $expectedOpen = $state !== 'trusted' ? 1 : 0;
-            $this->assertSame($expectedOpen, $html->query($details.'[@open]')->length);
-            $summary = $html->evaluate('string('.$details.'/summary)');
-            $this->assertStringContainsString('Segurança SSH', $summary);
-            $this->assertStringContainsString($label, $summary);
-            $this->assertStringNotContainsString('SHA256:', $summary);
-            $this->assertStringNotContainsString('ssh-rsa', $summary);
-            $this->assertStringContainsString($fingerprint, $html->evaluate('string('.$details.')'));
-            $expectedAction = $state === 'trusted' ? 0 : 1;
-            $this->assertSame($expectedAction, $html->query($details.'//form')->length);
-        }
     }
 }

@@ -108,10 +108,15 @@ class BackupArtifactController extends Controller
         $filename = trim(preg_replace('/[^A-Za-z0-9_-]+/', '-', $stem), '-');
         $filename = ($filename ?: 'artifact-'.$backupArtifact->id).'.'.$extension;
 
-        return response()->download($check['path'], $filename, [
+        $response = response()->download($check['path'], $filename, [
             'Content-Type' => 'application/octet-stream',
+            'Pragma' => 'no-cache',
             'X-Content-Type-Options' => 'nosniff',
         ]);
+        $response->setPrivate();
+        $response->headers->set('Cache-Control', 'no-store, private');
+
+        return $response;
     }
 
     public function destroy(Request $request, BackupArtifact $backupArtifact, ArtifactDeletionService $service): RedirectResponse

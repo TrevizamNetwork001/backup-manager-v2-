@@ -75,11 +75,17 @@ def execute(job):
         while not stop.wait(HEARTBEAT_SECONDS):
             try:
                 response = json.loads(command('engine:heartbeat', job_id, WORKER_ID))
+                if response.get('updated') is False:
+                    cancelled.set()
+                    logging.error(json.dumps({'execution_id': job_id, 'status': 'worker_lease_lost'}))
+                    return
                 if response.get('cancel_requested'):
                     cancelled.set()
             except Exception:
                 logging.error(json.dumps({'execution_id': job_id, 'status': 'heartbeat_failed'}))
-                break
+                # A transient database/control-plane failure must not disable
+                # heartbeat monitoring for the rest of a long device session.
+                continue
     monitor = threading.Thread(target=heartbeat, daemon=True)
     monitor.start()
     try:

@@ -38,13 +38,22 @@ from driver_base import BackupDriver, ANALYZE, BACKUP, PROBE
 from results import AnalysisResult, BackupResult, ProbeResult
 
 
-FLAGS = re.MULTILINE
-PROMPT = re.compile(r'[>#]\s*$', FLAGS)
-LOGIN_PROMPT = re.compile(r'(?i)login\s*:\s*$|user\s*name\s*:\s*$', FLAGS)
-PASSWORD_PROMPT = re.compile(r'(?i)password\s*:\s*$', FLAGS)
+# A prompt must be the final terminal line. `$` with MULTILINE matched any
+# earlier line ending in `>` or `#`, which could stop a configuration dump
+# before the device had finished sending it.
+PROMPT = re.compile(r'(?m)^[^\r\n]{0,128}[>#][ \t]*(?:\r?\n)?\Z')
+LOGIN_PROMPT = re.compile(r'(?i)(?:^|\r?\n)[ \t]*(?:login|user\s*name)[ \t]*:[ \t]*(?:\r?\n)?\Z')
+PASSWORD_PROMPT = re.compile(r'(?i)(?:^|\r?\n)[ \t]*password[ \t]*:[ \t]*(?:\r?\n)?\Z')
 LOGIN_REJECTED = re.compile(r'(?i)bad\s+user\s*name\s+or\s+bad\s+password|login\s+failed')
+ASYNC_LOGIN_EVENT = re.compile(r'(?m)^\d{4}/\d{2}/\d{2}[ \t]+\d{2}:\d{2}:\d{2}[ \t]+User Login[^\r\n]*(?:\r?\n)?')
 CLI_ERROR = re.compile(r'(?i)unknown command|invalid input|command error')
 STOP_PATTERNS = (PROMPT, LOGIN_PROMPT, PASSWORD_PROMPT)
+
+
+def _prompt_text(text):
+    # The OLT can append a timestamped login notification after "Login: ".
+    # Keep that asynchronous message out of prompt matching only.
+    return ASYNC_LOGIN_EVENT.sub('', text)
 
 
 def _strip_controls(data):
@@ -101,7 +110,7 @@ def _receive(channel, timeout, stop_patterns=(PROMPT,)):
                 quiet_deadline = None
                 continue
             quiet_deadline = time.monotonic() + 0.35
-            if any(pattern.search(text) for pattern in stop_patterns):
+            if any(pattern.search(_prompt_text(text)) for pattern in stop_patterns):
                 break
         elif channel.closed or channel.exit_status_ready():
             break
@@ -125,15 +134,15 @@ def _login(channel, username, password, attempts=2):
     attempt rejected and the second succeed with identical credentials."""
     response = _receive(channel, 30, stop_patterns=(LOGIN_PROMPT,))
     for attempt in range(attempts):
-        if not LOGIN_PROMPT.search(response):
+        if not LOGIN_PROMPT.search(_prompt_text(response)):
             raise BackupError('VSOL_PROMPT_FAILED')
         response = _send(channel, username, stop_patterns=(PASSWORD_PROMPT,))
-        if not PASSWORD_PROMPT.search(response):
+        if not PASSWORD_PROMPT.search(_prompt_text(response)):
             raise BackupError('VSOL_PROMPT_FAILED')
         response = _send(channel, password, stop_patterns=(PROMPT, LOGIN_PROMPT))
-        if PROMPT.search(response) and not LOGIN_REJECTED.search(response):
+        if PROMPT.search(_prompt_text(response)) and not LOGIN_REJECTED.search(response):
             return response
-        if attempt + 1 >= attempts or not LOGIN_PROMPT.search(response):
+        if attempt + 1 >= attempts or not LOGIN_PROMPT.search(_prompt_text(response)):
             raise BackupError('SSH_AUTH_FAILED')
     raise BackupError('SSH_AUTH_FAILED')
 
@@ -181,19 +190,21 @@ def export_config(host, port, username, password, algorithm=None, fingerprint=No
         channel.settimeout(20)
         try:
             response = _login(channel, username, password)
-            if not response.rstrip().endswith('#'):
+            if not _prompt_text(response).rstrip().endswith('#'):
                 response = _send(channel, 'enable')
                 if 'password' in response.casefold():
                     response = _send(channel, password)
-                if not response.rstrip().endswith('#'):
+                if not _prompt_text(response).rstrip().endswith('#'):
                     raise BackupError('VSOL_PRIVILEGED_MODE_FAILED')
             output = _send(channel, 'show running-config', timeout=60)
+            if not PROMPT.search(_prompt_text(output)):
+                raise BackupError('VSOL_EXPORT_FAILED')
             if CLI_ERROR.search(output):
                 raise BackupError('VSOL_EXPORT_FAILED')
             lines = [line.rstrip() for line in output.replace('\r', '').split('\n')]
             lines = [line.replace('--More--', '').replace('---- More ----', '') for line in lines]
             lines = [line for line in lines
-                     if line.strip() != 'show running-config' and not re.fullmatch(r'\S+[>#]', line.strip())]
+                     if line.strip() != 'show running-config' and not re.fullmatch(r'\S*[>#]', line.strip())]
             while lines and not lines[0].strip():
                 lines.pop(0)
             result = '\n'.join(lines).strip() + '\n'

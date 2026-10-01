@@ -163,9 +163,17 @@ tão confiável quanto o parser OLT até ser observado contra exports reais.
 `probe()` conecta e autentica, **nunca executa comando de configuração**.
 Implementado para MikroTik (`probe_connection()`, conecta e mede latência,
 sem `/export terse`) e Huawei VRP (`probe_connection()`, conecta, autentica
-e espera o prompt inicial, sem `display current-configuration`). Nenhuma UI
-nova usa esse resultado ainda — é infraestrutura pronta para uma tela de
-"testar conexão" futura, sem redesenhar tela nesta fase.
+e espera o prompt inicial, sem `display current-configuration`). A tela de
+Credenciais usa esses probes no botão **Testar conexão SSH**.
+
+Para Huawei OLT, `probe_ssh.py` usa um teste de acesso separado que valida
+conexão, chave do host e autenticação SSH, sem abrir o shell e sem registrar
+um driver de backup SSH para `huawei/olt`. O backup dessas OLTs permanece por
+FTP. Na MA5800-x17 OLT-huawei-IPE, a chave foi observada e aprovada pelo
+operador; a autenticação SSH passou depois disso. O VSOL V1600GT também usa
+o teste SSH, incluindo o login adicional do CLI. Seu prompt passou a tolerar
+uma notificação assíncrona de login após `Login:`; o teste real da OLT-SANCA
+passou depois desse ajuste.
 
 ## Fluxo FTP recebido (OLT + file_server)
 

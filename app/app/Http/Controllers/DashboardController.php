@@ -2,12 +2,13 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\BackupExecution;
 use App\Models\BackupArtifact;
+use App\Models\BackupExecution;
 use App\Models\BackupPolicy;
 use App\Models\Device;
 use App\Models\FtpAccount;
 use App\Models\Site;
+use App\Services\DeviceBackupHealth;
 use App\Services\InstanceTimezone;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
@@ -19,7 +20,7 @@ use Illuminate\View\View;
 
 class DashboardController extends Controller
 {
-    public function __invoke(Request $request, InstanceTimezone $timezone): View
+    public function __invoke(Request $request, InstanceTimezone $timezone, DeviceBackupHealth $backupHealth): View
     {
         $this->authorize('dashboard.view');
 
@@ -50,6 +51,7 @@ class DashboardController extends Controller
             $executions = BackupExecution::query()
                 ->whereBetween('created_at', [$date->startOfDay()->utc(), $date->endOfDay()->utc()])
                 ->get(['status']);
+
             return [
                 'label' => $date->format('d/m'),
                 'success' => $executions->where('status', 'succeeded')->count(),
@@ -59,6 +61,11 @@ class DashboardController extends Controller
         });
         $activeDevices = Device::query()->where('is_active', true)->count();
         $inactiveDevices = Device::query()->where('is_active', false)->count();
+        $failedBackupDevices = $backupHealth->failedDeviceCount();
+        $activeWithoutFailure = max(0, $activeDevices - $failedBackupDevices);
+        $deviceTotal = $activeDevices + $inactiveDevices;
+        $activeWithoutFailurePercent = $deviceTotal > 0 ? $activeWithoutFailure / $deviceTotal * 100 : 0;
+        $failedDevicePercent = $deviceTotal > 0 ? $failedBackupDevices / $deviceTotal * 100 : 0;
         $ftpAccounts = Schema::hasTable('ftp_accounts') ? FtpAccount::query() : null;
         $recentReceipts = Schema::hasTable('ftp_received_files')
             ? DB::table('ftp_received_files')->join('ftp_accounts', 'ftp_accounts.id', '=', 'ftp_received_files.ftp_account_id')
@@ -78,12 +85,13 @@ class DashboardController extends Controller
             'artifactCount' => BackupArtifact::count(),
             'activeDevices' => $activeDevices,
             'inactiveDevices' => $inactiveDevices,
-            'activeDevicePercent' => $activeDevices + $inactiveDevices > 0
-                ? (int) round($activeDevices / ($activeDevices + $inactiveDevices) * 100)
-                : 0,
-            'inactiveDevicePercent' => $activeDevices + $inactiveDevices > 0
-                ? 100 - (int) round($activeDevices / ($activeDevices + $inactiveDevices) * 100)
-                : 0,
+            'failedBackupDevices' => $failedBackupDevices,
+            'activeWithoutFailure' => $activeWithoutFailure,
+            'activeWithoutFailurePercent' => (int) round($activeWithoutFailurePercent),
+            'failedDevicePercent' => (int) round($failedDevicePercent),
+            'inactiveDevicePercent' => $deviceTotal > 0 ? (int) round(100 - $activeWithoutFailurePercent - $failedDevicePercent) : 0,
+            'ringHealthyPercent' => $activeWithoutFailurePercent,
+            'ringFailedEndPercent' => $activeWithoutFailurePercent + $failedDevicePercent,
             'days' => $days,
             'period' => $period,
             'chartStart' => $chartStart,

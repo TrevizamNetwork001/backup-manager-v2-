@@ -13,10 +13,11 @@ use App\Models\Site;
 use App\Models\User;
 use App\Services\EngineJobService;
 use App\Services\FtpAccountDeletionService;
+use App\Services\HuaweiFtpBackupPolicy;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\ValidationException;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 class FtpDeletionTest extends TestCase
@@ -24,7 +25,9 @@ class FtpDeletionTest extends TestCase
     use RefreshDatabase;
 
     private string $ftpRoot;
+
     private string $backupRoot;
+
     private User $adminUser;
 
     protected function setUp(): void
@@ -48,9 +51,17 @@ class FtpDeletionTest extends TestCase
 
     private function erase(string $path): void
     {
-        if (is_link($path) || is_file($path)) { unlink($path); return; }
-        if (! is_dir($path)) return;
-        foreach (new \FilesystemIterator($path) as $item) $this->erase($item->getPathname());
+        if (is_link($path) || is_file($path)) {
+            unlink($path);
+
+            return;
+        }
+        if (! is_dir($path)) {
+            return;
+        }
+        foreach (new \FilesystemIterator($path) as $item) {
+            $this->erase($item->getPathname());
+        }
         rmdir($path);
     }
 
@@ -62,12 +73,13 @@ class FtpDeletionTest extends TestCase
             $device = Device::create(['site_id' => $site->id, 'name' => $name, 'management_ip' => '192.0.2.'.(10 + Device::count()),
                 'vendor' => 'Huawei', 'platform' => 'olt', 'is_active' => true]);
         }
-        $account = new FtpAccount(['device_id' => $device?->id, 'account_uuid' => (string) \Illuminate\Support\Str::uuid(),
+        $account = new FtpAccount(['device_id' => $device?->id, 'account_uuid' => (string) Str::uuid(),
             'purpose' => $purpose, 'home_layout' => $layout, 'username' => $name, 'is_active' => true]);
         $account->secret = 'SecurePassword123!';
         $account->save();
         mkdir($account->homePath(), 0700, true);
         $this->physicalReport($account);
+
         return $account;
     }
 
@@ -108,12 +120,15 @@ class FtpDeletionTest extends TestCase
             'origin' => 'ftp_received', 'status' => 'succeeded', 'attempt' => 1]);
         $relative = app(EngineJobService::class)->relativePath($job);
         $path = $this->backupRoot.'/'.$relative;
-        if (! is_dir(dirname($path))) mkdir(dirname($path), 0700, true);
+        if (! is_dir(dirname($path))) {
+            mkdir(dirname($path), 0700, true);
+        }
         file_put_contents($path, $content);
         BackupArtifact::create(['backup_execution_id' => $job->id, 'device_id' => $job->device_id,
             'backup_policy_id' => $policy->id, 'type' => 'config', 'storage' => 'local', 'relative_path' => $relative,
             'original_filename' => 'test.cfg', 'size_bytes' => strlen($content), 'sha256' => hash('sha256', $content),
             'validated_at' => now()]);
+
         return $job;
     }
 
@@ -126,10 +141,16 @@ class FtpDeletionTest extends TestCase
         $rows = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
         $this->assertFalse(collect($rows)->firstWhere('id', $account->id)['is_active']);
         if ($mode !== 'account') {
-            foreach (new \FilesystemIterator($account->homePath()) as $item) unlink($item->getPathname());
+            foreach (new \FilesystemIterator($account->homePath()) as $item) {
+                unlink($item->getPathname());
+            }
             foreach (['quarantine', 'processing'] as $area) {
                 $directory = $this->ftpRoot.'/'.$area;
-                if (is_dir($directory)) foreach (new \FilesystemIterator($directory) as $item) unlink($item->getPathname());
+                if (is_dir($directory)) {
+                    foreach (new \FilesystemIterator($directory) as $item) {
+                        unlink($item->getPathname());
+                    }
+                }
             }
         }
         app(FtpAccountDeletionService::class)->finalize($account->fresh(), $this->privilegedResult($account));
@@ -152,6 +173,7 @@ class FtpDeletionTest extends TestCase
             $this->assertFileExists($this->backupRoot.'/'.$job->artifact->relative_path);
             $this->assertFalse($account->device->ftpAccount()->exists());
             $this->get(route('ftp.index'))->assertOk()->assertSee($account->device->name);
+            $job->association->update(['is_active' => false]);
             $this->post(route('ftp.store'), ['purpose' => 'backup', 'device_id' => $account->device_id,
                 'username' => 'replacement_'.$layout, 'password' => 'AnotherSecurePassword123!',
                 'password_confirmation' => 'AnotherSecurePassword123!'])->assertOk();
@@ -162,7 +184,7 @@ class FtpDeletionTest extends TestCase
     public function test_delete_and_recreate_huawei_account_preserves_operational_policy(): void
     {
         $account = $this->account();
-        $policy = app(\App\Services\HuaweiFtpBackupPolicy::class)->ensure($account->device);
+        $policy = app(HuaweiFtpBackupPolicy::class)->ensure($account->device);
         $this->requestAndFinalize($account, 'account');
         $this->assertDatabaseHas('device_backup_policies', ['id' => $policy->id, 'is_active' => true]);
         $this->post(route('ftp.store'), ['device_id' => $account->device_id, 'username' => 'recreated_olt',
@@ -284,7 +306,9 @@ class FtpDeletionTest extends TestCase
 
         foreach ($prefixes as $mode => $prefix) {
             foreach ($prefixes as $otherMode => $otherPrefix) {
-                if ($otherMode === $mode) continue;
+                if ($otherMode === $mode) {
+                    continue;
+                }
                 $account = $this->account('backup', 'account', 'olt_contract_'.(++$number));
                 $this->delete(route('ftp.delete', $account), ['mode' => $mode, 'confirmation' => $otherPrefix.$account->username])
                     ->assertSessionHasErrors(['confirmation' => 'A frase de confirmação não corresponde ao modo selecionado.']);
@@ -334,7 +358,7 @@ class FtpDeletionTest extends TestCase
             ->assertSee('id="ftp-delete-phrase">EXCLUIR DADOS olt_test', false)
             ->assertSee('const phrases =', false)
             ->assertSee('"ftp_data":"EXCLUIR DADOS olt_test"', false)
-            ->assertSee("input[name=\"mode\"]:checked", false)
+            ->assertSee('input[name="mode"]:checked', false)
             ->assertSee('confirmation.value =', false)
             ->assertDontSee('name="confirmation" value="EXCLUIR olt_test"', false);
         $this->assertMatchesRegularExpression('/syncPhrase\(\);\s*dialog\.showModal\(\);\s*\}\)\(\);/', $response->getContent());
@@ -412,6 +436,7 @@ class FtpDeletionTest extends TestCase
             ->assertSessionHasErrors('mode');
         $this->assertTrue($account->fresh()->is_active);
     }
+
     public function test_legacy_0700_preview_uses_privileged_report_and_unavailable_blocks(): void
     {
         $account = $this->account('backup', 'legacy', 'olt_teste');
@@ -485,5 +510,4 @@ class FtpDeletionTest extends TestCase
         $this->assertSame(['pending', 'puredb_revoked', 'failed'], $events);
         $this->assertStringContainsString('Permissão insuficiente', $account->fresh()->deletion_error);
     }
-
 }

@@ -10,6 +10,8 @@ class Credential extends Model
 {
     public const TYPES = ['ssh', 'telnet', 'ftp', 'sftp', 'api'];
 
+    public const SELECTABLE_TYPES = ['ssh', 'telnet'];
+
     protected $fillable = [
         'device_id',
         'name',

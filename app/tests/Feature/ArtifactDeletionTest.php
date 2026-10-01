@@ -103,6 +103,7 @@ class ArtifactDeletionTest extends TestCase
             $this->get(route('backup-artifacts.download', $artifact))
                 ->assertOk()
                 ->assertDownload($artifact->original_filename)
+                ->assertHeader('Cache-Control', 'no-store, private')
                 ->assertHeader('X-Content-Type-Options', 'nosniff');
         }
 
@@ -115,6 +116,17 @@ class ArtifactDeletionTest extends TestCase
         $this->actingAs(User::factory()->auditor()->create());
 
         $this->get(route('backup-artifacts.download', $artifact))->assertForbidden();
+        $this->assertFileExists($this->path($artifact));
+    }
+
+    public function test_guest_and_inactive_user_cannot_download_an_artifact(): void
+    {
+        $artifact = $this->artifact($this->source());
+
+        $this->get(route('backup-artifacts.download', $artifact))->assertRedirect(route('login'));
+
+        $this->actingAs(User::factory()->admin()->create(['is_active' => false]));
+        $this->get(route('backup-artifacts.download', $artifact))->assertRedirect(route('login'));
         $this->assertFileExists($this->path($artifact));
     }
 

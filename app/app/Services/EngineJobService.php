@@ -41,9 +41,13 @@ class EngineJobService
                 if ($existing->device_id !== $deviceId || $existing->received_filename !== $filename) {
                     throw new \RuntimeException('Claim FTP inconsistente.');
                 }
-                if ($existing->status === 'running') {
+                if (in_array($existing->status, ['running', 'retry_wait'], true)) {
+                    $existing->status = 'running';
                     $existing->worker_id = $workerId;
+                    $existing->started_at = now();
+                    $existing->claimed_at = now();
                     $existing->heartbeat_at = now();
+                    $existing->next_attempt_at = null;
                     $existing->save();
                 }
 
@@ -171,7 +175,10 @@ class EngineJobService
                 $job->association->device_id === $job->device_id &&
                 $job->association->backup_policy_id === $job->backup_policy_id &&
                 ($job->backupPolicy->method === 'ftp_push'
-                    ? $hasFtp && in_array($job->origin, ['manual', 'ftp_received'], true) && $job->backupPolicy->schedule_type === 'manual' && $job->credential_id === null && $job->device->isHuaweiFtpEligible() && (bool) $job->device->ftpAccount?->is_active
+                    ? $hasFtp && in_array($job->origin, ['manual', 'ftp_received'], true) &&
+                        ($job->origin === 'ftp_received' || $job->device->platform === 'olt') &&
+                        $job->backupPolicy->schedule_type === 'manual' && $job->credential_id === null &&
+                        $job->device->isHuaweiFtpEligible() && (bool) $job->device->ftpAccount?->is_active
                     : $job->credential?->is_active && $job->credential?->device_id === $job->device_id && $job->credential?->type === 'ssh'),
         ];
     }
@@ -225,14 +232,15 @@ class EngineJobService
      */
     public function heartbeat(int $id, string $workerId): array
     {
-        $job = BackupExecution::query()->where('id', $id)->where('status', 'running')
-            ->where('worker_id', $workerId)->first(['id', 'cancellation_requested_at']);
-        if (! $job) {
+        $updated = BackupExecution::query()->where('id', $id)->where('status', 'running')
+            ->where('worker_id', $workerId)->update(['heartbeat_at' => now()]);
+        if (! $updated) {
             return ['updated' => false, 'cancel_requested' => false];
         }
-        BackupExecution::query()->whereKey($id)->update(['heartbeat_at' => now()]);
+        $cancelRequested = BackupExecution::query()->where('id', $id)->where('status', 'running')
+            ->where('worker_id', $workerId)->value('cancellation_requested_at') !== null;
 
-        return ['updated' => true, 'cancel_requested' => $job->cancellation_requested_at !== null];
+        return ['updated' => true, 'cancel_requested' => $cancelRequested];
     }
 
     /**
@@ -462,9 +470,9 @@ class EngineJobService
             // this check after Device::isHuaweiFtpEligible() was extended to
             // cover it (caught by VsolOltFtpTest). Single source of truth.
             $supported = $payload['method'] === 'ssh_pull' && (
-                    ($payload['platform'] === 'network' && in_array($vendor, ['mikrotik', 'huawei'], true))
-                    || ($payload['platform'] === 'olt' && $vendor === 'vsol')
-                )
+                ($payload['platform'] === 'network' && in_array($vendor, ['mikrotik', 'huawei'], true))
+                || ($payload['platform'] === 'olt' && $vendor === 'vsol')
+            )
                 || $payload['method'] === 'ftp_push' && $payload['ftp_account_available'] && $job->device->isHuaweiFtpEligible();
             if (! $payload['eligible'] || ! $supported || $payload['artifact_mode'] !== 'config') {
                 throw ValidationException::withMessages(['status' => 'Job não é elegível para conclusão.']);

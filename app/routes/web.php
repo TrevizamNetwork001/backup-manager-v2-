@@ -10,6 +10,7 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DeviceBackupHealthController;
 use App\Http\Controllers\DeviceBackupPolicyController;
 use App\Http\Controllers\DeviceController;
+use App\Http\Controllers\DeviceDocumentationController;
 use App\Http\Controllers\FtpAccountController;
 use App\Http\Controllers\FtpAdminController;
 use App\Http\Controllers\InstanceSettingsController;
@@ -39,6 +40,8 @@ Route::middleware(['auth', 'active'])->group(function () {
     Route::delete('ftp/accounts/{ftpAccount}', [FtpAdminController::class, 'delete'])->name('ftp.delete');
     Route::get('settings', [InstanceSettingsController::class, 'edit'])->name('settings.edit');
     Route::put('settings', [InstanceSettingsController::class, 'update'])->name('settings.update');
+    Route::post('settings/retention/preview', [InstanceSettingsController::class, 'previewRetention'])->name('settings.retention.preview');
+    Route::patch('settings/retention', [InstanceSettingsController::class, 'updateRetention'])->name('settings.retention.update');
     Route::get('audit', [AuditController::class, 'index'])->name('audit.index');
     Route::get('system/health', [SystemHealthController::class, 'index'])->name('system-health.index');
 
@@ -48,6 +51,9 @@ Route::middleware(['auth', 'active'])->group(function () {
         Route::get('executions/export', [ReportController::class, 'executionsExport'])->name('executions.export');
         Route::get('devices', [ReportController::class, 'devices'])->name('devices');
         Route::get('devices/export', [ReportController::class, 'devicesExport'])->name('devices.export');
+        Route::get('documentation', [DeviceDocumentationController::class, 'index'])->name('documentation');
+        Route::get('documentation/export.csv', [DeviceDocumentationController::class, 'csv'])->name('documentation.csv');
+        Route::get('documentation/export.pdf', [DeviceDocumentationController::class, 'pdf'])->name('documentation.pdf');
         Route::get('artifacts', [ReportController::class, 'artifacts'])->name('artifacts');
         Route::get('artifacts/export', [ReportController::class, 'artifactsExport'])->name('artifacts.export');
         Route::get('failures', [ReportController::class, 'failures'])->name('failures');
@@ -82,6 +88,10 @@ Route::middleware(['auth', 'active'])->group(function () {
     Route::post('devices/{device}/ssh-host-key/trust', [DeviceController::class, 'trustHostKey'])
         ->name('devices.ssh-host-key.trust');
 
+    Route::post('credentials/ssh-test', [CredentialController::class, 'testSsh'])
+        ->middleware('throttle:6,1')->name('credentials.ssh-test');
+    Route::post('credentials/{credential}/secret/reveal', [CredentialController::class, 'revealSecret'])
+        ->middleware('throttle:6,1')->name('credentials.secret.reveal');
     Route::resource('credentials', CredentialController::class)
         ->except(['show']);
 
