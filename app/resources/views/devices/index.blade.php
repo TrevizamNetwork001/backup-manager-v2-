@@ -59,7 +59,7 @@
                         <th>Equipamento</th>
                         <th>Site / POP</th>
                         <th>Fabricante / Modelo</th>
-                        <th>Método / política</th>
+                        <th>Método</th>
                         <th>Último backup</th>
                         <th>Saúde</th>
                         <th>Status</th>
@@ -88,10 +88,9 @@
                                     @if($device->model)<span class="entity-cell__meta">{{ $device->model }}</span>@endif
                                 </div>
                             </td>
-                            <td data-label="Método / política">
+                            <td data-label="Método">
                                 <div class="entity-cell">
                                     <span class="entity-cell__title">{{ ($health['method'] ?? null) === 'ftp_push' ? 'Envio via FTP' : (($health['method'] ?? null) === 'ssh_pull' ? 'Coleta via SSH' : '—') }}</span>
-                                    <span class="entity-cell__meta">{{ $health['policy_name'] ?? ($device->is_active ? 'Sem política ativa' : 'Não avaliado') }}</span>
                                 </div>
                             </td>
                             <td data-label="Último backup" class="tech-value">{{ $health && $health['last_backup_at'] ? app(\App\Services\InstanceTimezone::class)->format(\Illuminate\Support\Carbon::parse($health['last_backup_at']), 'd/m/Y H:i') : '—' }}</td>
