@@ -27,6 +27,7 @@ class NotificationTest extends TestCase
         $manager = \Mockery::mock(NotificationManager::class, [
             app(NotificationSettings::class), app(EngineHealth::class),
             app(\App\Services\DeviceBackupHealth::class), app(\App\Services\InstanceTimezone::class),
+            app(\App\Services\NotificationSummary::class),
         ])->makePartial();
         $manager->shouldReceive('conditions')->andReturnUsing(fn () => $conditions);
 
@@ -94,6 +95,34 @@ class NotificationTest extends TestCase
         Http::assertSent(fn ($r) => str_contains($r['text'], 'Normalizado') && $r['parse_mode'] === 'HTML');
     }
 
+    public function test_three_or_more_new_alerts_are_grouped_and_recovered_as_one(): void
+    {
+        Http::fake(['api.telegram.org/*' => Http::response(['ok' => true])]);
+        $this->configure();
+        $conditions = [];
+        foreach ([1, 2, 3, 4] as $id) {
+            $conditions["device:{$id}"] = ['label' => "Backup com problema: EQ{$id}", 'severity' => 'critical', 'reason' => 'ftp_backup_stale', 'detail' => 'Envio FTP muito atrasado.'];
+        }
+        $this->assertSame(1, $this->fakeConditions($conditions)->run()['queued']);
+        $this->assertDatabaseHas('notification_queue', ['title' => '4 alertas novos', 'severity' => 'critical']);
+        $this->assertSame(4, DB::table('notification_states')->where('active', true)->count());
+        $this->assertSame(0, $this->fakeConditions($conditions)->run()['queued'], 'cooldown still applies per condition');
+
+        $this->assertSame(1, $this->fakeConditions([])->run()['queued']);
+        $this->assertDatabaseHas('notification_queue', ['title' => '4 condições normalizadas']);
+    }
+
+    public function test_two_new_alerts_stay_individual(): void
+    {
+        Http::fake(['api.telegram.org/*' => Http::response(['ok' => true])]);
+        $this->configure();
+        $conditions = [
+            'device:1' => ['label' => 'A', 'severity' => 'warning', 'reason' => 'x', 'detail' => ''],
+            'device:2' => ['label' => 'B', 'severity' => 'warning', 'reason' => 'x', 'detail' => ''],
+        ];
+        $this->assertSame(2, $this->fakeConditions($conditions)->run()['queued']);
+    }
+
     public function test_maintenance_window_defers_warnings_but_not_critical(): void
     {
         Http::fake(['api.telegram.org/*' => Http::response(['ok' => true])]);
@@ -145,6 +174,60 @@ class NotificationTest extends TestCase
         $manager->enqueue('test', null, 'info', 'Teste', '');
         $manager->deliver();
         Http::assertSent(fn ($r) => ! isset($r['message_thread_id']));
+    }
+
+    public function test_daily_summary_is_sent_once_per_period_after_its_time(): void
+    {
+        Http::fake(['api.telegram.org/*' => Http::response(['ok' => true])]);
+        $this->configure(['daily_enabled' => true, 'daily_time' => '08:00']);
+        $manager = app(NotificationManager::class);
+
+        $this->travelTo(now('America/Sao_Paulo')->setTime(7, 0)->utc());
+        $this->assertSame(0, $manager->summaries(), 'before the scheduled time');
+
+        $this->travelTo(now('America/Sao_Paulo')->setTime(8, 5)->utc());
+        $this->assertSame(1, $manager->summaries());
+        $this->assertSame(0, $manager->summaries(), 'same period is never queued twice');
+        $this->travel(2)->hours();
+        $this->assertSame(0, $manager->summaries());
+
+        $this->travel(1)->days();
+        $this->assertSame(1, $manager->summaries(), 'next day, new period');
+        $this->assertSame(2, DB::table('notification_queue')->where('kind', 'summary')->count());
+    }
+
+    public function test_weekly_summary_only_on_configured_weekday_and_counts_the_period(): void
+    {
+        $this->configure(['weekly_enabled' => true, 'weekly_day' => 2, 'weekly_time' => '08:00']); // quarta
+        $manager = app(NotificationManager::class);
+
+        $this->travelTo(\Illuminate\Support\Carbon::parse('2026-10-07 09:00', 'America/Sao_Paulo')->utc()); // quarta
+        $this->assertSame(1, $manager->summaries());
+        $this->travelTo(\Illuminate\Support\Carbon::parse('2026-10-08 09:00', 'America/Sao_Paulo')->utc()); // quinta
+        $this->assertSame(0, $manager->summaries());
+    }
+
+    public function test_summary_body_counts_period_events(): void
+    {
+        $summary = app(\App\Services\NotificationSummary::class);
+        $this->travelTo(\Illuminate\Support\Carbon::parse('2026-10-07 09:00', 'America/Sao_Paulo')->utc());
+        [$title, $body, $key] = $summary->build('daily', app(\App\Services\InstanceTimezone::class)->localNow());
+        $this->assertSame('Resumo diário', $title);
+        $this->assertSame('summary:daily:2026-10-06', $key);
+        $this->assertStringContainsString('Backups concluídos: 0', $body);
+        $this->assertStringContainsString('Período: 06/10 00:00 a 07/10 00:00', $body);
+    }
+
+    public function test_summary_preview_is_queued_and_viewer_cannot(): void
+    {
+        $this->configure();
+        $this->actingAs(User::factory()->create(['role' => 'admin']));
+        $this->post(route('settings.notifications.summary-test', 'weekly'))->assertRedirect();
+        $this->assertDatabaseHas('notification_queue', ['kind' => 'test', 'severity' => 'summary']);
+        $this->post('/settings/notifications/summary-test/monthly')->assertNotFound();
+
+        $this->actingAs(User::factory()->viewer()->create());
+        $this->post(route('settings.notifications.summary-test', 'daily'))->assertForbidden();
     }
 
     public function test_disabled_channel_still_delivers_test_message_only(): void

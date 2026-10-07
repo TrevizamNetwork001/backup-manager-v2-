@@ -1,9 +1,10 @@
 # Notificações Telegram (V2)
 
 Portado do V1 (`backup_manager/notifications.py`, `docs/NOTIFICATIONS.md` do
-Backup Manager Local) em 2026-10-07. Escopo entregue: **alertas + normalização**.
-Fora do escopo por decisão do operador: resumos diário/semanal/executivo,
-múltiplos destinos, aviso de backup concluído, cópia de arquivos pelo Telegram.
+Backup Manager Local) em 2026-10-07. Escopo entregue: **alertas + normalização**
+e **resumos diário/semanal**. Fora do escopo por decisão do operador: resumo
+executivo, múltiplos destinos/tópicos, aviso de backup concluído, cópia de
+arquivos pelo Telegram.
 
 ## Arquitetura
 
@@ -31,6 +32,7 @@ DeviceBackupHealth::rows()       ┴─> NotificationManager::evaluate()
 | Persiste | repete só após o cooldown (padrão 60 min, 5–1440) |
 | Motivo muda (ex.: atraso → muito atrasado) | alerta imediato, sem esperar cooldown |
 | Condição some | aviso "🟢 Normalizado" e estado reiniciado |
+| 3 ou mais alertas novos na mesma rodada | **uma única mensagem** "N alertas novos" com a lista (até 15 linhas + "… e mais N"); idem para normalizações. O estado e o cooldown continuam por condição |
 | Janela de manutenção | só alertas **críticos** passam; os demais saem depois se ainda ativos |
 | Avaliação falha (exceção) | nada é enviado e **nenhuma normalização é inventada** |
 | Falha de entrega | até 5 tentativas, espera 1/2/4/8 min (limitada a 1 h); respeita `retry_after` do 429; 401 falha na hora |
@@ -42,6 +44,26 @@ travadas, armazenamento (80% / crítico), FTP travado, falha de retenção, e
 consecutivas, último backup falhou, atrasado, FTP nunca recebido…).
 `repeated_device_failures` não gera alerta próprio: já é coberto por
 equipamento, com nome.
+
+## Resumos diário e semanal
+
+Serviço `NotificationSummary`; agendamento em `NotificationManager::summaries()`,
+chamado a cada minuto por `notifications:run` (só com o canal habilitado).
+
+- **Diário:** dia civil anterior completo (00:00–00:00, fuso da instância).
+- **Semanal:** os 7 dias civis anteriores ao dia do envio; só sai no dia da
+  semana configurado (0 = segunda … 6 = domingo).
+- **Idempotência:** chave por período (`summary:daily:AAAA-MM-DD`,
+  `summary:weekly:AAAA-MM-DD`) consultada na fila antes de enfileirar; reinício
+  ou scheduler parado não duplica. Se o scheduler voltar depois do horário no
+  mesmo dia, o resumo sai ao voltar (catch-up no próprio dia).
+- **Conteúdo:** backups concluídos (com quantos por FTP), falhas
+  (`failed`/`timed_out`), arquivos FTP rejeitados (`ftp_received_files` em
+  `quarantined`), backups removidos por retenção (`backup_artifacts.deleted_at`)
+  e equipamentos que precisam de atenção **agora** (até 10, com motivo).
+- Botões "Prévia do resumo diário/semanal" enfileiram uma amostra com dados
+  reais (`kind=test`), sem consumir a chave do período.
+- Ao ativar depois do horário configurado, o resumo do período anterior sai logo.
 
 ## Tela (Configurações → Notificações)
 
@@ -83,6 +105,15 @@ equipamento, com nome.
   é de root e não foi alterado — o acesso é pelo menu lateral.
 - **Supergrupo**: faltava o ID do tópico; adicionado em migration própria
   (`…000002_add_thread_id…`) em vez de editar a primeira, já aplicada.
+- **Enxurrada ao habilitar**: na primeira homologação real chegaram 5 alertas
+  seguidos ("Envio FTP muito atrasado", um por equipamento). Isso motivou o
+  agrupamento (≥ 3 → uma mensagem). Esses alertas refletem **atraso desde o
+  último arquivo recebido** (intervalo esperado + tolerância), não "erro de
+  hoje"; equipamentos que enviam menos vezes que o intervalo cadastrado devem
+  ter `expected_ftp_interval_hours` ajustado.
+- **500 em `/backup-health`** (não era do Telegram): view de outra sessão passava
+  string a `InstanceTimezone::format()`, que só aceitava `CarbonInterface`.
+  Corrigido aceitando string (UTC) — commit `030cf49`.
 - **Homologação real**: mensagem de teste recebida no supergrupo/tópico real
   em 2026-10-07 10:00 (fuso da instância).
 

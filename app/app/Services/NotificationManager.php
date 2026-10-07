@@ -18,6 +18,11 @@ class NotificationManager
 {
     private const MAX_ATTEMPTS = 5;
 
+    /** From this many items in one run, alerts/recoveries go out as a single grouped message. */
+    private const GROUP_MIN = 3;
+
+    private const GROUP_MAX_LINES = 15;
+
     private const SYSTEM_LABELS = [
         'engine_down' => ['Motor de backup parado', 'critical'],
         'worker_stale' => ['Worker do motor sem resposta', 'critical'],
@@ -30,7 +35,7 @@ class NotificationManager
         'retention_failed' => ['Falha na limpeza por retenção', 'warning'],
     ];
 
-    private const DEVICE_REASONS = [
+    public const DEVICE_REASONS = [
         'consecutive_failures' => 'falhas consecutivas',
         'scheduled_never_succeeded' => 'agendado e nunca concluiu com sucesso',
         'latest_backup_failed' => 'o último backup falhou',
@@ -46,12 +51,13 @@ class NotificationManager
         private readonly EngineHealth $health,
         private readonly DeviceBackupHealth $devices,
         private readonly InstanceTimezone $timezone,
+        private readonly NotificationSummary $summary,
     ) {}
 
     /** @return array{queued:int,sent:int,failed:int} */
     public function run(): array
     {
-        $queued = $this->settings->ready() ? $this->evaluate() : 0;
+        $queued = $this->settings->ready() ? $this->evaluate() + $this->summaries() : 0;
 
         return ['queued' => $queued] + $this->deliver();
     }
@@ -92,6 +98,7 @@ class NotificationManager
         $maintenance = $this->settings->inMaintenance($now->setTimezone($this->timezone->get()));
         $cooldown = (int) $this->settings->get()->cooldown_minutes;
         $queued = 0;
+        $alerts = [];
 
         foreach ($current as $key => $c) {
             if ($maintenance && $c['severity'] !== 'critical') {
@@ -104,21 +111,90 @@ class NotificationManager
             if (! $due) {
                 continue;
             }
-            $this->enqueue('alert', $key, $c['severity'], $c['label'], $c['detail']);
+            $alerts[] = ['key' => $key] + $c;
             DB::table('notification_states')->updateOrInsert(['condition_key' => $key], [
                 'active' => true, 'reason' => $c['reason'], 'label' => $c['label'],
                 'last_notified_at' => $now, 'updated_at' => $now, 'created_at' => $now,
             ]);
-            $queued++;
         }
+        $queued += $this->enqueueAlerts($alerts);
 
+        $recovered = [];
         foreach (DB::table('notification_states')->where('active', true)->get() as $state) {
             if (isset($current[$state->condition_key])) {
                 continue;
             }
-            $this->enqueue('recovery', $state->condition_key, 'info', 'Normalizado: '.$state->label, 'A condição não está mais ativa.');
+            $recovered[] = ['key' => $state->condition_key, 'label' => $state->label];
             DB::table('notification_states')->where('condition_key', $state->condition_key)
                 ->update(['active' => false, 'updated_at' => $now]);
+        }
+        $queued += $this->enqueueRecoveries($recovered);
+
+        return $queued;
+    }
+
+    /** @param list<array{key:string,label:string,severity:string,detail:string}> $alerts */
+    private function enqueueAlerts(array $alerts): int
+    {
+        if (count($alerts) < self::GROUP_MIN) {
+            foreach ($alerts as $a) {
+                $this->enqueue('alert', $a['key'], $a['severity'], $a['label'], $a['detail']);
+            }
+
+            return count($alerts);
+        }
+        $lines = array_map(fn ($a) => '• '.$a['label'].($a['detail'] !== '' ? ' — '.$a['detail'] : ''), $alerts);
+        $severity = in_array('critical', array_column($alerts, 'severity'), true) ? 'critical' : 'warning';
+        $this->enqueue('alert', null, $severity, count($alerts).' alertas novos', $this->lines($lines));
+
+        return 1;
+    }
+
+    /** @param list<array{key:string,label:string}> $recovered */
+    private function enqueueRecoveries(array $recovered): int
+    {
+        if (count($recovered) < self::GROUP_MIN) {
+            foreach ($recovered as $r) {
+                $this->enqueue('recovery', $r['key'], 'info', 'Normalizado: '.$r['label'], 'A condição não está mais ativa.');
+            }
+
+            return count($recovered);
+        }
+        $lines = array_map(fn ($r) => '• '.$r['label'], $recovered);
+        $this->enqueue('recovery', null, 'info', count($recovered).' condições normalizadas', $this->lines($lines));
+
+        return 1;
+    }
+
+    /** @param list<string> $lines */
+    private function lines(array $lines): string
+    {
+        $extra = count($lines) - self::GROUP_MAX_LINES;
+
+        return implode("\n", array_slice($lines, 0, self::GROUP_MAX_LINES)).($extra > 0 ? "\n… e mais {$extra}" : '');
+    }
+
+    /** Queues the daily/weekly digest once its scheduled time has passed (idempotent per period). */
+    public function summaries(): int
+    {
+        $settings = $this->settings->get();
+        $local = $this->timezone->localNow();
+        $queued = 0;
+        foreach (['daily', 'weekly'] as $kind) {
+            if (! $settings->{$kind.'_enabled'}) {
+                continue;
+            }
+            if ($kind === 'weekly' && $local->dayOfWeekIso - 1 !== (int) $settings->weekly_day) {
+                continue;
+            }
+            if ($local->format('H:i') < $settings->{$kind.'_time'}) {
+                continue;
+            }
+            [$title, $body, $key] = $this->summary->build($kind, $local);
+            if (DB::table('notification_queue')->where('kind', 'summary')->where('condition_key', $key)->exists()) {
+                continue;
+            }
+            $this->enqueue('summary', $key, 'summary', $title, $body);
             $queued++;
         }
 
@@ -180,7 +256,7 @@ class NotificationManager
     {
         $retryAfter = null;
         $icon = match ($item->severity) {
-            'critical' => '🔴', 'warning' => '🟠', 'info' => '🟢', default => '🔔',
+            'critical' => '🔴', 'warning' => '🟠', 'info' => '🟢', 'summary' => '📊', default => '🔔',
         };
         $when = CarbonImmutable::now($this->timezone->get())->format('d/m/Y H:i');
         $text = "<b>{$icon} ".e($item->title).'</b>'

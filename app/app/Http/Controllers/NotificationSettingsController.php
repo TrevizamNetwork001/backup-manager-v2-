@@ -6,6 +6,7 @@ use App\Services\AuditEvents;
 use App\Services\InstanceTimezone;
 use App\Services\NotificationManager;
 use App\Services\NotificationSettings;
+use App\Services\NotificationSummary;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -49,6 +50,9 @@ class NotificationSettingsController extends Controller
             'cooldown_minutes' => ['required', 'integer', 'min:5', 'max:1440'],
             'maintenance_start' => $time,
             'maintenance_end' => $time,
+            'daily_time' => ['nullable', 'regex:/\A(?:[01][0-9]|2[0-3]):[0-5][0-9]\z/'],
+            'weekly_time' => ['nullable', 'regex:/\A(?:[01][0-9]|2[0-3]):[0-5][0-9]\z/'],
+            'weekly_day' => ['nullable', 'integer', 'between:0,6'],
         ], [
             'bot_token.regex' => 'Token em formato inválido (esperado 123456:ABC…).',
             'thread_id.integer' => 'ID do tópico inválido: use somente o número.',
@@ -67,6 +71,9 @@ class NotificationSettingsController extends Controller
             'cooldown_minutes' => $validated['cooldown_minutes'],
             'maintenance_enabled' => $request->boolean('maintenance_enabled'),
             'maintenance_start' => $validated['maintenance_start'], 'maintenance_end' => $validated['maintenance_end'],
+            'daily_enabled' => $request->boolean('daily_enabled'), 'daily_time' => $validated['daily_time'] ?? $current->daily_time,
+            'weekly_enabled' => $request->boolean('weekly_enabled'), 'weekly_time' => $validated['weekly_time'] ?? $current->weekly_time,
+            'weekly_day' => $validated['weekly_day'] ?? $current->weekly_day,
         ], $validated['bot_token'] ?? null);
         // Never log the token: only that it changed.
         $audit->record('notifications.settings_updated', 'notification_settings', '1', 'Notificações Telegram', 'success', [
@@ -84,6 +91,20 @@ class NotificationSettingsController extends Controller
 
         return response()->json(['token' => $settings->token()])
             ->header('Cache-Control', 'no-store, private')->header('Pragma', 'no-cache');
+    }
+
+    public function testSummary(Request $request, string $kind, NotificationSettings $settings, NotificationManager $manager, NotificationSummary $summary, InstanceTimezone $timezone): RedirectResponse
+    {
+        $this->authorize('settings.manage');
+        abort_unless(in_array($kind, ['daily', 'weekly'], true), 404);
+        $current = $settings->get();
+        if (! $current->bot_token || ! $current->chat_id) {
+            return back()->withErrors(['enabled' => 'Salve o token e o Chat ID antes de testar.']);
+        }
+        [$title, $body] = $summary->build($kind, $timezone->localNow());
+        $manager->enqueue('test', null, 'summary', "Prévia — {$title}", $body);
+
+        return redirect()->route('settings.notifications.edit')->with('success', 'Prévia do resumo enfileirada; a entrega ocorre em até 1 minuto.');
     }
 
     public function test(Request $request, NotificationSettings $settings, NotificationManager $manager, AuditEvents $audit): RedirectResponse

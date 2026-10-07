@@ -19,7 +19,7 @@
     $tz = app(\App\Services\InstanceTimezone::class);
     $fmt = fn ($v) => $v ? $tz->format(\Illuminate\Support\Carbon::parse($v, 'UTC'), 'd/m/Y H:i') : '—';
     $statusLabel = ['pending' => 'Aguardando', 'sent' => 'Enviado', 'failed' => 'Falhou'];
-    $kindLabel = ['alert' => 'Alerta', 'recovery' => 'Normalizado', 'test' => 'Teste'];
+    $kindLabel = ['alert' => 'Alerta', 'recovery' => 'Normalizado', 'summary' => 'Resumo', 'test' => 'Teste'];
 @endphp
 <div class="settings-page stack">
     @if(session('success'))<div class="alert alert--success" role="status">{{ session('success') }}</div>@endif
@@ -73,6 +73,19 @@
                     <input class="form-control" type="time" name="maintenance_end" value="{{ old('maintenance_end', $settings->maintenance_end) }}" aria-label="Fim" required>
                     <small class="form-help">Alertas críticos continuam sendo enviados; os demais saem após a janela se ainda estiverem ativos.</small>
                 </fieldset>
+                <fieldset class="form-field">
+                    <legend class="form-label">Resumos automáticos ({{ $timezone }})</legend>
+                    <label class="form-check"><input type="checkbox" name="daily_enabled" value="1" @checked(old('daily_enabled', $settings->daily_enabled))> Resumo diário (dia anterior completo) às</label>
+                    <input class="form-control" type="time" name="daily_time" value="{{ old('daily_time', $settings->daily_time) }}" aria-label="Horário do resumo diário">
+                    <label class="form-check"><input type="checkbox" name="weekly_enabled" value="1" @checked(old('weekly_enabled', $settings->weekly_enabled))> Resumo semanal (7 dias anteriores) toda</label>
+                    <select class="form-control" name="weekly_day" aria-label="Dia do resumo semanal">
+                        @foreach(['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'] as $i => $dayName)
+                            <option value="{{ $i }}" @selected((int) old('weekly_day', $settings->weekly_day) === $i)>{{ $dayName }}</option>
+                        @endforeach
+                    </select>
+                    <input class="form-control" type="time" name="weekly_time" value="{{ old('weekly_time', $settings->weekly_time) }}" aria-label="Horário do resumo semanal">
+                    <small class="form-help">Cada período é enviado uma única vez, mesmo após reinício. O resumo inclui concluídos, falhas, rejeições FTP, remoções por retenção e equipamentos com atenção.</small>
+                </fieldset>
                 @can('settings.manage')
                     <div class="settings-form__actions"><button class="btn btn--primary" type="submit">Salvar alterações</button></div>
                 @endcan
@@ -82,6 +95,11 @@
                     @csrf
                     <button class="btn btn--secondary" type="submit">Enviar mensagem de teste</button>
                 </form>
+                <div class="settings-form__actions">
+                    @foreach(['daily' => 'Prévia do resumo diário', 'weekly' => 'Prévia do resumo semanal'] as $kind => $label)
+                        <form method="POST" action="{{ route('settings.notifications.summary-test', $kind) }}" style="display:inline">@csrf<button class="btn btn--secondary" type="submit">{{ $label }}</button></form>
+                    @endforeach
+                </div>
             @endcan
         </div>
     </section>
