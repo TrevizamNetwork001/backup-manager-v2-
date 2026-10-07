@@ -122,13 +122,9 @@
                                         @if(config('backup.a10_enabled') && $device->is_active)
                                             @foreach($device->deviceBackupPolicies as $association)
                                                 @if($association->archived_at === null && $association->is_active && $association->backupPolicy?->is_active && $association->backupPolicy?->method === 'a10_system' && $association->credential?->is_active)
+                                                    {{-- A execução manual do A10 fica na política (e no modal "Política de backup"); aqui só o atalho para acompanhar uma execução em andamento. --}}
                                                     @if($liveExecutionsByDevice->has($device->id))
                                                         <a href="{{ route('backup-executions.show', $liveExecutionsByDevice->get($device->id)) }}" class="btn btn--ghost btn--sm">Acompanhar backup</a>
-                                                    @else
-                                                        <form method="POST" action="{{ route('backup-policies.associations.run-a10', [$association->backupPolicy, $association]) }}">
-                                                            @csrf
-                                                            <button type="submit" class="btn btn--primary btn--sm">Executar backup A10</button>
-                                                        </form>
                                                     @endif
                                                 @endif
                                             @endforeach
