@@ -36,6 +36,7 @@
     $alerts = collect($report['checks'])->filter(fn ($check) => $check['status'] !== 'healthy');
     $memoryPercent = isset($hostResources['memory_used_bytes'], $hostResources['memory_total_bytes']) && $hostResources['memory_total_bytes'] > 0
         ? round(min(100, max(0, $hostResources['memory_used_bytes'] / $hostResources['memory_total_bytes'] * 100))) : null;
+    $cpuPercent = isset($hostResources['cpu_percent']) ? min(100, max(0, (int) $hostResources['cpu_percent'])) : null;
     $storagePercent = isset($storage['used_percent']) ? min(100, max(0, $storage['used_percent'])) : null;
     $problemDevices = $checksByName['devices']['metadata']['problem_devices'] ?? [];
     $withoutHistory = collect($problemDevices)->filter(fn ($device) => in_array($device['reason'], ['manual_never_backed_up', 'scheduled_never_succeeded'], true));
@@ -71,7 +72,11 @@
     <div class="health-kpis" aria-label="Indicadores operacionais">
         <article class="health-panel health-kpi">
             <span class="health-icon"><x-icon name="cpu" /></span>
-            <div class="health-kpi__content"><h2>CPU do host</h2><strong>{{ $hostResources['cpu_count'] ?? '—' }}</strong><p>{{ ($hostResources['cpu_count'] ?? null) === 1 ? 'núcleo visível' : 'núcleos visíveis' }}</p><small>Carga em 1 min: {{ isset($hostResources['load_1m']) ? number_format($hostResources['load_1m'], 2, ',', '.') : '—' }}</small></div>
+            <div class="health-kpi__content"><h2>CPU do host</h2><strong>{{ $cpuPercent !== null ? $cpuPercent.'%' : '—' }}</strong><p>Em uso · {{ $hostResources['cpu_count'] ?? '—' }} {{ ($hostResources['cpu_count'] ?? null) === 1 ? 'núcleo visível' : 'núcleos visíveis' }}</p>
+                @if($cpuPercent !== null)
+                    <div class="health-meter"><div class="health-meter__track" role="progressbar" aria-label="Uso da CPU" aria-valuenow="{{ $cpuPercent }}" aria-valuemin="0" aria-valuemax="100"><span style="width: {{ $cpuPercent }}%"></span></div><span>{{ $cpuPercent }}%</span></div>
+                @endif
+                <small>Carga em 1 min: {{ isset($hostResources['load_1m']) ? number_format($hostResources['load_1m'], 2, ',', '.') : '—' }}</small></div>
         </article>
         <article class="health-panel health-kpi">
             <span class="health-icon"><x-icon name="memory" /></span>

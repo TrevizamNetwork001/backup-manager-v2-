@@ -98,6 +98,7 @@ class SystemHealthTest extends TestCase
         $this->mock(HostResources::class)->shouldReceive('snapshot')->once()->andReturn([
             'cpu_count' => 4, 'load_1m' => 1.57, 'memory_used_bytes' => 25, 'memory_total_bytes' => 100,
         ]);
+        $this->mock(\App\Services\CpuUsage::class)->shouldReceive('percent')->once()->andReturn(37);
 
         $response = $this->actingAs(User::factory()->admin()->create())->get(route('system-health.index'))->assertOk();
         $html = $response->getContent();
@@ -106,7 +107,8 @@ class SystemHealthTest extends TestCase
         $this->assertStringContainsString('Manual sem backup', $panel);
         $this->assertStringContainsString('Agendado sem sucesso', $panel);
         $this->assertStringNotContainsString('Falhas repetidas', $panel);
-        $response->assertSee('aria-label="Uso da memória" aria-valuenow="25"', false)
+        $response->assertSee('aria-label="Uso da CPU" aria-valuenow="37"', false)
+            ->assertSee('aria-label="Uso da memória" aria-valuenow="25"', false)
             ->assertSee('Falhas repetidas');
     }
 }

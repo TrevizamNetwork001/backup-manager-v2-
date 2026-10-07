@@ -2,13 +2,14 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\CpuUsage;
 use App\Services\EngineHealth;
 use App\Services\HostResources;
 use Illuminate\View\View;
 
 class SystemHealthController extends Controller
 {
-    public function index(EngineHealth $health, HostResources $hostResources): View
+    public function index(EngineHealth $health, HostResources $hostResources, CpuUsage $cpu): View
     {
         $this->authorize('system_health.view');
 
@@ -17,7 +18,7 @@ class SystemHealthController extends Controller
         // few seconds must not flood audit_events).
         return view('system-health.index', [
             'report' => $health->report(),
-            'hostResources' => $hostResources->snapshot(),
+            'hostResources' => $hostResources->snapshot() + ['cpu_percent' => $cpu->percent()],
         ]);
     }
 }
