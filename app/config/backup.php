@@ -15,6 +15,10 @@ return [
     'ftp_rejected_window_hours' => (int) env('BACKUP_FTP_REJECTED_WINDOW_HOURS', 24),
     'ftp_probe_host' => env('BACKUP_FTP_PROBE_HOST', ''),
     'ftp_probe_port' => (int) env('BACKUP_FTP_PROBE_PORT', 21),
+    // Cópia de backups no Telegram. O limite padrão (50 MB) é o do Bot API público; só um servidor local da API
+    // (BACKUP_TELEGRAM_API_BASE) permite mais, até 2 GB.
+    'telegram_max_bytes' => (int) env('BACKUP_TELEGRAM_MAX_BYTES', 52428800),
+    'telegram_api_base' => env('BACKUP_TELEGRAM_API_BASE', 'https://api.telegram.org'),
     'ftp_max_bytes' => (int) env('BACKUP_FTP_MAX_BYTES', 8 * 1024 * 1024),
     'engine_stale_seconds' => (int) env('BACKUP_ENGINE_STALE_SECONDS', 300),
     // Overall wall-clock budget for a single execution, independent of heartbeat

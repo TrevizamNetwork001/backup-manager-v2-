@@ -14,6 +14,37 @@ class NotificationSummary
 {
     private const MAX_DEVICES = 10;
 
+    /**
+     * Cópia de backups no Telegram no período. Falhas definitivas aparecem aqui, no resumo, e não como alerta.
+     *
+     * @return list<string>
+     */
+    private function telegramCopyLines($from, $to): array
+    {
+        $enabled = (bool) DB::table('notification_settings')->where('id', 1)->value('backup_copy_enabled');
+        $sent = DB::table('telegram_backup_sends')->where('status', 'sent')
+            ->where('sent_at', '>=', $from)->where('sent_at', '<', $to)->count();
+        $failed = DB::table('telegram_backup_sends as s')
+            ->leftJoin('backup_artifacts as a', 'a.id', '=', 's.backup_artifact_id')
+            ->leftJoin('devices as d', 'd.id', '=', 'a.device_id')
+            ->where('s.status', 'failed')->where('s.updated_at', '>=', $from)->where('s.updated_at', '<', $to)
+            ->orderBy('s.id')->get(['d.name as device', 's.error_code']);
+        if (! $enabled && $sent === 0 && $failed->isEmpty()) {
+            return [];
+        }
+
+        $lines = ["📨 Cópia no Telegram: {$sent} enviado(s), {$failed->count()} com falha"];
+        foreach ($failed->take(self::MAX_DEVICES) as $row) {
+            $lines[] = '  • '.($row->device ?? 'equipamento removido').' — '
+                .(TelegramBackupCopy::ERRORS[$row->error_code] ?? 'falha no envio');
+        }
+        if ($failed->count() > self::MAX_DEVICES) {
+            $lines[] = '  … e mais '.($failed->count() - self::MAX_DEVICES);
+        }
+
+        return $lines;
+    }
+
     public function __construct(private readonly InstanceTimezone $timezone, private readonly DeviceBackupHealth $devices) {}
 
     /** @return array{0:string,1:string,2:string} title, body, period key */
@@ -39,6 +70,7 @@ class NotificationSummary
             "✖ Falhas: {$failed}",
             "⚠ Arquivos FTP rejeitados: {$rejected}",
             "🗑 Backups removidos por retenção: {$removed}",
+            ...$this->telegramCopyLines($from, $to),
             '🔧 Equipamentos que precisam de atenção agora: '.$attention->count(),
         ];
         foreach ($attention->take(self::MAX_DEVICES) as $row) {

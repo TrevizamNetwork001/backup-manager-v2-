@@ -50,6 +50,8 @@ Route::middleware(['auth', 'active'])->group(function () {
     Route::put('settings/notifications', [NotificationSettingsController::class, 'update'])->name('settings.notifications.update');
     Route::post('settings/notifications/token/reveal', [NotificationSettingsController::class, 'revealToken'])->middleware('throttle:6,1')->name('settings.notifications.token.reveal');
     Route::post('settings/notifications/summary-test/{kind}', [NotificationSettingsController::class, 'testSummary'])->middleware('throttle:6,1')->whereIn('kind', ['daily', 'weekly'])->name('settings.notifications.summary-test');
+    Route::put('settings/notifications/backup-copy', [NotificationSettingsController::class, 'updateBackupCopy'])->name('settings.notifications.backup-copy.update');
+    Route::post('settings/notifications/backup-copy/test', [NotificationSettingsController::class, 'testBackupCopy'])->middleware('throttle:6,1')->name('settings.notifications.backup-copy.test');
     Route::post('settings/notifications/test', [NotificationSettingsController::class, 'test'])->middleware('throttle:6,1')->name('settings.notifications.test');
     Route::get('audit', [AuditController::class, 'index'])->name('audit.index');
     Route::get('system/health', [SystemHealthController::class, 'index'])->name('system-health.index');

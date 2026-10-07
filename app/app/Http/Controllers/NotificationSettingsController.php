@@ -7,6 +7,7 @@ use App\Services\InstanceTimezone;
 use App\Services\NotificationManager;
 use App\Services\NotificationSettings;
 use App\Services\NotificationSummary;
+use App\Services\TelegramBackupCopy;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -36,6 +37,12 @@ class NotificationSettingsController extends Controller
             'lastSent' => (clone $queue)->where('status', 'sent')->max('sent_at'),
             'history' => (clone $queue)->orderByDesc('id')->limit(30)->get(),
             'errorLabels' => self::ERRORS,
+            'copyStats' => [
+                'pending' => DB::table('telegram_backup_sends')->where('status', 'pending')->count(),
+                'failed24h' => DB::table('telegram_backup_sends')->where('status', 'failed')->where('updated_at', '>=', now()->subDay())->count(),
+                'sent' => DB::table('telegram_backup_sends')->where('status', 'sent')->count(),
+                'lastSent' => DB::table('telegram_backup_sends')->where('status', 'sent')->max('sent_at'),
+            ],
         ]);
     }
 
@@ -81,6 +88,51 @@ class NotificationSettingsController extends Controller
         ], $request->user()->id, $request->ip());
 
         return redirect()->route('settings.notifications.edit')->with('success', 'Configuração de notificações salva.');
+    }
+
+    public function updateBackupCopy(Request $request, NotificationSettings $settings, AuditEvents $audit): RedirectResponse
+    {
+        $this->authorize('settings.manage');
+        $validated = $request->validate([
+            'backup_copy_chat_id' => ['nullable', 'string', 'max:100', 'regex:/\A(?:-?\d+|@[A-Za-z0-9_]{5,})\z/'],
+            'backup_copy_thread_id' => ['nullable', 'integer', 'min:1'],
+        ], [
+            'backup_copy_chat_id.regex' => 'Chat ID inválido: use o número do supergrupo (começa com -100) ou @canal.',
+            'backup_copy_thread_id.integer' => 'ID do tópico inválido: use somente o número.',
+        ]);
+        $enabled = $request->boolean('backup_copy_enabled');
+        $current = $settings->get();
+        $chatId = $validated['backup_copy_chat_id'] ?? null;
+        if ($enabled && (! $current->bot_token || ! $chatId)) {
+            return back()->withInput()->withErrors(['backup_copy_enabled' => 'Configure o token do bot (acima) e informe o Chat ID do grupo de backups antes de ligar.']);
+        }
+
+        $values = ['backup_copy_enabled' => $enabled, 'backup_copy_chat_id' => $chatId,
+            'backup_copy_thread_id' => $validated['backup_copy_thread_id'] ?? null];
+        if ($enabled && ! $current->backup_copy_enabled) {
+            $values['backup_copy_since'] = now(); // só backups validados daqui em diante
+        }
+        $settings->save($values, null);
+        $audit->record('notifications.backup_copy_updated', 'notification_settings', '1', 'Cópia de backups no Telegram', 'success',
+            ['enabled' => $enabled], $request->user()->id, $request->ip());
+
+        return redirect()->route('settings.notifications.edit')->with('success', 'Cópia de backups no Telegram salva.');
+    }
+
+    public function testBackupCopy(Request $request, NotificationSettings $settings, TelegramBackupCopy $copy, AuditEvents $audit): RedirectResponse
+    {
+        $this->authorize('settings.manage');
+        $current = $settings->get();
+        if (! $current->bot_token || ! $current->backup_copy_chat_id) {
+            return back()->withErrors(['backup_copy_enabled' => 'Salve o token do bot e o Chat ID do grupo de backups antes de testar.']);
+        }
+        $error = $copy->sendTest();
+        $audit->record('notifications.backup_copy_test', 'notification_settings', '1', 'Cópia de backups no Telegram',
+            $error === null ? 'success' : 'failure', ['error' => $error], $request->user()->id, $request->ip());
+
+        return $error === null
+            ? redirect()->route('settings.notifications.edit')->with('success', 'Arquivo de teste enviado. Confira no grupo de backups.')
+            : redirect()->route('settings.notifications.edit')->with('warning', 'Teste não enviado: '.(TelegramBackupCopy::ERRORS[$error] ?? 'falha no envio.'));
     }
 
     public function revealToken(Request $request, NotificationSettings $settings, AuditEvents $audit): JsonResponse

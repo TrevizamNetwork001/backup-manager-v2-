@@ -123,6 +123,36 @@ aviso de "backup concluído", cópia do arquivo pelo Telegram, divisão de mensa
 numeradas e o comando de diagnóstico do bot. Storage tem dois níveis (aviso/crítico) em vez dos três
 do V1. Equipamento só-manual que nunca teve backup é "desconhecido" na saúde e não alerta.
 
+## Cópia de backups no Telegram (cópia externa simples)
+
+Substitui, de forma bem mais simples, a "cópia no Telegram" do V1 (que exigia destinos, tópicos e regras por
+equipamento). **Uma chave central** em Configurações → Notificações: liga para **todos** os equipamentos de
+uma vez, sem vincular um a um.
+
+- **Configuração:** ligar/desligar, **Chat ID** do grupo de backups e **ID do tópico** (opcional). Usa o mesmo
+  bot das notificações (o token fica no cartão de cima). Pode ser outro supergrupo ou outro tópico do mesmo.
+- **O que envia:** cada backup validado **depois** de ligar (`backup_copy_since`; ligar não despeja o histórico),
+  um documento por backup, com legenda (POP, equipamento, arquivo, tamanho e hora no fuso da instância).
+  Arquivo de texto (`.rsc`, `.cfg`…) vai **dentro de um `.zip`**; o que já é compactado (`.zip`, `.tar.gz`…)
+  segue como está, porque zipar de novo só aumenta. O nome vira `<equipamento>__<arquivo>[.zip]`.
+- **Segurança do arquivo:** só envia se `ArtifactStorage::verify()` aprovar (caminho, tamanho e SHA-256 batendo).
+  Arquivo ausente ou alterado não é enviado (`ARTIFACT_UNAVAILABLE`). O backup local nunca é modificado.
+- **Fila:** tabela `telegram_backup_sends` (um registro por artefato, sem chave estrangeira para a retenção
+  nunca ser bloqueada). `telegram-backup:run` roda a cada minuto no scheduler (`withoutOverlapping`), 5 envios
+  por rodada, até 5 tentativas com espera crescente, respeitando o `retry_after` do Telegram. Token inválido ou
+  arquivo grande demais falham na hora.
+- **Limite de tamanho:** 50 MB por arquivo, que é o do **Bot API público do Telegram** (não é escolha do painel).
+  Está em `BACKUP_TELEGRAM_MAX_BYTES`; passar disso exige um servidor local da API do Telegram, cujo endereço vai em
+  `BACKUP_TELEGRAM_API_BASE` (até 2 GB). Hoje o painel só guarda artefatos de até 8 MB (configuração) e 64 MB (A10).
+- **Botão "Enviar arquivo de teste":** manda um `.txt` ao grupo de backups na hora (síncrono, limite de 6 por
+  minuto) e mostra aqui se funcionou ou o motivo da falha.
+- **Falhas não geram alerta:** por decisão do operador, falha de cópia **não** dispara notificação nem repete.
+  Entra no **resumo diário e semanal**: "📨 Cópia no Telegram: N enviado(s), M com falha", seguido dos
+  equipamentos e do motivo (até 10). O cartão da tela mostra enviados, pendentes e falhas das últimas 24 h.
+- **Atenção:** configurações de equipamentos contêm dados sensíveis (hashes e acessos), e o envio **não é
+  criptografado** (decisão do operador, "por enquanto"). Use um grupo privado, só com quem precisa.
+- Testes: `TelegramBackupCopyTest` (10 casos).
+
 ## Tela (Configurações → Notificações)
 
 - Token do bot: cifrado (`Crypt`), nunca vem no HTML. O botão do **olho** busca o

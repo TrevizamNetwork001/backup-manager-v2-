@@ -358,6 +358,7 @@ Artisan::command('system:recovery-check {--json}', function (RecoveryCheck $chec
 Schedule::command('backups:schedule')->everyMinute()->withoutOverlapping();
 Schedule::command('engine:recover-stale')->everyMinute()->withoutOverlapping();
 Schedule::command('notifications:run')->everyMinute()->withoutOverlapping();
+Schedule::command('telegram-backup:run')->everyMinute()->withoutOverlapping();
 $time = config('backup.retention_time');
 if (! is_string($time) || ! preg_match('/\A(?:[01][0-9]|2[0-3]):[0-5][0-9]\z/D', $time)) {
     throw new InvalidArgumentException('Horário de retenção inválido.');

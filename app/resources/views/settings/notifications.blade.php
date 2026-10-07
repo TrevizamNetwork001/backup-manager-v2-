@@ -23,7 +23,9 @@
 @endphp
 <div class="settings-page stack">
     @if(session('success'))<div class="alert alert--success" role="status">{{ session('success') }}</div>@endif
+    @if(session('warning'))<div class="alert alert--warning" role="alert">{{ session('warning') }}</div>@endif
     @error('enabled')<div class="alert alert--warning" role="alert">{{ $message }}</div>@enderror
+    @error('backup_copy_enabled')<div class="alert alert--warning" role="alert">{{ $message }}</div>@enderror
 
     <section class="card settings-card" aria-labelledby="tg-title">
         <div class="card__header">
@@ -100,6 +102,45 @@
                         <form method="POST" action="{{ route('settings.notifications.summary-test', $kind) }}" style="display:inline">@csrf<button class="btn btn--secondary" type="submit">{{ $label }}</button></form>
                     @endforeach
                 </div>
+            @endcan
+        </div>
+    </section>
+
+    <section class="card settings-card" aria-labelledby="tg-copy-title">
+        <div class="card__header">
+            <div>
+                <h2 class="card__title" id="tg-copy-title">Cópia de backups no Telegram</h2>
+                <p class="card__description">Cada backup novo de todos os equipamentos é enviado, compactado, a um grupo do Telegram. Não precisa ligar equipamento por equipamento.</p>
+            </div>
+            <span class="badge badge--{{ $settings->backup_copy_enabled ? 'success' : 'neutral' }}">{{ $settings->backup_copy_enabled ? 'Ligada' : 'Desligada' }}</span>
+        </div>
+        <div class="card__body">
+            <p class="form-help">Usa o mesmo bot configurado acima. Crie um supergrupo (ou um tópico) só para backups, adicione o bot e informe o ID abaixo. Só os backups feitos <strong>depois de ligar</strong> são enviados. Arquivos de texto vão em <code>.zip</code>; os já compactados seguem como estão. Limite do Telegram: 50&nbsp;MB por arquivo. <strong>Atenção:</strong> as configurações dos equipamentos contêm dados sensíveis (hashes e acessos); deixe o grupo privado e só com quem precisa.</p>
+            <p>Enviados: <strong>{{ $copyStats['sent'] }}</strong> · Pendentes: {{ $copyStats['pending'] }} · Falhas nas últimas 24 h: {{ $copyStats['failed24h'] }} · Último envio: {{ $fmt($copyStats['lastSent']) }}</p>
+            <form method="POST" action="{{ route('settings.notifications.backup-copy.update') }}" class="settings-form">
+                @csrf @method('PUT')
+                <label class="form-check"><input type="checkbox" name="backup_copy_enabled" value="1" @checked(old('backup_copy_enabled', $settings->backup_copy_enabled))> Enviar os backups para o Telegram</label>
+                <div class="form-field">
+                    <label class="form-label" for="backup_copy_chat_id">Chat ID do grupo de backups</label>
+                    <input class="form-control" id="backup_copy_chat_id" name="backup_copy_chat_id" value="{{ old('backup_copy_chat_id', $settings->backup_copy_chat_id) }}" placeholder="-1001234567890">
+                    @error('backup_copy_chat_id')<span class="form-error">{{ $message }}</span>@enderror
+                </div>
+                <div class="form-field">
+                    <label class="form-label" for="backup_copy_thread_id">ID do tópico (opcional)</label>
+                    <input class="form-control" id="backup_copy_thread_id" name="backup_copy_thread_id" type="number" min="1" value="{{ old('backup_copy_thread_id', $settings->backup_copy_thread_id) }}" placeholder="Ex.: 1412">
+                    <small class="form-help">Só para supergrupos com tópicos. Vazio = chat geral do grupo.</small>
+                    @error('backup_copy_thread_id')<span class="form-error">{{ $message }}</span>@enderror
+                </div>
+                @can('settings.manage')
+                    <div class="settings-form__actions"><button class="btn btn--primary" type="submit">Salvar cópia de backups</button></div>
+                @endcan
+            </form>
+            @can('settings.manage')
+                <form method="POST" action="{{ route('settings.notifications.backup-copy.test') }}" class="settings-form">
+                    @csrf
+                    <button class="btn btn--secondary" type="submit">Enviar arquivo de teste</button>
+                    <small class="form-help">Salve antes. Envia um arquivo de texto ao grupo de backups e mostra aqui se funcionou.</small>
+                </form>
             @endcan
         </div>
     </section>
