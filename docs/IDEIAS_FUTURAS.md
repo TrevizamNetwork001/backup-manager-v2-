@@ -103,3 +103,13 @@ dia — não há esse problema hoje.
 
 Origem: conversa sobre desativação de credencial/associação SSH após migrar
 um equipamento (BNG-NE8000) para FTP push; ver `docs/CORE_STATUS.md`.
+
+## Telegram: o que ficou fora da primeira entrega
+
+A V2 entrega só alertas + normalização (`docs/TELEGRAM_NOTIFICATIONS.md`). Do V1
+continuam pendentes, na ordem em que provavelmente fazem sentido: resumos
+diário/semanal (fuso da instância, chave por período para não duplicar após
+reinício), aviso opcional de backup concluído, mais de um destino e tópico por
+equipamento/grupo, resumo executivo (só com atividade administrativa) e cópia
+do arquivo de backup pelo Telegram. **Critério para retomar:** o operador
+pedir; nada aqui bloqueia o fluxo atual.

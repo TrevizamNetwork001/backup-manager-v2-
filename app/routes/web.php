@@ -14,6 +14,7 @@ use App\Http\Controllers\DeviceDocumentationController;
 use App\Http\Controllers\FtpAccountController;
 use App\Http\Controllers\FtpAdminController;
 use App\Http\Controllers\InstanceSettingsController;
+use App\Http\Controllers\NotificationSettingsController;
 use App\Http\Controllers\OltFtpWizardController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\SessionKeepAliveController;
@@ -42,6 +43,10 @@ Route::middleware(['auth', 'active'])->group(function () {
     Route::put('settings', [InstanceSettingsController::class, 'update'])->name('settings.update');
     Route::post('settings/retention/preview', [InstanceSettingsController::class, 'previewRetention'])->name('settings.retention.preview');
     Route::patch('settings/retention', [InstanceSettingsController::class, 'updateRetention'])->name('settings.retention.update');
+    Route::get('settings/notifications', [NotificationSettingsController::class, 'edit'])->name('settings.notifications.edit');
+    Route::put('settings/notifications', [NotificationSettingsController::class, 'update'])->name('settings.notifications.update');
+    Route::post('settings/notifications/token/reveal', [NotificationSettingsController::class, 'revealToken'])->middleware('throttle:6,1')->name('settings.notifications.token.reveal');
+    Route::post('settings/notifications/test', [NotificationSettingsController::class, 'test'])->middleware('throttle:6,1')->name('settings.notifications.test');
     Route::get('audit', [AuditController::class, 'index'])->name('audit.index');
     Route::get('system/health', [SystemHealthController::class, 'index'])->name('system-health.index');
 

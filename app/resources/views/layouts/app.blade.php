@@ -114,6 +114,10 @@
                         <span class="nav-icon"><x-icon name="settings" /></span>
                         Configurações
                     </a>
+                    <a href="{{ route('settings.notifications.edit') }}" class="nav-link {{ request()->routeIs('settings.notifications.*') ? 'active' : '' }}">
+                        <span class="nav-icon"><x-icon name="bell" /></span>
+                        Notificações
+                    </a>
                 @endcan
                 @can('audit.view')
                     <a href="{{ route('audit.index') }}" class="nav-link {{ request()->routeIs('audit.*') ? 'active' : '' }}">

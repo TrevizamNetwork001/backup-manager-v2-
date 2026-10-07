@@ -1,0 +1,209 @@
+<?php
+
+namespace App\Services;
+
+use App\Support\AlertCondition;
+use Carbon\CarbonImmutable;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
+use Throwable;
+
+/**
+ * Turns the health vocabulary (EngineHealth alerts + per-device backup health)
+ * into Telegram messages. Producers never talk to Telegram: conditions are
+ * evaluated into a persistent queue and a separate step delivers it with retry.
+ * Detection → alert, persistence → cooldown re-alert, disappearance → recovery.
+ */
+class NotificationManager
+{
+    private const MAX_ATTEMPTS = 5;
+
+    private const SYSTEM_LABELS = [
+        'engine_down' => ['Motor de backup parado', 'critical'],
+        'worker_stale' => ['Worker do motor sem resposta', 'critical'],
+        'scheduler_stale' => ['Agendador atrasado', 'warning'],
+        'queue_backlog' => ['Fila de backups acumulada', 'warning'],
+        'stale_jobs' => ['Execuções travadas', 'warning'],
+        'storage_warning' => ['Armazenamento acima de 80%', 'warning'],
+        'storage_critical' => ['Armazenamento quase cheio', 'critical'],
+        'ftp_processing_stale' => ['Processamento de arquivos FTP travado', 'warning'],
+        'retention_failed' => ['Falha na limpeza por retenção', 'warning'],
+    ];
+
+    private const DEVICE_REASONS = [
+        'consecutive_failures' => 'falhas consecutivas',
+        'scheduled_never_succeeded' => 'agendado e nunca concluiu com sucesso',
+        'latest_backup_failed' => 'o último backup falhou',
+        'backup_stale' => 'backup muito atrasado',
+        'backup_delayed' => 'backup atrasado',
+        'ftp_never_received' => 'nenhum arquivo recebido por FTP',
+        'ftp_backup_stale' => 'envio FTP muito atrasado',
+        'ftp_backup_delayed' => 'envio FTP atrasado',
+    ];
+
+    public function __construct(
+        private readonly NotificationSettings $settings,
+        private readonly EngineHealth $health,
+        private readonly DeviceBackupHealth $devices,
+        private readonly InstanceTimezone $timezone,
+    ) {}
+
+    /** @return array{queued:int,sent:int,failed:int} */
+    public function run(): array
+    {
+        $queued = $this->settings->ready() ? $this->evaluate() : 0;
+
+        return ['queued' => $queued] + $this->deliver();
+    }
+
+    /** @return array<string, array{label:string,severity:string,reason:string,detail:string}> */
+    public function conditions(): array
+    {
+        $conditions = [];
+        foreach ($this->health->report()['alerts'] as $code) {
+            if (isset(self::SYSTEM_LABELS[$code])) {
+                [$label, $severity] = self::SYSTEM_LABELS[$code];
+                $conditions["system:{$code}"] = ['label' => $label, 'severity' => $severity, 'reason' => $code, 'detail' => ''];
+            }
+        }
+        foreach ($this->devices->rows() as $row) {
+            if (! in_array($row['status'], ['warning', 'critical'], true)) {
+                continue;
+            }
+            $reason = self::DEVICE_REASONS[$row['reason']] ?? $row['reason'];
+            $conditions["device:{$row['device_id']}"] = [
+                'label' => "Backup com problema: {$row['name']}", 'severity' => $row['status'],
+                'reason' => $row['reason'], 'detail' => ucfirst($reason).'.',
+            ];
+        }
+
+        return $conditions;
+    }
+
+    public function evaluate(): int
+    {
+        try {
+            $current = $this->conditions();
+        } catch (Throwable) {
+            return 0; // never fabricate recoveries from a failed evaluation
+        }
+
+        $now = CarbonImmutable::now('UTC');
+        $maintenance = $this->settings->inMaintenance($now->setTimezone($this->timezone->get()));
+        $cooldown = (int) $this->settings->get()->cooldown_minutes;
+        $queued = 0;
+
+        foreach ($current as $key => $c) {
+            if ($maintenance && $c['severity'] !== 'critical') {
+                continue; // stays unnotified; sent after the window if still active
+            }
+            $state = DB::table('notification_states')->where('condition_key', $key)->first();
+            $due = ! $state || ! $state->active || $state->reason !== $c['reason']
+                || ! $state->last_notified_at
+                || CarbonImmutable::parse($state->last_notified_at, 'UTC')->addMinutes($cooldown)->lte($now);
+            if (! $due) {
+                continue;
+            }
+            $this->enqueue('alert', $key, $c['severity'], $c['label'], $c['detail']);
+            DB::table('notification_states')->updateOrInsert(['condition_key' => $key], [
+                'active' => true, 'reason' => $c['reason'], 'label' => $c['label'],
+                'last_notified_at' => $now, 'updated_at' => $now, 'created_at' => $now,
+            ]);
+            $queued++;
+        }
+
+        foreach (DB::table('notification_states')->where('active', true)->get() as $state) {
+            if (isset($current[$state->condition_key])) {
+                continue;
+            }
+            $this->enqueue('recovery', $state->condition_key, 'info', 'Normalizado: '.$state->label, 'A condição não está mais ativa.');
+            DB::table('notification_states')->where('condition_key', $state->condition_key)
+                ->update(['active' => false, 'updated_at' => $now]);
+            $queued++;
+        }
+
+        return $queued;
+    }
+
+    public function enqueue(string $kind, ?string $key, string $severity, string $title, string $body): int
+    {
+        return DB::table('notification_queue')->insertGetId([
+            'kind' => $kind, 'condition_key' => $key, 'severity' => $severity, 'title' => mb_substr($title, 0, 200),
+            'body' => $body, 'status' => 'pending', 'next_attempt_at' => now(), 'created_at' => now(), 'updated_at' => now(),
+        ]);
+    }
+
+    /** @return array{sent:int,failed:int} */
+    public function deliver(): array
+    {
+        $result = ['sent' => 0, 'failed' => 0];
+        $settings = $this->settings->get();
+        if (! $settings->bot_token || ! $settings->chat_id) {
+            return $result;
+        }
+        // Tests always go out; automatic items only while the channel is enabled.
+        $items = DB::table('notification_queue')->where('status', 'pending')
+            ->where('next_attempt_at', '<=', now())
+            ->when(! $settings->enabled, fn ($q) => $q->where('kind', 'test'))
+            ->orderBy('id')->limit(20)->get();
+        if ($items->isEmpty()) {
+            return $result;
+        }
+        $token = $this->settings->token();
+
+        foreach ($items as $item) {
+            $error = $this->send($token, $settings->chat_id, $settings->thread_id, $item, $retryAfter);
+            $attempts = $item->attempts + 1;
+            if ($error === null) {
+                DB::table('notification_queue')->where('id', $item->id)->update([
+                    'status' => 'sent', 'attempts' => $attempts, 'sent_at' => now(), 'last_error' => null, 'updated_at' => now(),
+                ]);
+                $result['sent']++;
+            } elseif ($attempts >= self::MAX_ATTEMPTS || $error === 'TELEGRAM_UNAUTHORIZED') {
+                DB::table('notification_queue')->where('id', $item->id)->update([
+                    'status' => 'failed', 'attempts' => $attempts, 'last_error' => $error, 'updated_at' => now(),
+                ]);
+                $result['failed']++;
+            } else {
+                $delay = max($retryAfter ?? 0, min(3600, 60 * (2 ** ($attempts - 1))));
+                DB::table('notification_queue')->where('id', $item->id)->update([
+                    'attempts' => $attempts, 'last_error' => $error, 'next_attempt_at' => now()->addSeconds($delay), 'updated_at' => now(),
+                ]);
+            }
+        }
+
+        return $result;
+    }
+
+    /** @return string|null sanitized error code, null on success */
+    private function send(string $token, string $chatId, ?int $threadId, object $item, ?int &$retryAfter = null): ?string
+    {
+        $retryAfter = null;
+        $icon = match ($item->severity) {
+            'critical' => '🔴', 'warning' => '🟠', 'info' => '🟢', default => '🔔',
+        };
+        $when = CarbonImmutable::now($this->timezone->get())->format('d/m/Y H:i');
+        $text = "<b>{$icon} ".e($item->title).'</b>'
+            .($item->body !== '' ? "\n".e($item->body) : '')
+            ."\n<i>{$when}</i>";
+
+        try {
+            $response = Http::timeout(10)->asJson()->post("https://api.telegram.org/bot{$token}/sendMessage", [
+                'chat_id' => $chatId, 'text' => $text, 'parse_mode' => 'HTML', 'disable_web_page_preview' => true,
+            ] + ($threadId ? ['message_thread_id' => $threadId] : []));
+        } catch (Throwable) {
+            return 'TELEGRAM_UNREACHABLE';
+        }
+        if ($response->successful()) {
+            return null;
+        }
+        $retryAfter = (int) ($response->json('parameters.retry_after') ?? 0) ?: null;
+
+        return match ($response->status()) {
+            401 => 'TELEGRAM_UNAUTHORIZED',
+            400, 403, 404 => 'TELEGRAM_DESTINATION_REJECTED',
+            429 => 'TELEGRAM_RATE_LIMITED',
+            default => 'TELEGRAM_HTTP_ERROR',
+        };
+    }
+}
