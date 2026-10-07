@@ -66,8 +66,10 @@ class SystemHealthTest extends TestCase
     {
         $report = app(EngineHealth::class)->report();
         $report['overall_status'] = 'unknown';
+        // Um item realmente desconhecido (aqui a retenção). O processador de tarefas ocioso é tratado
+        // à parte: é normal e não rebaixa o estado geral (ver test_idle_worker_alone_...).
         foreach ($report['checks'] as &$check) {
-            $check['status'] = $check['check'] === 'worker' ? 'unknown' : 'healthy';
+            $check['status'] = $check['check'] === 'retention' ? 'unknown' : 'healthy';
         }
         unset($check);
         $this->mock(EngineHealth::class)->shouldReceive('report')->once()->andReturn($report);
@@ -77,7 +79,7 @@ class SystemHealthTest extends TestCase
             ->assertOk()->assertSee('health-state--unknown', false)
             ->assertSee('Alguns componentes estão sem dados recentes de verificação.')
             ->assertDontSee('Todos os componentes estão operando normalmente.')
-            ->assertSee('data-health-target="health-check-worker"', false)
+            ->assertSee('data-health-target="health-check-retention"', false)
             ->assertSee('Capacidade indisponível');
     }
 
@@ -118,5 +120,29 @@ class SystemHealthTest extends TestCase
         $response->assertSee('Ocioso')
             ->assertSee('Nenhum backup em andamento. Este item só é avaliado enquanto há uma execução rodando')
             ->assertDontSee('Nenhuma execução em andamento no momento.');
+    }
+
+    public function test_idle_worker_alone_does_not_make_the_overall_status_unknown(): void
+    {
+        $report = app(EngineHealth::class)->report();
+        foreach ($report['checks'] as &$check) {
+            $idle = $check['check'] === 'worker';
+            $check['status'] = $idle ? 'unknown' : 'healthy';
+            $check['code'] = $idle ? 'idle' : 'ok';
+            $check['message'] = $idle ? 'Nenhuma execução em andamento no momento.' : 'ok';
+        }
+        unset($check);
+        $report['overall_status'] = 'unknown';
+        $report['alerts'] = [];
+        $this->mock(EngineHealth::class)->shouldReceive('report')->once()->andReturn($report);
+
+        $html = $this->actingAs(User::factory()->admin()->create())->get(route('system-health.index'))
+            ->assertOk()->getContent();
+        $overview = substr($html, strpos($html, 'aria-label="Status geral"'));
+        $overview = substr($overview, 0, strpos($overview, '</section>'));
+        $this->assertStringContainsString('Saudável', $overview);
+        $this->assertStringNotContainsString('Desconhecido', $overview);
+        $this->assertStringContainsString('0 desconhecidas', $html);
+        $this->assertStringContainsString('Ocioso', $html);
     }
 }

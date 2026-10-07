@@ -15,9 +15,16 @@
     $checkMessage = fn (array $check) => $isIdleWorker($check)
         ? 'Nenhum backup em andamento. Este item só é avaliado enquanto há uma execução rodando; ocioso é o estado normal.'
         : $check['message'];
-    $checksByName = collect($report['checks'])->keyBy('check');
-    $statusCounts = collect($report['checks'])->countBy('status');
+    // Processador ocioso é normal: conta como saudável no resumo geral, na contagem e nos alertas.
+    $checks = collect($report['checks'])->map(fn ($check) => $isIdleWorker($check) ? ['status' => 'healthy'] + $check : $check);
+    $checksByName = $checks->keyBy('check');
+    $statusCounts = $checks->countBy('status');
     $overall = $statusOf($report['overall_status']);
+    // Se o "Desconhecido" geral vinha só do processador ocioso, o geral é o pior estado dos demais itens.
+    $withoutIdle = \App\Support\HealthStatus::worst($checks->map(fn ($check) => $statusOf($check['status']))->all());
+    if ($overall->value === 'unknown' && $withoutIdle->severity() < $overall->severity()) {
+        $overall = $withoutIdle;
+    }
     $storage = $checksByName['storage']['metadata'] ?? [];
     $queue = $checksByName['queue']['metadata'] ?? [];
     $failures = $checksByName['failure']['metadata'] ?? [];
@@ -39,7 +46,7 @@
         'critical' => 'Há componentes em estado crítico. Consulte os alertas para identificar os problemas encontrados.',
         default => 'Alguns componentes estão sem dados recentes de verificação. Consulte o diagnóstico para acompanhar a situação.',
     };
-    $alerts = collect($report['checks'])->filter(fn ($check) => $check['status'] !== 'healthy');
+    $alerts = $checks->filter(fn ($check) => $check['status'] !== 'healthy');
     $memoryPercent = isset($hostResources['memory_used_bytes'], $hostResources['memory_total_bytes']) && $hostResources['memory_total_bytes'] > 0
         ? round(min(100, max(0, $hostResources['memory_used_bytes'] / $hostResources['memory_total_bytes'] * 100))) : null;
     $cpuPercent = isset($hostResources['cpu_percent']) ? min(100, max(0, (int) $hostResources['cpu_percent'])) : null;
@@ -171,7 +178,7 @@
                 <p class="card__description">Armazenamento: {{ $formatBytes($storage['free_bytes']) }} disponíveis de {{ $formatBytes($storage['total_bytes']) }}.</p>
             @endif
             <div class="grid grid--3 system-health-checks">
-                @foreach($report['checks'] as $check)
+                @foreach($checks as $check)
                     <details class="card system-health-check" id="health-check-{{ $check['check'] }}"><summary class="card__header"><h3 class="card__title">{{ $labels[$check['check']] ?? $check['check'] }}</h3><span class="badge badge--{{ $statusOf($check['status'])->badgeVariant() }}">{{ $checkLabel($check) }}</span></summary><div class="card__body"><p class="card__description">{{ $checkMessage($check) }}</p></div></details>
                 @endforeach
             </div>
