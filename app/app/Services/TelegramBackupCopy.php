@@ -135,7 +135,7 @@ class TelegramBackupCopy
         $when = CarbonImmutable::now($this->timezone->get())->format('d/m/Y H:i');
         $retryAfter = null;
         $error = $this->post($stream, 'arquivo-teste-backup-manager.txt', "🧪 Teste da cópia de backups\n🕒 {$when}", $retryAfter);
-        fclose($stream);
+        $this->close($stream);
 
         return $error;
     }
@@ -218,6 +218,19 @@ class TelegramBackupCopy
         try {
             return $this->post($stream, $filename, $caption, $retryAfter);
         } finally {
+            $this->close($stream);
+        }
+    }
+
+    /**
+     * O cliente HTTP fecha o arquivo depois de enviar; fechar de novo é erro fatal (TypeError no PHP 8). Antes de
+     * enviar o stream ainda é válido, então só fechamos se continuar aberto.
+     *
+     * @param  resource  $stream
+     */
+    private function close($stream): void
+    {
+        if (is_resource($stream)) {
             fclose($stream);
         }
     }

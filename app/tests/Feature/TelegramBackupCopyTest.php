@@ -37,7 +37,17 @@ class TelegramBackupCopyTest extends TestCase
         $this->root = sys_get_temp_dir().'/tg-backup-test-'.bin2hex(random_bytes(8));
         mkdir($this->root, 0700);
         config()->set('backup.storage_root', $this->root);
-        Http::fake(fn () => Http::response(['ok' => $this->telegramStatus < 300], $this->telegramStatus));
+        // Como o cliente HTTP de verdade: lê e FECHA o arquivo anexado (o fake do Laravel não faz isso, e foi assim
+        // que um fclose duplo passou despercebido).
+        Http::fake(function ($request) {
+            foreach ($request->data() as $part) {
+                if (is_array($part) && is_resource($part['contents'] ?? null)) {
+                    fclose($part['contents']);
+                }
+            }
+
+            return Http::response(['ok' => $this->telegramStatus < 300], $this->telegramStatus);
+        });
     }
 
     /** Campo de texto de uma requisição multipart (data() não os expõe por nome quando há arquivo). */
