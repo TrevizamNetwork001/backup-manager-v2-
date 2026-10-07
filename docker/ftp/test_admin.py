@@ -22,6 +22,11 @@ server_spec.loader.exec_module(ftp_server)
 
 
 class FtpAdminTests(unittest.TestCase):
+    def test_server_log_line_strips_syslog_priority_and_is_bounded(self):
+        self.assertEqual('pure-ftpd: (?@1.2.3.4) [WARNING] Authentication failed for user [x]',
+            ftp_server.format_log_line(b'<179>pure-ftpd: (?@1.2.3.4) [WARNING] Authentication failed for user [x]\x00\n'))
+        self.assertEqual(500, len(ftp_server.format_log_line(b'a' * 5000)))
+
     def test_server_passive_address_accepts_private_ipv4_and_rejects_commands(self):
         self.assertEqual(['-P', '10.23.45.67'], ftp_server.arguments('10.23.45.67')[-2:])
         self.assertNotIn('-P', ftp_server.arguments())
