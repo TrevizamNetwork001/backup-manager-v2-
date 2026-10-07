@@ -113,6 +113,11 @@ Lacunas que o V1 cobria e a primeira entrega do V2 não:
   simulações e execuções sem remoção, olha as últimas 24 h e espera o fim da manutenção. A chave
   `retention:<id do evento>` impede repetir.
 
+Homologação de "FTP fora do ar" em 07/10/2026: com o contêiner `ftp` parado por ~90 s, o alerta crítico
+chegou às 18:47 e o "Normalizado" às 18:48, depois de o FTP voltar (ciclo normal do scheduler). Parar o
+FTP interrompe os envios dos equipamentos; um Huawei que tenha tentado enviar nesse intervalo só reenvia na
+próxima alteração.
+
 Ainda não migrado do V1, por decisão: resumo executivo, vários destinos/tópicos por equipamento,
 aviso de "backup concluído", cópia do arquivo pelo Telegram, divisão de mensagens longas em partes
 numeradas e o comando de diagnóstico do bot. Storage tem dois níveis (aviso/crítico) em vez dos três
