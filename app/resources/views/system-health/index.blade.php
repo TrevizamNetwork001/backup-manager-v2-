@@ -9,6 +9,12 @@
 @section('content')
 @php
     $statusOf = fn (string $status) => \App\Support\HealthStatus::from($status);
+    // O processador de tarefas só é avaliado enquanto há execução rodando; sem nenhuma, "ocioso" é o estado normal.
+    $isIdleWorker = fn (array $check) => $check['check'] === 'worker' && ($check['code'] ?? '') === 'idle';
+    $checkLabel = fn (array $check) => $isIdleWorker($check) ? 'Ocioso' : $statusOf($check['status'])->label();
+    $checkMessage = fn (array $check) => $isIdleWorker($check)
+        ? 'Nenhum backup em andamento. Este item só é avaliado enquanto há uma execução rodando; ocioso é o estado normal.'
+        : $check['message'];
     $checksByName = collect($report['checks'])->keyBy('check');
     $statusCounts = collect($report['checks'])->countBy('status');
     $overall = $statusOf($report['overall_status']);
@@ -116,7 +122,7 @@
                 @foreach(['database', 'redis', 'engine', 'driver_registry', 'worker', 'scheduler', 'ftp', 'file_server'] as $name)
                     @if(isset($checksByName[$name]))
                         @php $check = $checksByName[$name]; @endphp
-                        <li><a href="#health-check-{{ $name }}" data-health-target="health-check-{{ $name }}"><x-icon :name="$icons[$name]" /><span>{{ $labels[$name] }}</span><span class="badge badge--{{ $statusOf($check['status'])->badgeVariant() }}">{{ $statusOf($check['status'])->label() }}</span></a></li>
+                        <li><a href="#health-check-{{ $name }}" data-health-target="health-check-{{ $name }}"><x-icon :name="$icons[$name]" /><span>{{ $labels[$name] }}</span><span class="badge badge--{{ $statusOf($check['status'])->badgeVariant() }}">{{ $checkLabel($check) }}</span></a></li>
                     @endif
                 @endforeach
             </ul>
@@ -131,7 +137,7 @@
                 </div>
                 <ul>
                     @forelse($alerts as $check)
-                        <li><a href="#health-check-{{ $check['check'] }}" data-health-target="health-check-{{ $check['check'] }}"><x-icon :name="$icons[$check['check']] ?? 'info'" /><span>{{ $labels[$check['check']] ?? $check['check'] }}</span><span class="badge badge--{{ $statusOf($check['status'])->badgeVariant() }}">{{ $statusOf($check['status'])->label() }}</span><p>{{ $check['message'] }}</p><x-icon name="chevron-right" size="sm" /></a></li>
+                        <li><a href="#health-check-{{ $check['check'] }}" data-health-target="health-check-{{ $check['check'] }}"><x-icon :name="$icons[$check['check']] ?? 'info'" /><span>{{ $labels[$check['check']] ?? $check['check'] }}</span><span class="badge badge--{{ $statusOf($check['status'])->badgeVariant() }}">{{ $checkLabel($check) }}</span><p>{{ $checkMessage($check) }}</p><x-icon name="chevron-right" size="sm" /></a></li>
                     @empty
                         <li class="health-empty"><x-icon name="check-circle" />Nenhum componente em alerta nesta verificação.</li>
                     @endforelse
@@ -166,7 +172,7 @@
             @endif
             <div class="grid grid--3 system-health-checks">
                 @foreach($report['checks'] as $check)
-                    <details class="card system-health-check" id="health-check-{{ $check['check'] }}"><summary class="card__header"><h3 class="card__title">{{ $labels[$check['check']] ?? $check['check'] }}</h3><span class="badge badge--{{ $statusOf($check['status'])->badgeVariant() }}">{{ $statusOf($check['status'])->label() }}</span></summary><div class="card__body"><p class="card__description">{{ $check['message'] }}</p></div></details>
+                    <details class="card system-health-check" id="health-check-{{ $check['check'] }}"><summary class="card__header"><h3 class="card__title">{{ $labels[$check['check']] ?? $check['check'] }}</h3><span class="badge badge--{{ $statusOf($check['status'])->badgeVariant() }}">{{ $checkLabel($check) }}</span></summary><div class="card__body"><p class="card__description">{{ $checkMessage($check) }}</p></div></details>
                 @endforeach
             </div>
             @if($report['alerts'] !== [])

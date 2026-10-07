@@ -111,4 +111,12 @@ class SystemHealthTest extends TestCase
             ->assertSee('aria-label="Uso da memória" aria-valuenow="25"', false)
             ->assertSee('Falhas repetidas');
     }
+
+    public function test_idle_worker_is_shown_as_idle_not_as_unknown(): void
+    {
+        $response = $this->actingAs(User::factory()->admin()->create())->get(route('system-health.index'))->assertOk();
+        $response->assertSee('Ocioso')
+            ->assertSee('Nenhum backup em andamento. Este item só é avaliado enquanto há uma execução rodando')
+            ->assertDontSee('Nenhuma execução em andamento no momento.');
+    }
 }
