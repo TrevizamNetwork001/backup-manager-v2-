@@ -8,6 +8,13 @@ O controle de origem do **FTP** do servidor é descrito em [FTP_ACCESS_CONTROL.m
 
 **Validação pelo painel em 02/10/2026:** o operador executou novamente o backup do `CGNAT-A10` pelo fluxo manual do painel. A execução **211** (`origin=manual`) iniciou às **17:14:12 UTC** (14:14:12 em America/Sao_Paulo) e terminou `succeeded` às **17:14:26 UTC**. O artifact **72** está `available`, com **832.408 bytes**, SHA-256 `693829aa0701ff3b16c86e97e87b8f41018c415880c2c79b07555a921ff56bdc` e caminho `Backup Manager/POP-BATISTINI/CGNAT-A10/02-10-2026/CGNAT-A10_20261002141412-exec-211.tar.gz`. Uma conferência posterior pelo `ArtifactStorage::verify()` retornou `valid`, confirmando arquivo presente com tamanho e hash registrados. O operador também confirmou “tudo ok validado”. Não foi feito restore nem há evidência específica de download pela UI nesta verificação.
 
+**Confirmação em 07/10/2026:** o operador reafirmou que o suporte ao A10 está **validado**, e
+todo o código, os scripts, as migrations e os testes do A10 foram commitados (`4bc2015`). Ficaram
+fora desse commit apenas os arquivos de UI protegidos `backup-artifacts/index` e `show`; por
+isso os atalhos para "Ver configuração A10" e "Ver versões" não aparecem nessas telas, e as
+páginas continuam acessíveis pelas rotas `backup-artifacts.a10-configuration` e
+`backup-artifacts.versions`.
+
 ### Como executar e conferir
 
 1. No painel, abrir **Equipamentos → CGNAT-A10 → Ações → Executar backup A10**. A ação exige a permissão `backup_executions.run` e cria uma execução manual para a associação ativa. Também está disponível na associação da política A10. Se houver execução pendente ou em andamento, usar **Acompanhar backup**.
