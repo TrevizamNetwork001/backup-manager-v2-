@@ -36,8 +36,13 @@ class InstanceTimezone
         $this->cached = $timezone;
     }
 
-    public function format(?CarbonInterface $timestamp, string $format = 'd/m/Y H:i:s'): ?string
+    /** Raw DB timestamps (strings, stored in UTC) are accepted so views need not parse them first. */
+    public function format(CarbonInterface|string|null $timestamp, string $format = 'd/m/Y H:i:s'): ?string
     {
+        if (is_string($timestamp)) {
+            $timestamp = $timestamp === '' ? null : CarbonImmutable::parse($timestamp, 'UTC');
+        }
+
         return $timestamp?->toImmutable()->setTimezone($this->get())->format($format);
     }
 
