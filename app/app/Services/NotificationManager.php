@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Support\AlertCondition;
+use App\Support\ErrorCodes;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -53,12 +54,13 @@ class NotificationManager
         private readonly InstanceTimezone $timezone,
         private readonly NotificationSummary $summary,
         private readonly FtpAuthFailures $ftpAuth,
+        private readonly FtpAlertSources $ftpSources,
     ) {}
 
     /** @return array{queued:int,sent:int,failed:int} */
     public function run(): array
     {
-        $queued = $this->settings->ready() ? $this->evaluate() + $this->summaries() : 0;
+        $queued = $this->settings->ready() ? $this->evaluate() + $this->summaries() + $this->retentionNotices() : 0;
 
         return ['queued' => $queued] + $this->deliver();
     }
@@ -84,7 +86,68 @@ class NotificationManager
             ];
         }
 
-        return $conditions + $this->ftpAuthConditions();
+        return $conditions + $this->ftpAuthConditions() + $this->ftpConditions();
+    }
+
+    /**
+     * Arquivos FTP rejeitados (quarentena) e servidor FTP fora do ar. Um erro de leitura propaga: evaluate()
+     * descarta a rodada inteira em vez de inventar "normalizado".
+     *
+     * @return array<string, array{label:string,severity:string,reason:string,detail:string}>
+     */
+    private function ftpConditions(): array
+    {
+        $conditions = [];
+        $hours = (int) config('backup.ftp_rejected_window_hours');
+        foreach ($this->ftpSources->rejected() as $username => $rejected) {
+            $conditions["ftp-rejected:{$username}"] = [
+                'label' => "Arquivo FTP rejeitado: {$rejected['label']}",
+                'severity' => 'warning',
+                'reason' => 'ftp_file_rejected',
+                'detail' => "{$rejected['count']} arquivo(s) rejeitado(s) nas últimas {$hours} h. Motivo: "
+                    .ErrorCodes::message($rejected['error_code']).' O equipamento enviou, mas o arquivo não passou na validação.',
+            ];
+        }
+        if ($this->ftpSources->serverDown()) {
+            $conditions['system:ftp_server_down'] = [
+                'label' => 'Servidor FTP fora do ar', 'severity' => 'critical', 'reason' => 'ftp_server_down',
+                'detail' => 'A porta do FTP não respondeu em duas tentativas seguidas. Os equipamentos não conseguem enviar backups por FTP.',
+            ];
+        }
+
+        return $conditions;
+    }
+
+    /**
+     * Aviso (informativo) de limpeza por retenção que removeu backups, uma vez por execução. Só aplica
+     * remoções de verdade, olha as últimas 24 h e espera o fim da manutenção.
+     */
+    public function retentionNotices(): int
+    {
+        if ($this->settings->inMaintenance($this->timezone->localNow())) {
+            return 0;
+        }
+        $queued = 0;
+        $events = DB::table('audit_events')->where('action', 'backup_retention.completed')
+            ->where('created_at', '>=', now()->subDay())->orderBy('id')->get(['id', 'metadata']);
+        foreach ($events as $event) {
+            $metadata = json_decode($event->metadata, true) ?: [];
+            $deleted = (int) ($metadata['deleted'] ?? 0);
+            if (($metadata['mode'] ?? '') !== 'apply' || $deleted < 1) {
+                continue;
+            }
+            $key = "retention:{$event->id}";
+            if (DB::table('notification_queue')->where('kind', 'notice')->where('condition_key', $key)->exists()) {
+                continue;
+            }
+            $errors = (int) ($metadata['errors'] ?? 0);
+            $this->enqueue('notice', $key, 'info', 'Limpeza por retenção concluída',
+                "{$deleted} backup(s) antigo(s) removido(s) pela política de retenção."
+                .($errors > 0 ? " {$errors} erro(s) durante a limpeza." : ''));
+            $queued++;
+        }
+
+        return $queued;
     }
 
     /**

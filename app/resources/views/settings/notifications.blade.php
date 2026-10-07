@@ -19,7 +19,7 @@
     $tz = app(\App\Services\InstanceTimezone::class);
     $fmt = fn ($v) => $v ? $tz->format(\Illuminate\Support\Carbon::parse($v, 'UTC'), 'd/m/Y H:i') : '—';
     $statusLabel = ['pending' => 'Aguardando', 'sent' => 'Enviado', 'failed' => 'Falhou'];
-    $kindLabel = ['alert' => 'Alerta', 'recovery' => 'Normalizado', 'summary' => 'Resumo', 'test' => 'Teste'];
+    $kindLabel = ['alert' => 'Alerta', 'recovery' => 'Normalizado', 'summary' => 'Resumo', 'notice' => 'Aviso', 'test' => 'Teste'];
 @endphp
 <div class="settings-page stack">
     @if(session('success'))<div class="alert alert--success" role="status">{{ session('success') }}</div>@endif

@@ -117,6 +117,7 @@ class FtpAuthFailuresTest extends TestCase
         $manager = \Mockery::mock(NotificationManager::class, [
             app(NotificationSettings::class), app(\App\Services\EngineHealth::class), app(\App\Services\DeviceBackupHealth::class),
             app(\App\Services\InstanceTimezone::class), app(\App\Services\NotificationSummary::class), app(FtpAuthFailures::class),
+            app(\App\Services\FtpAlertSources::class),
         ])->makePartial();
         $manager->shouldAllowMockingProtectedMethods();
         // Only the FTP condition is under test: the health-derived ones are not the point here.

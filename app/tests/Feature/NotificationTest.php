@@ -28,6 +28,7 @@ class NotificationTest extends TestCase
             app(NotificationSettings::class), app(EngineHealth::class),
             app(\App\Services\DeviceBackupHealth::class), app(\App\Services\InstanceTimezone::class),
             app(\App\Services\NotificationSummary::class), app(\App\Services\FtpAuthFailures::class),
+            app(\App\Services\FtpAlertSources::class),
         ])->makePartial();
         $manager->shouldReceive('conditions')->andReturnUsing(fn () => $conditions);
 

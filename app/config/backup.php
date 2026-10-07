@@ -11,6 +11,10 @@ return [
     'ftp_log_dir' => env('BACKUP_FTP_LOG_DIR', '/var/log/backup-ftp'),
     'ftp_auth_threshold' => (int) env('BACKUP_FTP_AUTH_THRESHOLD', 3),
     'ftp_auth_window_minutes' => (int) env('BACKUP_FTP_AUTH_WINDOW_MINUTES', 30),
+    // Avisos de FTP: arquivos rejeitados (janela) e sonda da porta do servidor FTP (vazio = desligado).
+    'ftp_rejected_window_hours' => (int) env('BACKUP_FTP_REJECTED_WINDOW_HOURS', 24),
+    'ftp_probe_host' => env('BACKUP_FTP_PROBE_HOST', ''),
+    'ftp_probe_port' => (int) env('BACKUP_FTP_PROBE_PORT', 21),
     'ftp_max_bytes' => (int) env('BACKUP_FTP_MAX_BYTES', 8 * 1024 * 1024),
     'engine_stale_seconds' => (int) env('BACKUP_ENGINE_STALE_SECONDS', 300),
     // Overall wall-clock budget for a single execution, independent of heartbeat

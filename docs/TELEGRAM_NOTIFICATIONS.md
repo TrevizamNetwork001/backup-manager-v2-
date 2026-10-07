@@ -95,6 +95,29 @@ auth-events.log (volume ftp-log, leitura no scheduler) -> FtpAuthFailures -> Not
   foi o da rede interna do Docker (teste feito do próprio servidor).
 - Testes: `FtpAuthFailuresTest` (5 casos) e testes do launcher em `docker/ftp/test_admin.py`.
 
+## Avisos de FTP e de retenção (paridade com o V1)
+
+Lacunas que o V1 cobria e a primeira entrega do V2 não:
+
+- **Arquivo FTP rejeitado** — condição `ftp-rejected:<usuário>`, "Arquivo FTP rejeitado:
+  <equipamento>", com a quantidade nas últimas 24 h (`BACKUP_FTP_REJECTED_WINDOW_HOURS`) e o motivo em
+  português (`ErrorCodes`). Sai quando chega um arquivo **aceito depois** do último rejeitado, ou
+  passada a janela. Só contas ativas. Fonte: `ftp_received_files.status = quarantined`
+  (`FtpAlertSources::rejected()`).
+- **Servidor FTP fora do ar** — condição crítica `system:ftp_server_down`. O scheduler testa a porta
+  21 do serviço `ftp` e só alerta se **duas tentativas seguidas** (2 s de intervalo) falharem, para um
+  reinício de poucos segundos não avisar. Desligada quando `BACKUP_FTP_PROBE_HOST` está vazio (padrão do
+  código e dos testes); o compose liga com `BACKUP_FTP_PROBE_HOST: ftp` no scheduler.
+- **Limpeza por retenção concluída** — aviso informativo (`kind=notice`) uma vez por execução de
+  `backup_retention.completed` que **removeu** backups (`mode=apply` e `deleted >= 1`); ignora
+  simulações e execuções sem remoção, olha as últimas 24 h e espera o fim da manutenção. A chave
+  `retention:<id do evento>` impede repetir.
+
+Ainda não migrado do V1, por decisão: resumo executivo, vários destinos/tópicos por equipamento,
+aviso de "backup concluído", cópia do arquivo pelo Telegram, divisão de mensagens longas em partes
+numeradas e o comando de diagnóstico do bot. Storage tem dois níveis (aviso/crítico) em vez dos três
+do V1. Equipamento só-manual que nunca teve backup é "desconhecido" na saúde e não alerta.
+
 ## Tela (Configurações → Notificações)
 
 - Token do bot: cifrado (`Crypt`), nunca vem no HTML. O botão do **olho** busca o

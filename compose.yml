@@ -138,6 +138,7 @@ services:
       BACKUP_RETENTION_ENABLED: ${BACKUP_RETENTION_ENABLED:-false}
       BACKUP_RETENTION_TIME: ${BACKUP_RETENTION_TIME:-04:30}
       BACKUP_A10_ENABLED: ${BACKUP_A10_ENABLED:-false}
+      BACKUP_FTP_PROBE_HOST: ftp
     volumes:
       - ./app:/var/www/html:ro
       - ./app/storage:/var/www/html/storage
