@@ -30,7 +30,8 @@ class DeviceBackupHealth
             $counts[$row['status']]++;
             if ($row['status'] !== HealthStatus::Healthy->value) {
                 $problems[] = ['device_id' => $row['device_id'], 'name' => $row['name'],
-                    'status' => $row['status'], 'reason' => $row['reason']];
+                    'status' => $row['status'], 'reason' => $row['reason'],
+                    'last_ftp_success_at' => $row['last_ftp_success_at']];
             }
         }
 
@@ -67,15 +68,17 @@ class DeviceBackupHealth
      * summary().
      *
      * @return list<array{device_id:int,name:string,site_id:?int,vendor:?string,model:?string,
-     *   method:?string,policy_name:?string,last_backup_at:?string,last_success_at:?string,
+     *   method:?string,methods:list<string>,policy_name:?string,last_backup_at:?string,last_success_at:?string,
      *   last_failure_at:?string,latest_artifact_size:?int,consecutive_failures:int,status:string,reason:string}>
      */
     public function rows(): array
     {
         $devices = Device::query()->where('is_active', true)
             ->with(['deviceBackupPolicies' => fn ($q) => $q->where('is_active', true)
-                ->with('backupPolicy:id,is_active,schedule_type,method,name')])
-            ->get(['id', 'name', 'site_id', 'vendor', 'model']);
+                ->whereNull('archived_at')
+                ->whereHas('backupPolicy', fn ($policy) => $policy->where('is_active', true)->whereNull('archived_at'))
+                ->with('backupPolicy:id,is_active,schedule_type,method,name,archived_at')])
+            ->get(['id', 'name', 'site_id', 'vendor', 'platform', 'model', 'expected_ftp_interval_hours']);
 
         if ($devices->isEmpty()) {
             return [];
@@ -83,12 +86,18 @@ class DeviceBackupHealth
 
         $latestSuccess = DB::table('backup_executions')->select('device_id', DB::raw('MAX(created_at) as at'))
             ->where('status', 'succeeded')->groupBy('device_id')->pluck('at', 'device_id');
+        $latestFtpSuccess = DB::table('backup_executions')
+            ->join('backup_policies', 'backup_policies.id', '=', 'backup_executions.backup_policy_id')
+            ->where('backup_executions.status', 'succeeded')
+            ->where('backup_policies.method', 'ftp_push')
+            ->groupBy('backup_executions.device_id')
+            ->select('backup_executions.device_id', DB::raw('MAX(backup_executions.created_at) as at'))
+            ->pluck('at', 'device_id');
         $latestExecution = collect(DB::select(<<<'SQL'
-            SELECT device_id, created_at, method, policy_name FROM (
-                SELECT be.device_id, be.created_at, bp.method, bp.name AS policy_name,
+            SELECT device_id, created_at FROM (
+                SELECT be.device_id, be.created_at,
                        ROW_NUMBER() OVER (PARTITION BY be.device_id ORDER BY be.id DESC) AS rn
                 FROM backup_executions be
-                JOIN backup_policies bp ON bp.id = be.backup_policy_id
             ) ranked WHERE rn = 1
         SQL))->keyBy('device_id');
         $latestFailure = DB::table('backup_executions')->select('device_id', DB::raw('MAX(created_at) as at'))
@@ -115,19 +124,34 @@ class DeviceBackupHealth
         $rows = [];
         foreach ($devices as $device) {
             $association = $device->deviceBackupPolicies->first();
+            $methods = $device->deviceBackupPolicies->pluck('backupPolicy.method')->unique()->values()->all();
             $cadence = $this->dominantCadence($device->deviceBackupPolicies);
             $streak = $this->consecutiveFailureStreak($recentByDevice->get($device->id, collect()));
             [$status, $reason] = $this->classify($cadence, $latestSuccess[$device->id] ?? null, $streak);
+            $hasActiveFtp = $device->deviceBackupPolicies->contains(fn ($item) => $item->backupPolicy?->method === 'ftp_push');
+            // Change-driven FTP push (Huawei VRP network gear): no file just means no change, never an alert.
+            if ($hasActiveFtp && $device->expected_ftp_interval_hours !== null
+                && ! Device::pushesOnlyOnConfigChange($device->vendor, $device->platform)) {
+                [$ftpStatus, $ftpReason] = $this->classifyFtp(
+                    $device->expected_ftp_interval_hours,
+                    $latestFtpSuccess[$device->id] ?? null,
+                );
+                if ($ftpStatus->severity() > $status->severity()) {
+                    [$status, $reason] = [$ftpStatus, $ftpReason];
+                }
+            }
             $latestDeviceExecution = $latestExecution->get($device->id);
 
             $rows[] = [
                 'device_id' => $device->id, 'name' => $device->name, 'site_id' => $device->site_id,
                 'vendor' => $device->vendor, 'model' => $device->model,
-                'method' => $latestDeviceExecution->method ?? $association?->backupPolicy?->method,
-                'policy_name' => $latestDeviceExecution->policy_name ?? $association?->backupPolicy?->name,
+                'method' => $association?->backupPolicy?->method,
+                'methods' => $methods,
+                'policy_name' => $association?->backupPolicy?->name,
                 'has_policy' => $association !== null,
                 'last_backup_at' => $latestDeviceExecution->created_at ?? null,
                 'last_success_at' => $latestSuccess[$device->id] ?? null,
+                'last_ftp_success_at' => $latestFtpSuccess[$device->id] ?? null,
                 'last_failure_at' => $latestFailure[$device->id] ?? null,
                 'latest_artifact_size' => $latestArtifact[$device->id]->size_bytes ?? null,
                 'consecutive_failures' => $streak,
@@ -173,14 +197,18 @@ class DeviceBackupHealth
             return [HealthStatus::Critical, 'consecutive_failures'];
         }
 
+        if ($cadence !== null && $lastSuccessAt === null) {
+            return [HealthStatus::Critical, 'scheduled_never_succeeded'];
+        }
+
+        if ($streak > 0) {
+            return [HealthStatus::Warning, 'latest_backup_failed'];
+        }
+
         if ($cadence === null) {
             return $lastSuccessAt !== null
                 ? [HealthStatus::Healthy, 'manual_with_history']
                 : [HealthStatus::Unknown, 'manual_never_backed_up'];
-        }
-
-        if ($lastSuccessAt === null) {
-            return [HealthStatus::Critical, 'scheduled_never_succeeded'];
         }
 
         $ageHours = abs(now()->diffInHours($lastSuccessAt));
@@ -195,5 +223,23 @@ class DeviceBackupHealth
         }
 
         return [HealthStatus::Healthy, 'recent_success'];
+    }
+
+    /** @return array{0: HealthStatus, 1: string} */
+    private function classifyFtp(int $expectedHours, ?string $lastSuccessAt): array
+    {
+        if ($lastSuccessAt === null) {
+            return [HealthStatus::Critical, 'ftp_never_received'];
+        }
+
+        $ageHours = abs(now()->diffInHours($lastSuccessAt));
+        if ($ageHours >= $expectedHours + (int) config('health.device_ftp_critical_grace_hours')) {
+            return [HealthStatus::Critical, 'ftp_backup_stale'];
+        }
+        if ($ageHours >= $expectedHours + (int) config('health.device_ftp_warning_grace_hours')) {
+            return [HealthStatus::Warning, 'ftp_backup_delayed'];
+        }
+
+        return [HealthStatus::Healthy, 'ftp_recent_success'];
     }
 }

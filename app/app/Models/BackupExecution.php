@@ -98,7 +98,7 @@ class BackupExecution extends Model
     public static function createManual(DeviceBackupPolicy $association): self
     {
         return DB::transaction(function () use ($association) {
-            $relations = ['backupPolicy:id,is_active,method,schedule_type', 'device', 'credential:id,is_active'];
+            $relations = ['backupPolicy:id,is_active,method,artifact_mode,schedule_type', 'device', 'credential:id,is_active'];
             if (Schema::hasTable('ftp_accounts')) {
                 $relations[] = 'device.ftpAccount';
             }
@@ -111,7 +111,11 @@ class BackupExecution extends Model
             }
             if (! $association->is_active || ! $association->backupPolicy->is_active ||
                 ! $association->device->is_active ||
-                ($association->backupPolicy->method === 'ssh_pull' && ! $association->credential?->is_active) ||
+                (in_array($association->backupPolicy->method, ['ssh_pull', 'a10_system'], true) && ! $association->credential?->is_active) ||
+                ($association->backupPolicy->method === 'a10_system' && (! config('backup.a10_enabled') ||
+                    $association->backupPolicy->artifact_mode !== 'binary' || $association->device->platform !== 'network' ||
+                    ! in_array($association->device->a10_transfer_interface, ['management', 'data'], true) ||
+                    mb_strtolower(trim($association->device->vendor)) !== 'a10 networks')) ||
                 ($association->backupPolicy->method === 'ftp_push' &&
                     ($association->backupPolicy->schedule_type !== 'manual' || ! Schema::hasTable('ftp_accounts') || ! $association->device->ftpAccount?->is_active || ! $association->device->isHuaweiFtpEligible()))) {
                 throw ValidationException::withMessages(['association' => 'A associação, política, equipamento e credencial devem estar ativos.']);

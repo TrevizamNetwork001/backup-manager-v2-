@@ -10,6 +10,7 @@ use App\Services\FtpAccountDeletionService;
 use App\Services\FtpAccountManager;
 use App\Services\FtpServerSettings;
 use App\Services\HuaweiFtpBackupPolicy;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -146,6 +147,20 @@ class FtpAdminController extends Controller
         $secret = $manager->rotate($ftpAccount, $request->all(), $request->user()->id);
 
         return $this->once($ftpAccount, $secret, 'Credencial alterada. Aguarde a sincronização com o PureDB.', true);
+    }
+
+    public function revealSecret(Request $request, FtpAccount $ftpAccount, AuditEvents $audit): JsonResponse
+    {
+        $this->authorize('ftp.manage');
+        abort_if($ftpAccount->deletion_mode || ! $ftpAccount->secret, 404);
+
+        $audit->record('ftp.account.secret_revealed', 'ftp_account', (string) $ftpAccount->id,
+            $ftpAccount->username, 'success', [], $request->user()->id, $request->ip());
+
+        return response()->json(['username' => $ftpAccount->username, 'secret' => $ftpAccount->secret])
+            ->header('Cache-Control', 'no-store, private')
+            ->header('Pragma', 'no-cache')
+            ->header('Referrer-Policy', 'no-referrer');
     }
 
     public function status(Request $request, FtpAccount $ftpAccount, FtpAccountManager $manager): RedirectResponse

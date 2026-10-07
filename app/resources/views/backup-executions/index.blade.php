@@ -92,7 +92,7 @@
                                 <td data-label="Hora"><a class="table-action" href="{{ route('backup-executions.show', $execution) }}">{{ app(\App\Services\InstanceTimezone::class)->format($execution->started_at ?? $execution->created_at, 'd/m/Y H:i') }}</a><small class="entity-cell__meta">#{{ $execution->id }} · {{ \App\Support\OperationalLabels::EXECUTION_ORIGINS[$execution->origin] ?? $execution->origin }}</small></td>
                                 <td data-label="Equipamento"><span class="entity-cell__title">{{ $execution->device->name }}</span></td>
                                 <td data-label="Política">{{ $execution->backupPolicy->name }}</td>
-                                <td data-label="Método">{{ $execution->backupPolicy->method === 'ftp_push' ? 'Envio via FTP' : 'Coleta via SSH' }}</td>
+                                <td data-label="Método">{{ \App\Support\OperationalLabels::METHODS[$execution->backupPolicy->method ?? ''] ?? '—' }}</td>
                                 <td data-label="Status"><span class="badge badge--{{ $statusVariant }}">{{ $statusLabel }}</span></td>
                                 <td data-label="Duração" class="tech-value">{{ $duration === null ? '—' : $duration.'s' }}</td>
                                 <td data-label="Tentativa">{{ $execution->attempt }}</td>

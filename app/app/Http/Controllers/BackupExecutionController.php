@@ -26,7 +26,7 @@ class BackupExecutionController extends Controller
             'device_id' => ['nullable', 'integer', 'exists:devices,id'],
         ]);
         $executions = BackupExecution::query()
-            ->with(['device:id,name', 'backupPolicy:id,name'])
+            ->with(['device:id,name', 'backupPolicy:id,name,method'])
             ->when($filters['status'] ?? null, fn ($query, $value) => $query->where('status', $value))
             ->when($filters['origin'] ?? null, fn ($query, $value) => $query->where('origin', $value))
             ->when($filters['device_id'] ?? null, fn ($query, $value) => $query->where('device_id', $value))
@@ -70,6 +70,24 @@ class BackupExecutionController extends Controller
 
         return redirect()->route('backup-executions.show', $execution)
             ->with('success', 'Execução manual criada. Nenhum backup foi iniciado.');
+    }
+
+    public function runA10(BackupPolicy $backupPolicy, DeviceBackupPolicy $association): RedirectResponse
+    {
+        $this->authorize('backup_executions.run');
+        abort_unless($association->backup_policy_id === $backupPolicy->id && $association->archived_at === null &&
+            $backupPolicy->method === 'a10_system' && config('backup.a10_enabled'), 404);
+
+        $execution = DB::transaction(function () use ($association): BackupExecution {
+            $execution = BackupExecution::createManual($association);
+            $execution->transitionTo('queued');
+
+            return $execution;
+        });
+
+        return redirect()->route('backup-executions.show', $execution)
+            ->with('success', 'Backup A10 iniciado. O arquivo será enviado por SFTP e aparecerá aqui após a validação.')
+            ->with('success_persistent', true);
     }
 
     public function queue(BackupExecution $backupExecution): RedirectResponse

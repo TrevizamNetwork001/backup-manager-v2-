@@ -31,6 +31,7 @@ services:
       BACKUP_FTP_PASSIVE_ADDRESS: ${BACKUP_FTP_PASSIVE_ADDRESS:-}
       BACKUP_FTP_PUBLIC_IP: ${BACKUP_FTP_PUBLIC_IP:-}
       BACKUP_FTP_MAX_BYTES: ${BACKUP_FTP_MAX_BYTES:-8388608}
+      BACKUP_A10_ENABLED: ${BACKUP_A10_ENABLED:-false}
       BACKUP_ENGINE_STALE_SECONDS: ${BACKUP_ENGINE_STALE_SECONDS:-300}
       BACKUP_RETENTION_ENABLED: ${BACKUP_RETENTION_ENABLED:-false}
       BACKUP_RETENTION_TIME: ${BACKUP_RETENTION_TIME:-04:30}
@@ -82,6 +83,8 @@ services:
     container_name: backup-manager-v2-engine
     restart: unless-stopped
     user: nobody
+    group_add:
+      - "${BACKUP_A10_SFTP_GID:-25001}"
     working_dir: /var/www/html
     command: ["/opt/engine-venv/bin/python", "/engine/backup_engine.py"]
     environment:
@@ -89,6 +92,13 @@ services:
       BACKUP_FTP_HOST: ${BACKUP_FTP_HOST:-}
       BACKUP_FTP_MAX_BYTES: ${BACKUP_FTP_MAX_BYTES:-8388608}
       BACKUP_FTP_ROOT: /data/ftp
+      BACKUP_A10_SCP_ROOT: /data/a10-scp
+      BACKUP_A10_SFTP_ROOT: /data/a10-sftp
+      BACKUP_A10_ENABLED: ${BACKUP_A10_ENABLED:-false}
+      BACKUP_A10_TRANSPORT: ${BACKUP_A10_TRANSPORT:-scp}
+      BACKUP_A10_TRANSFER_HOST: ${BACKUP_A10_TRANSFER_HOST:-}
+      BACKUP_A10_SFTP_USER: ${BACKUP_A10_SFTP_USER:-a10backup}
+      BACKUP_A10_SCP_HOST: ${BACKUP_A10_SCP_HOST:-}
       BACKUP_FTP_STABLE_SECONDS: ${BACKUP_FTP_STABLE_SECONDS:-5}
       BACKUP_FTP_RECEIVE_TIMEOUT_SECONDS: ${BACKUP_FTP_RECEIVE_TIMEOUT_SECONDS:-180}
       BACKUP_ENGINE_HEARTBEAT_SECONDS: ${BACKUP_ENGINE_HEARTBEAT_SECONDS:-30}
@@ -98,6 +108,8 @@ services:
       - ./engine:/engine:ro
       - backups:/data/backups
       - ftp-data:/data/ftp
+      - a10-scp-data:/data/a10-scp:ro
+      - ./storage/a10-sftp:/data/a10-sftp
       - ./app/storage:/var/www/html/storage
       - engine-health:/var/www/html/storage/app/engine-health
     networks:
@@ -125,6 +137,7 @@ services:
       BACKUP_SCHEDULER_GRACE_MINUTES: ${BACKUP_SCHEDULER_GRACE_MINUTES:-5}
       BACKUP_RETENTION_ENABLED: ${BACKUP_RETENTION_ENABLED:-false}
       BACKUP_RETENTION_TIME: ${BACKUP_RETENTION_TIME:-04:30}
+      BACKUP_A10_ENABLED: ${BACKUP_A10_ENABLED:-false}
     volumes:
       - ./app:/var/www/html:ro
       - ./app/storage:/var/www/html/storage
@@ -153,8 +166,8 @@ services:
       BACKUP_FTP_PUBLIC_IP: ${BACKUP_FTP_PUBLIC_IP:-} # Deprecated launcher fallback.
       BACKUP_FTP_MAX_BYTES: ${BACKUP_FTP_MAX_BYTES:-8388608}
     ports:
-      - "21:21/tcp"
-      - "30000-30009:30000-30009/tcp"
+      - "0.0.0.0:21:21/tcp"
+      - "0.0.0.0:30000-30009:30000-30009/tcp"
     volumes:
       - ftp-data:/data/ftp
       - ftp-db:/etc/backup-ftp:ro
@@ -185,6 +198,51 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+
+  a10-scp-init:
+    image: busybox:1.37.0
+    profiles: [a10]
+    network_mode: none
+    command: ["sh", "-c", "chown 65534:65534 /data/a10-scp && chmod 700 /data/a10-scp"]
+    volumes:
+      - a10-scp-data:/data/a10-scp
+    restart: "no"
+
+  a10-scp:
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+    profiles: [a10]
+    restart: unless-stopped
+    user: nobody
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 64
+    working_dir: /var/www/html
+    command: ["/opt/engine-venv/bin/python", "/engine/a10_scp_server.py"]
+    environment:
+      BACKUP_A10_SCP_ROOT: /data/a10-scp
+      BACKUP_A10_ENABLED: ${BACKUP_A10_ENABLED:-false}
+      LOG_CHANNEL: stderr
+      CACHE_STORE: array
+    ports:
+      - "${BACKUP_A10_SCP_BIND:-127.0.0.1}:${BACKUP_A10_SCP_PORT:-2222}:2222/tcp"
+    volumes:
+      - ./app:/var/www/html:ro
+      - ./engine:/engine:ro
+      - a10-scp-data:/data/a10-scp
+    networks:
+      - backup-manager-v2
+    depends_on:
+      postgres:
+        condition: service_healthy
+      a10-scp-init:
+        condition: service_completed_successfully
 
   postgres:
     image: postgres:17
@@ -233,3 +291,4 @@ volumes:
   ftp-data:
   ftp-db:
   engine-health:
+  a10-scp-data:

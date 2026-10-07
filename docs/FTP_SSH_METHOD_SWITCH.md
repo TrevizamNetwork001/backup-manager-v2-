@@ -1,6 +1,6 @@
 # Troca de backup SSH para FTP em Huawei
 
-Atualizado em 2026-09-30. Este documento descreve o contrato atual do Backup Manager V2 para SSH pull, FTP push de Huawei OLT e FTP push espontâneo de Huawei VRP em roteadores e switches.
+Atualizado em 2026-10-02. Este documento descreve o contrato atual do Backup Manager V2 para SSH pull, FTP push de Huawei OLT e FTP push espontâneo de Huawei VRP em roteadores e switches.
 
 ## Resumo operacional
 
@@ -15,7 +15,49 @@ Atualizado em 2026-09-30. Este documento descreve o contrato atual do Backup Man
 | VSOL OLT por FTP | O operador inicia no console da OLT | Fluxo manual do wizard, se o modelo realmente suportar `ftp://` | Depende de homologação por modelo; não usar na V1600GT |
 | MikroTik por FTP | — | Não implementado na V2 | Usar SSH pull ou planejar integração própria |
 
-Para roteadores e switches Huawei, FTP não possui o botão “enviar agora” no Backup Manager. A linha VRP `set save-configuration backup-to-server` programa envios periódicos. A tela não deve oferecer uma execução manual com nome arbitrário para esse caso.
+Para roteadores e switches Huawei, FTP não possui o botão “enviar agora” no Backup Manager. A linha VRP `set save-configuration backup-to-server` define somente o **destino**; `set save-configuration interval` configura separadamente a **periodicidade**. A tela não deve oferecer uma execução manual com nome arbitrário para esse caso.
+
+A origem de rede do upload também precisa constar em **Configurações → Origens permitidas no FTP**. Use o endereço visto pelo servidor após NAT. O procedimento de cadastro e conferência do firewall está em [FTP_ACCESS_CONTROL.md](FTP_ACCESS_CONTROL.md); a lista não configura destino nem agendamento no VRP.
+
+## Configuração periódica no Huawei VRP de rede
+
+Use este procedimento para roteadores e switches Huawei com conta FTP `backup` ativa no Backup Manager. Não transplante estes comandos para OLT: o agendamento da OLT depende do modelo e de seu fluxo próprio.
+
+1. No painel, confirme que a conta FTP pertence ao equipamento correto, está ativa e provisionada, e que existe associação ativa à política Huawei FTP (`ftp_push/config/manual`). Copie o usuário e a senha da conta pelo fluxo autorizado do painel. A política permanece **manual** porque o scheduler do Backup Manager não inicia o envio FTP.
+2. No VRP, configure **destino e intervalo**, ambos necessários para o fluxo periódico. Substitua os marcadores antes de executar; não cole a senha em tickets, chat ou documentação:
+
+   ```text
+   system-view
+   set save-configuration backup-to-server server <IP_DO_BACKUP_MANAGER> transport-type ftp user <USUARIO_FTP_DO_DEVICE> password <SENHA_DA_CONTA>
+   set save-configuration interval 1440
+   commit
+   ```
+
+   Nesta instância o destino é `45.239.157.250`. A conta de cada equipamento é isolada; não acrescente `path` sem necessidade. No VRP que foi conferido em campo, a ajuda do comando informa intervalo de **30 a 43.200 minutos**. `1440` significa 24 horas; `14400`, 10 dias; `43200`, 30 dias. `interval` determina cadência, não um horário fixo da madrugada.
+3. Confira no equipamento se **as duas linhas** aparecem na configuração aplicada e se o `commit` foi concluído. A consulta à ajuda com `?` mostra faixa e valor padrão, mas **não comprova** o intervalo efetivamente configurado. Ao compartilhar a saída, oculte a linha de senha ou envie apenas a linha `set save-configuration interval ...`.
+4. Aguarde a próxima tentativa e confira o log do equipamento. No painel, procure uma execução com origem **FTP recebido** (`ftp_received`), status `succeeded` e artifact disponível. Conta FTP autenticada ou destino configurado, isoladamente, não comprovam que o arquivo foi recebido. Caso não apareça recibo, examine o horário e o erro no VRP, além de conectividade, autenticação e destino FTP.
+
+O [guia da Huawei para salvar configurações](https://info.support.huawei.com/enterprise/en/doc/EDOC1100419273/7cea5c40/managing-configuration-files) apresenta `set save-configuration` e `backup-to-server` em etapas separadas e explica que o salvamento automático pode depender de diferença entre a configuração atual e a já salva; por isso, um intervalo diário não garante um arquivo novo todos os dias. Confirme comportamento e sintaxe no firmware do equipamento antes de aplicar a outro modelo.
+
+### Intervalo, `delay` e mudanças de configuração
+
+A ajuda da CLI do `SW-CORE-IPE` mostrou `set save-configuration interval 1440 ?` com `delay` descrito como **tempo do backup automático após uma mudança na configuração**. Portanto, `set save-configuration interval 1440 delay 30` combina a verificação periódica de 24 horas com uma espera de 30 minutos após mudança para o salvamento automático; o `delay` não é apenas uma tolerância acrescida ao horário periódico. No equipamento consultado, a ajuda de `delay ?` aceitou **1 a 60 minutos** e informou **5 minutos como padrão**. Sem `delay` explícito, o parâmetro pode ser omitido com `<cr>`.
+
+Depois de alterar e aplicar a configuração, pode ocorrer um novo salvamento após o `delay` mesmo antes de vencer o `interval`; a publicação efetiva no servidor deve ser confirmada pelo log do equipamento e por um novo recibo `ftp_received` no Backup Manager. A explicação de que **cada alteração reinicia uma contagem de 30 minutos de inatividade** não está comprovada pela ajuda apresentada nem pelo [guia oficial](https://info.support.huawei.com/enterprise/en/doc/EDOC1100419273/7cea5c40/managing-configuration-files); não usar essa hipótese como garantia operacional para este firmware. Também não foi confirmada para este equipamento a disponibilidade do comando `display save-configuration argument` citado em uma resposta externa. Use a configuração aplicada e os logs disponíveis na CLI real para verificar o comportamento.
+
+**Caso VS-01-BGP1 em 02/10/2026:** o operador encontrou `interval 43200` (30 dias) e corrigiu para `interval 1440`, mantendo o destino FTP e salvando a configuração. Na consulta feita às 14h33 (America/Sao_Paulo), ainda não havia novo recebimento; o último recibo continuava sendo o #48, de 30/09 às 16h51, associado à execução #103 e ao artifact #37. A correção da cadência foi confirmada pelo operador, mas o primeiro envio após ela ainda precisa ser observado. Nenhum valor de senha ou sua representação criptografada foi registrado aqui.
+
+**Acompanhamento dos outros Huawei FTP de rede em 02/10/2026:** o operador informou que também ajustou o `BGP-VS-ADMIN`; a linha efetiva do intervalo desse equipamento não foi apresentada, portanto o valor não foi registrado aqui. O único ajuste ainda pendente informado pelo operador é o `SWITCH-POP-IPE`. Em consulta posterior aos três equipamentos, não havia recibo novo após os ajustes: último recebimento de `BGP-VS-ADMIN` em 01/10 às 10h47 (recibo #49, execução #153), de `SWITCH-POP-IPE` em 30/09 às 16h38 (recibo #47, execução #101) e de `VS-01-BGP1` em 30/09 às 16h51 (recibo #48, execução #103), horários de America/Sao_Paulo. O primeiro envio com a cadência corrigida continua pendente de confirmação para os dois equipamentos já ajustados.
+
+**Atualização posterior em 02/10/2026:** o operador confirmou também o ajuste do `SWITCH-POP-IPE`. Assim, os três ajustes de configuração foram informados como concluídos, embora a linha efetiva do intervalo do switch não tenha sido apresentada. O `VS-01-BGP1` enviou um novo arquivo às **14h40** (America/Sao_Paulo): recibo FTP **#63** `stored`, execução **#212** `succeeded`, artifact **#73** com 8.751 bytes e SHA-256 `dbe06df4042d540e2f07e01db61c90090018ad4c329efee4605ea2d60773cb17`. `ArtifactStorage::verify()` retornou `valid`. Na mesma consulta, `BGP-VS-ADMIN` e `SWITCH-POP-IPE` ainda não tinham novo recibo; o próximo envio de cada um segue pendente de confirmação. Os parágrafos anteriores registram o estado nas consultas feitas antes desta atualização.
+
+**Configuração informada depois pelo operador:** o `SWITCH-POP-IPE` recebeu `set save-configuration interval 1440 delay 60` e destino FTP `45.239.157.250` com sua conta própria. A senha codificada mostrada pela CLI não foi reproduzida. O intervalo é de 24 horas; o `delay` de 60 minutos aguarda após mudança na configuração, conforme a ajuda observada no switch. A confirmação de um novo envio do switch após essa alteração permanece pendente.
+
+**Confirmação de recebimento posterior, 02/10/2026:** os três Huawei de rede enviaram novos arquivos FTP. `VS-01-BGP1`: recibo #63, execução #212, artifact #73 de 8.751 bytes. `BGP-VS-ADMIN`: recibo #64, execução #213, artifact #74 de 6.457 bytes. `SWITCH-POP-IPE`: recibo #65, execução #214, artifact #75 de 2.502 bytes. As três execuções terminaram `succeeded` e `ArtifactStorage::verify()` retornou `valid` para os três artifacts. Isso confirma recebimento e integridade após os ajustes informados, mas um ciclo isolado ainda não comprova a cadência de 24 horas nem se novas alterações reiniciam o contador `delay` no firmware.
+
+**Informação operacional do operador:** `delay 60` foi aplicado nos switches e roteadores Huawei sob sua configuração. Essa confirmação é do operador; não foi feita leitura da configuração efetiva de cada equipamento pelo Backup Manager. O resultado esperado é aguardar até 60 minutos após mudança antes do salvamento automático, mas a quantidade de envios durante uma sequência de commits ainda depende do comportamento observado em cada firmware.
+
+**BNG-NE8000 em 02/10/2026:** após o operador configurar FTP no equipamento, a associação FTP #8 ficou ativa e a associação SSH diária #3 foi desativada. O intervalo esperado de chegada no painel foi definido como 24 horas. O envio real chegou às 19:38:21 UTC: recibo #70 `stored`, execução #220 `ftp_received/succeeded` e artefato #81 com 6.714 bytes. `ArtifactStorage::verify()` retornou `valid`. Assim, o transporte FTP do BNG foi confirmado; o próximo ciclo ainda é necessário para observar a regularidade diária. As informações anteriores deste documento que diziam não haver novo arquivo do BNG pertencem à consulta anterior a esse recebimento.
 
 ## Procedimento seguro para trocar um equipamento de SSH para FTP
 
@@ -80,9 +122,15 @@ Essa proteção preserva o histórico, mas a operação ainda exige navegação 
 
 ## Método exibido no resumo de equipamento
 
-Um equipamento pode ter mais de uma associação ativa. Antes da correção, `DeviceBackupHealth::rows()` escolhia a primeira associação ativa para método/policy, mas obtinha o último backup olhando todas as políticas do device. Isso podia mostrar “Coleta via SSH” ao lado de um recebimento FTP mais recente.
+Um equipamento pode ter mais de uma associação ativa. A coluna **Método** da lista de equipamentos mostra os métodos das associações e políticas ativas, sem usar uma execução histórica para definir a configuração atual. Quando SSH e FTP estão ativos no mesmo equipamento, a lista mostra ambos. O relatório de equipamentos usa a primeira política ativa para seus campos singulares de método e política. A saúde ainda é resumida por equipamento; para distinguir resultados por método, consulte as execuções de cada política.
 
-O resumo agora obtém método e nome da policy pela execução mais recente do equipamento, com fallback para a primeira associação se o equipamento ainda não tiver execuções. O status de saúde ainda resume as políticas ativas do equipamento; se métodos distintos permanecerem ativos durante a transição, verifique a lista de execuções por policy para distinguir falha SSH de recebimento FTP. A UI não apresenta hoje saúde separada por método.
+Na OLT-huawei-base, a única associação operacional ativa é **Huawei FTP**, com método `ftp_push`. A execução FTP recebida #171 também pertence a essa política. A configuração não deve ser alterada para SSH para corrigir um rótulo antigo na tela.
+
+### Correção do histórico de execuções em 01/10/2026
+
+Na lista **Execuções**, a linha da OLT-huawei-base mostrava `Huawei FTP` e `Coleta via SSH` ao mesmo tempo. A política no banco já era `ftp_push`: o controlador carregava a relação `backupPolicy` somente com `id` e `name`, sem `method`. A view recebia `method = null` e seu texto alternativo era SSH. A consulta agora carrega `id,name,method`; a view usa os rótulos de `OperationalLabels` e mostra `—` se o método estiver ausente, sem atribuir SSH por engano.
+
+Foi renderizada a lista com dados operacionais após a correção: a linha da OLT-huawei-base mostrou `Huawei FTP` e **Envio via FTP**. `BackupExecutionTest` passou com 14 testes e 101 asserções, incluindo regressão para esse caso. Nenhuma política, conta FTP ou execução foi alterada para corrigir o rótulo.
 
 ## Códigos e pontos de código
 

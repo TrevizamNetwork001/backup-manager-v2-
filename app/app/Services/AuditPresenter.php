@@ -23,6 +23,7 @@ class AuditPresenter
         'ftp.account.delete_with_data' => 'Excluir conta FTP + dados',
         'ftp.account.delete_all' => 'Excluir conta FTP + todos os dados',
         'ftp.account.password_rotated' => 'Rotação de senha FTP',
+        'ftp.account.secret_revealed' => 'Consulta de senha FTP',
         'ftp.account.enable' => 'Ativação de conta FTP',
         'ftp.account.disable' => 'Desativação de conta FTP',
         'ftp.backup_policy.prepared' => 'Preparação de backup FTP',

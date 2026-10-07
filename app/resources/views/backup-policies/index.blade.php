@@ -55,7 +55,7 @@
                     @foreach($policies as $policy)
                         <tr>
                             <td data-label="Nome"><span class="entity-cell__title">{{ $policy->name }}</span></td>
-                            <td data-label="Método">{{ $policy->method === 'ssh_pull' ? 'Coleta via SSH' : 'Envio via FTP' }}</td>
+                            <td data-label="Método">{{ \App\Support\OperationalLabels::METHODS[$policy->method] ?? $policy->method }}</td>
                             <td data-label="Artefato">{{ ['config' => 'Configuração', 'binary' => 'Binário', 'both' => 'Ambos'][$policy->artifact_mode] }}</td>
                             <td data-label="Início do backup">
                                 @if($policy->method === 'ftp_push') Envio pelo equipamento
@@ -77,7 +77,7 @@
                                     <summary>Ações</summary>
                                     <div class="table-actions">
                                     @can('backup_policies.manage')
-                                        <a href="{{ route('backup-policies.edit', [$policy, 'page' => $policies->currentPage()]) }}" class="btn btn--ghost btn--sm">Editar</a>
+                                        <a href="{{ route('backup-policies.edit', [$policy, 'page' => $policies->currentPage(), 'edit' => 1]) }}" class="btn btn--ghost btn--sm">Editar</a>
                                     @endcan
                                     @can('backup_policies.delete')
                                         <form method="POST" action="{{ route('backup-policies.destroy', $policy) }}" onsubmit="return confirm('Remover esta política do catálogo? Vínculos ativos precisam ser desativados; o histórico será preservado.');">

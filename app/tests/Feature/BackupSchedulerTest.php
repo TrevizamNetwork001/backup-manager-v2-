@@ -16,6 +16,7 @@ use Carbon\CarbonImmutable;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use Tests\TestCase;
 
 class BackupSchedulerTest extends TestCase
@@ -108,6 +109,18 @@ class BackupSchedulerTest extends TestCase
         $this->assertDatabaseCount('backup_executions', 1);
     }
 
+    public function test_a10_schedule_runs_only_when_enabled_and_binary_device_matches(): void
+    {
+        config()->set('backup.a10_enabled', false);
+        $association = $this->association();
+        $association->device->update(['vendor' => 'A10 Networks', 'platform' => 'network', 'a10_transfer_interface' => 'management']);
+        $association->backupPolicy->update(['method' => 'a10_system', 'artifact_mode' => 'binary']);
+        $this->assertSame(0, $this->runAt('2026-09-23 06:02:00'));
+        config()->set('backup.a10_enabled', true);
+        $this->assertSame(1, $this->runAt('2026-09-23 06:02:00'));
+        $this->assertSame('a10_system', BackupExecution::firstOrFail()->backupPolicy->method);
+    }
+
     public function test_daily_outside_grace_does_not_catch_up(): void
     {
         $this->association();
@@ -181,7 +194,7 @@ class BackupSchedulerTest extends TestCase
     {
         $association = $this->association();
         BackupExecution::createManual($association);
-        $this->expectException(\Illuminate\Validation\ValidationException::class);
+        $this->expectException(ValidationException::class);
         BackupExecution::createManual($association);
     }
 

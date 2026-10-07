@@ -24,6 +24,7 @@ class EngineJobService
     public const RETRYABLE_CODES = [
         'SSH_TIMEOUT', 'SSH_CONNECTION_REFUSED', 'SSH_CONNECT_FAILED', 'SSH_NEGOTIATION_FAILED',
         'FTP_RECEIVE_TIMEOUT', 'STORAGE_FAILED', 'ENGINE_FAILED', 'ENGINE_STALE', 'ENGINE_TIMEOUT',
+        'A10_RECEIVE_TIMEOUT',
     ];
 
     public function receiveFtp(int $deviceId, string $token, string $filename, int $receivedAt, string $workerId): ?array
@@ -158,6 +159,7 @@ class EngineJobService
             'id' => $job->id, 'device_id' => $job->device_id, 'policy_id' => $job->backup_policy_id,
             'host' => $job->device->management_ip, 'vendor' => $job->device->vendor,
             'platform' => $job->device->platform ?? 'network',
+            'a10_transfer_interface' => $job->device->a10_transfer_interface,
             'ssh_host_key_algorithm' => $job->device->ssh_host_key_algorithm,
             'ssh_host_key_fingerprint' => $job->device->ssh_host_key_fingerprint,
             'method' => $job->backupPolicy->method, 'artifact_mode' => $job->backupPolicy->artifact_mode,
@@ -174,12 +176,17 @@ class EngineJobService
                 $job->association->credential_id === $job->credential_id &&
                 $job->association->device_id === $job->device_id &&
                 $job->association->backup_policy_id === $job->backup_policy_id &&
-                ($job->backupPolicy->method === 'ftp_push'
+                ($job->backupPolicy->method === 'a10_system'
+                    ? config('backup.a10_enabled') && $job->backupPolicy->artifact_mode === 'binary' &&
+                        $job->device->platform === 'network' && mb_strtolower(trim($job->device->vendor)) === 'a10 networks' &&
+                        in_array($job->device->a10_transfer_interface, ['management', 'data'], true) &&
+                        $job->credential?->is_active && $job->credential?->device_id === $job->device_id && $job->credential?->type === 'ssh'
+                    : ($job->backupPolicy->method === 'ftp_push'
                     ? $hasFtp && in_array($job->origin, ['manual', 'ftp_received'], true) &&
                         ($job->origin === 'ftp_received' || $job->device->platform === 'olt') &&
                         $job->backupPolicy->schedule_type === 'manual' && $job->credential_id === null &&
                         $job->device->isHuaweiFtpEligible() && (bool) $job->device->ftpAccount?->is_active
-                    : $job->credential?->is_active && $job->credential?->device_id === $job->device_id && $job->credential?->type === 'ssh'),
+                    : $job->credential?->is_active && $job->credential?->device_id === $job->device_id && $job->credential?->type === 'ssh')),
         ];
     }
 
@@ -190,7 +197,7 @@ class EngineJobService
             throw new \RuntimeException('Worker inválido.');
         }
         $payload = $this->job($id);
-        if (! $payload['eligible'] || $job->credential === null || $payload['method'] !== 'ssh_pull') {
+        if (! $payload['eligible'] || $job->credential === null || ! in_array($payload['method'], ['ssh_pull', 'a10_system'], true)) {
             throw new \RuntimeException('Credencial indisponível.');
         }
 
@@ -200,7 +207,11 @@ class EngineJobService
     public function relativePath(BackupExecution $job): string
     {
         $vendor = mb_strtolower(trim($job->device->vendor));
-        $extension = in_array($vendor, ['huawei', 'vsol'], true) ? 'cfg' : 'rsc';
+        $extension = $vendor === 'a10 networks' && $job->backupPolicy->method === 'a10_system'
+            ? 'tar.gz' : (in_array($vendor, ['huawei', 'vsol'], true) ? 'cfg' : 'rsc');
+        if ($job->origin === 'ftp_received' && preg_match('/\.zip\z/i', (string) $job->received_filename)) {
+            $extension = 'zip';
+        }
         $device = $job->device;
         $site = $device->site;
         $siteName = $this->safePathName($site->name, 'SITE-'.$site->id);
@@ -221,8 +232,8 @@ class EngineJobService
     public function matchesFinalPath(BackupExecution $job, string $relative): bool
     {
         $base = $this->relativePath($job);
-        $stem = substr($base, 0, strrpos($base, '.'));
-        $extension = substr($base, strrpos($base, '.'));
+        $extension = str_ends_with($base, '.tar.gz') ? '.tar.gz' : substr($base, strrpos($base, '.'));
+        $stem = substr($base, 0, -strlen($extension));
 
         return $relative === $base || $relative === $stem.'-exec-'.$job->id.$extension;
     }
@@ -430,7 +441,7 @@ class EngineJobService
 
     public function resolvePath(string $relative): string
     {
-        if (! preg_match('~\ABackup Manager/[A-Z0-9-]+/[A-Z0-9-]+/[0-9]{2}-[0-9]{2}-[0-9]{4}/[A-Z0-9-]+_[0-9]{14}(?:-exec-[1-9][0-9]*)?\.(?:rsc|cfg|dat)\z~D', $relative)) {
+        if (! preg_match('~\ABackup Manager/[A-Z0-9-]+/[A-Z0-9-]+/[0-9]{2}-[0-9]{2}-[0-9]{4}/[A-Z0-9-]+_[0-9]{14}(?:-exec-[1-9][0-9]*)?\.(?:rsc|cfg|dat|zip|tar\.gz)\z~D', $relative)) {
             throw new \RuntimeException('Caminho inválido.');
         }
         $root = realpath(config('backup.storage_root'));
@@ -469,18 +480,22 @@ class EngineJobService
             // literals — that duplication is exactly what let VSOL silently fail
             // this check after Device::isHuaweiFtpEligible() was extended to
             // cover it (caught by VsolOltFtpTest). Single source of truth.
+            $a10System = $payload['method'] === 'a10_system' && $vendor === 'a10 networks' &&
+                $payload['platform'] === 'network' && $payload['artifact_mode'] === 'binary';
             $supported = $payload['method'] === 'ssh_pull' && (
                 ($payload['platform'] === 'network' && in_array($vendor, ['mikrotik', 'huawei'], true))
                 || ($payload['platform'] === 'olt' && $vendor === 'vsol')
             )
-                || $payload['method'] === 'ftp_push' && $payload['ftp_account_available'] && $job->device->isHuaweiFtpEligible();
-            if (! $payload['eligible'] || ! $supported || $payload['artifact_mode'] !== 'config') {
+                || $payload['method'] === 'ftp_push' && $payload['ftp_account_available'] && $job->device->isHuaweiFtpEligible()
+                || $a10System;
+            if (! $payload['eligible'] || ! $supported || $payload['artifact_mode'] !== ($a10System ? 'binary' : 'config')) {
                 throw ValidationException::withMessages(['status' => 'Job não é elegível para conclusão.']);
             }
             $path = $this->resolvePath($relative);
             $before = lstat($path);
             $size = $before['size'] ?? 0;
-            $limit = $payload['method'] === 'ftp_push' ? min(64 * 1024 * 1024, max(1, (int) config('backup.ftp_max_bytes'))) : config('backup.max_artifact_bytes');
+            $limit = $a10System ? config('backup.a10_max_bytes')
+                : ($payload['method'] === 'ftp_push' ? min(64 * 1024 * 1024, max(1, (int) config('backup.ftp_max_bytes'))) : config('backup.max_artifact_bytes'));
             if (! $size || $size > $limit || ! is_file($path) || is_link($path) || ($before['nlink'] ?? 0) !== 1) {
                 throw ValidationException::withMessages(['artifact' => 'Tamanho inválido.']);
             }
@@ -501,7 +516,7 @@ class EngineJobService
             }
             $artifact = BackupArtifact::create([
                 'backup_execution_id' => $job->id, 'device_id' => $job->device_id,
-                'backup_policy_id' => $job->backup_policy_id, 'type' => 'config', 'storage' => 'local',
+                'backup_policy_id' => $job->backup_policy_id, 'type' => $a10System ? 'binary' : 'config', 'storage' => 'local',
                 'relative_path' => $relative, 'original_filename' => $job->origin === 'ftp_received' ? $job->received_filename : basename($relative),
                 'size_bytes' => $size, 'sha256' => hash('sha256', $contents), 'validated_at' => now(),
             ]);
@@ -582,6 +597,10 @@ class EngineJobService
             'FTP_ACCOUNT_UNAVAILABLE' => 'Conta FTP indisponível.',
             'FTP_TRIGGER_FAILED' => 'Disparo do backup FTP falhou.',
             'FTP_RECEIVE_TIMEOUT' => 'Arquivo FTP não recebido no prazo.',
+            'A10_RECEIVE_TIMEOUT' => 'Arquivo do A10 não recebido no prazo.',
+            'A10_VERSION_UNSUPPORTED' => 'Versão ACOS não homologada para backup.',
+            'A10_TRANSFER_FAILED' => 'O A10 recusou ou interrompeu o envio do backup.',
+            'A10_RECEIVER_UNAVAILABLE' => 'Recepção do backup A10 indisponível.',
             'FTP_FILE_INVALID' => 'Arquivo FTP inválido.',
             'FTP_FILE_UNCORRELATED' => 'Arquivo FTP sem execução correspondente.',
             'FTP_STORAGE_FAILED' => 'Falha ao armazenar arquivo FTP.',

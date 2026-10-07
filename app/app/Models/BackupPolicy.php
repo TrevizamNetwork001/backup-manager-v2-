@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class BackupPolicy extends Model
 {
-    public const METHODS = ['ssh_pull', 'ftp_push'];
+    public const METHODS = ['ssh_pull', 'ftp_push', 'a10_system'];
 
     public const ARTIFACT_MODES = ['config', 'binary', 'both'];
 
@@ -40,6 +40,7 @@ class BackupPolicy extends Model
     {
         return match ($this->method) {
             'ssh_pull' => 'ssh',
+            'a10_system' => 'ssh',
             'ftp_push' => 'none',
             default => throw new \LogicException('Método de backup inválido.'),
         };

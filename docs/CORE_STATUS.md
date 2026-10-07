@@ -1,5 +1,9 @@
 # Estado do core — Backup Manager V2
 
+## Atualização operacional — 02/10/2026
+
+O registro consolidado desta rodada está em [CHANGES_2026-10-02.md](CHANGES_2026-10-02.md): fluxo manual A10 homologado com visualização da configuração exportada, FTP espontâneo dos Huawei VRP e do BNG, histórico de versões, alerta de chegada FTP e controle de origens no painel/firewall. Detalhes de operação e limites estão nos documentos específicos vinculados ali. O status de release histórico abaixo não foi reavaliado por essa rodada.
+
 ## Atualização funcional — 01/10/2026
 
 O registro completo das alterações de 01/10 está em [CHANGES_2026-10-01.md](CHANGES_2026-10-01.md): documentação PDF/CSV, SSH e confiança de chave, políticas padrão editáveis, bloqueio de duplicações do mesmo método, arquivamento com histórico, ajustes FTP, controle de acesso aos downloads, interface responsiva, desempenho e gráfico de três cores do dashboard. A última validação automatizada teve 421 testes Laravel aprovados, 1 ignorado e 107 testes Python aprovados. As pendências operacionais e de decisão de permissão estão descritas no mesmo registro; esta atualização não substitui os gates de release abaixo.

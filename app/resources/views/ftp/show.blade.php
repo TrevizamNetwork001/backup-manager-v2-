@@ -3,7 +3,7 @@
 @section('page-header')
 <header class="page-header ftp-detail-header">
     <div class="page-header__content"><h1 class="page-header__title">Conta FTP: {{ $ftpAccount->username }}</h1><p class="page-header__description">Acesso e recebimentos da conta FTP.</p></div>
-    <div class="page-header__actions"><span class="badge badge--{{ $ftpAccount->is_active ? 'success' : 'neutral' }}">{{ $ftpAccount->is_active ? 'Ativa' : 'Desativada' }}</span>@can('ftp.manage')<button type="button" class="btn btn--secondary" id="ftp-rotate-open" @disabled($impact['deletion_mode'])><x-icon name="sync" /> Rotacionar senha</button>@endcan
+    <div class="page-header__actions"><span class="badge badge--{{ $ftpAccount->is_active ? 'success' : 'neutral' }}">{{ $ftpAccount->is_active ? 'Ativa' : 'Desativada' }}</span>@can('ftp.manage')<button type="button" class="btn btn--secondary" id="ftp-reveal-open" @disabled($impact['deletion_mode'])><x-icon name="eye" /> Mostrar acesso FTP</button><button type="button" class="btn btn--secondary" id="ftp-rotate-open" @disabled($impact['deletion_mode'])><x-icon name="sync" /> Rotacionar senha</button>@endcan
         <a class="btn btn--ghost" href="{{ route('ftp.index') }}">Voltar ao FTP</a>
     </div>
 </header>
@@ -93,6 +93,44 @@
 </div><div class="modal__footer ftp-modal-footer"><button type="button" class="btn btn--ghost" data-close-delete>Cancelar</button><button type="submit" class="btn btn--danger" @if($impact['blocker'] || $impact['safety_error']) disabled @endif>Excluir definitivamente</button></div></form></div></dialog>
 @endcan
 @can('ftp.manage')
+<dialog class="modal modal--sm" id="ftp-reveal-dialog" aria-labelledby="ftp-reveal-title"><div class="modal__surface"><div class="modal__header"><h2 class="modal__title" id="ftp-reveal-title">Acesso FTP atual</h2><button type="button" class="modal__close" data-close-reveal aria-label="Fechar"><x-icon name="close" size="sm" /></button></div><div class="modal__body ftp-modal-body"><dl class="ftp-detail-list"><div><dt>Usuário</dt><dd><code>{{ $ftpAccount->username }}</code></dd></div><div><dt>Senha</dt><dd><code id="ftp-reveal-secret">••••••••</code></dd></div></dl><p id="ftp-reveal-feedback" role="status" aria-live="polite"></p></div><div class="modal__footer ftp-modal-footer"><button type="button" class="btn btn--ghost" data-close-reveal>Fechar</button><button type="button" class="btn btn--primary" id="ftp-reveal-button">Mostrar senha</button></div></div></dialog>
+<script>
+(() => {
+    const dialog = document.getElementById('ftp-reveal-dialog');
+    const secret = document.getElementById('ftp-reveal-secret');
+    const button = document.getElementById('ftp-reveal-button');
+    const feedback = document.getElementById('ftp-reveal-feedback');
+    let requestId = 0;
+    const hide = () => { secret.textContent = '••••••••'; secret.dataset.visible = '0'; button.textContent = 'Mostrar senha'; feedback.textContent = ''; };
+    document.getElementById('ftp-reveal-open').addEventListener('click', () => dialog.showModal());
+    dialog.querySelectorAll('[data-close-reveal]').forEach(close => close.addEventListener('click', () => dialog.close()));
+    dialog.addEventListener('close', () => { requestId++; hide(); });
+    button.addEventListener('click', async () => {
+        if (secret.dataset.visible === '1') { hide(); return; }
+        const currentRequest = ++requestId;
+        button.disabled = true;
+        feedback.textContent = 'Consultando senha...';
+        try {
+            const response = await fetch(@json(route('ftp.secret.reveal', $ftpAccount)), {
+                method: 'POST', credentials: 'same-origin',
+                headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content },
+            });
+            if (! response.ok) throw new Error('reveal failed');
+            const data = await response.json();
+            if (typeof data.secret !== 'string' || currentRequest !== requestId || ! dialog.open) return;
+            secret.textContent = data.secret;
+            secret.dataset.visible = '1';
+            button.textContent = 'Ocultar senha';
+            feedback.textContent = 'Senha atual exibida somente nesta janela.';
+        } catch (_) {
+            if (dialog.open) feedback.textContent = 'Não foi possível consultar a senha atual.';
+        } finally {
+            button.disabled = false;
+        }
+    });
+})();
+</script>
 <dialog class="modal modal--sm" id="ftp-rotate-dialog" aria-labelledby="ftp-rotate-title"><div class="modal__surface"><div class="modal__header"><h2 class="modal__title" id="ftp-rotate-title">Rotacionar senha FTP</h2><button type="button" class="modal__close" data-close-rotate aria-label="Fechar"><x-icon name="close" size="sm" /></button></div><form method="POST" action="{{ route('ftp.rotate', $ftpAccount) }}" id="ftp-rotate-form">@csrf<div class="modal__body ftp-modal-body"><div class="form-field"><label class="form-label" for="new_password">Nova senha</label><div style="display:flex;gap:.5rem"><input class="form-control" id="new_password" name="password" type="password" minlength="12" maxlength="40" autocomplete="new-password" required><button class="btn btn--secondary" type="button" data-generate-password>Gerar</button></div></div><div class="form-field"><label class="form-label" for="new_password_confirmation">Confirmar senha</label><input class="form-control" id="new_password_confirmation" name="password_confirmation" type="password" minlength="12" maxlength="40" autocomplete="new-password" required></div></div><div class="modal__footer ftp-modal-footer"><button type="button" class="btn btn--ghost" data-close-rotate>Cancelar</button><button type="submit" class="btn btn--primary">Rotacionar senha</button></div></form></div></dialog>
 <script>
 (() => { const dialog = document.getElementById('ftp-rotate-dialog'); const form = document.getElementById('ftp-rotate-form'); document.getElementById('ftp-rotate-open').addEventListener('click', () => dialog.showModal()); dialog.querySelectorAll('[data-close-rotate]').forEach(button => button.addEventListener('click', () => dialog.close())); dialog.addEventListener('click', event => { if (event.target === dialog) dialog.close(); }); form.querySelector('[data-generate-password]').addEventListener('click', () => { const pools = ['ABCDEFGHJKLMNPQRSTUVWXYZ', 'abcdefghjkmnpqrstuvwxyz', '23456789', '!@#$%^*-_=+']; const all = pools.join(''); const length = 16; const randomBytes = (count) => { const b = new Uint8Array(count); crypto.getRandomValues(b); return b; }; const chars = Array.from(randomBytes(length), (b) => all[b % all.length]); const picks = randomBytes(pools.length); pools.forEach((pool, i) => { chars[i] = pool[picks[i] % pool.length]; }); const shuffleBytes = randomBytes(length); for (let i = chars.length - 1; i > 0; i--) { const j = shuffleBytes[i] % (i + 1); [chars[i], chars[j]] = [chars[j], chars[i]]; } const value = chars.join(''); form.elements.password.value = value; form.elements.password_confirmation.value = value; }); @if ($errors->has('password') || $errors->has('password_confirmation')) dialog.showModal(); @endif })();

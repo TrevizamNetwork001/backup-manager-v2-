@@ -41,6 +41,7 @@
     $withoutHistory = collect($problemDevices)->filter(fn ($device) => in_array($device['reason'], ['manual_never_backed_up', 'scheduled_never_succeeded'], true));
     $deviceReasons = [
         'consecutive_failures' => 'Falhas consecutivas', 'backup_stale' => 'Backup desatualizado',
+        'latest_backup_failed' => 'Última tentativa falhou',
         'backup_delayed' => 'Backup atrasado', 'scheduled_never_succeeded' => 'Backup agendado nunca concluído',
         'manual_never_backed_up' => 'Nunca fez backup (manual)',
     ];
@@ -181,6 +182,7 @@
         $problemDevices = $checksByName['devices']['metadata']['problem_devices'] ?? [];
         $deviceReasons = [
             'consecutive_failures' => 'falhas consecutivas', 'backup_stale' => 'backup desatualizado',
+            'latest_backup_failed' => 'última tentativa falhou',
             'backup_delayed' => 'backup atrasado', 'scheduled_never_succeeded' => 'nunca concluiu um backup agendado',
             'manual_never_backed_up' => 'nunca fez backup (manual)',
         ];

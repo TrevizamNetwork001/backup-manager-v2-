@@ -5,6 +5,7 @@ import tempfile
 import hashlib
 from pathlib import Path
 
+from a10_scp import MAX_ARCHIVE_BYTES
 from drivers.mikrotik_ssh import BackupError, MAX_BYTES
 
 
@@ -69,7 +70,7 @@ def validate(data, vendor='mikrotik'):
 
 
 def store(root_name, relative, data, vendor='mikrotik', execution_id=None):
-    limit = ftp_max_bytes() if vendor in ('ftp', 'huawei_olt') else MAX_BYTES
+    limit = MAX_ARCHIVE_BYTES if vendor == 'a10' else (ftp_max_bytes() if vendor in ('ftp', 'huawei_olt') else MAX_BYTES)
     if not data or len(data) > limit:
         raise BackupError('ARTIFACT_INVALID')
     root = Path(root_name).resolve(strict=True)

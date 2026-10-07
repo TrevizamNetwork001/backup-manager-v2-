@@ -104,6 +104,26 @@ class BackupPolicyTest extends TestCase
         $this->assertDatabaseMissing('backup_policies', ['id' => $policy->id]);
     }
 
+    public function test_a10_policy_requires_opt_in_binary_artifact_and_a10_ssh_device(): void
+    {
+        config()->set('backup.a10_enabled', false);
+        $this->actingAs(User::factory()->admin()->create());
+        $payload = $this->payload(['name' => 'A10 system', 'method' => 'a10_system', 'artifact_mode' => 'binary']);
+        $this->post('/backup-policies', $payload)->assertSessionHasErrors('method');
+        config()->set('backup.a10_enabled', true);
+        $this->post('/backup-policies', $payload)->assertRedirect();
+        $policy = BackupPolicy::firstOrFail();
+        $device = $this->device();
+        $credential = $this->credential($device);
+        $this->post("/backup-policies/{$policy->id}/associations", $this->attach($policy, $device, $credential))
+            ->assertSessionHasErrors('device_id');
+        $device->update(['vendor' => 'A10 Networks', 'platform' => 'network', 'a10_transfer_interface' => 'management']);
+        $this->post("/backup-policies/{$policy->id}/associations", $this->attach($policy, $device, $credential))
+            ->assertRedirect();
+        $this->assertDatabaseHas('device_backup_policies', ['device_id' => $device->id, 'backup_policy_id' => $policy->id]);
+        $this->get('/backup-policies')->assertOk()->assertSee('Backup completo A10');
+    }
+
     public function test_ftp_policy_with_historical_vsol_association_can_be_renamed_without_changing_method(): void
     {
         $this->actingAs(User::factory()->admin()->create());

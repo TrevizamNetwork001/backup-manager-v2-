@@ -1,0 +1,11 @@
+[Unit]
+Description=Reconcile Backup Manager FTP source firewall
+
+[Timer]
+OnBootSec=1s
+OnUnitActiveSec=1min
+AccuracySec=10s
+Unit=backup-manager-ftp-acl.service
+
+[Install]
+WantedBy=timers.target

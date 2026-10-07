@@ -29,12 +29,10 @@
 <script>
 (() => {
     const dialog = document.getElementById('policy-edit-dialog');
-    const listUrl = @json(route('backup-policies.index', request('page') > 1 ? ['page' => request('page')] : []));
     document.querySelector('[data-open-policy-edit]').addEventListener('click', () => dialog.showModal());
-    dialog.querySelectorAll('[data-close-policy-edit]').forEach(button => button.addEventListener('click', () => location.replace(listUrl)));
-    dialog.addEventListener('click', event => { if (event.target === dialog) location.replace(listUrl); });
-    dialog.addEventListener('cancel', event => { event.preventDefault(); location.replace(listUrl); });
-    dialog.showModal();
+    dialog.querySelectorAll('[data-close-policy-edit]').forEach(button => button.addEventListener('click', () => dialog.close()));
+    dialog.addEventListener('click', event => { if (event.target === dialog) dialog.close(); });
+    @if(request()->boolean('edit') || $errors->any()) dialog.showModal(); @endif
 })();
 </script>
 
@@ -54,7 +52,7 @@
                     <td data-label="Ações" class="table-actions">
                         @can('backup_executions.run')
                         @if($association->is_active && $backupPolicy->is_active && $association->device->is_active && ($association->credential?->is_active || ($backupPolicy->method === 'ftp_push' && $backupPolicy->schedule_type === 'manual' && $association->device->platform === 'olt')))
-                            <form method="POST" action="{{ route('backup-policies.associations.executions.store', [$backupPolicy, $association]) }}">@csrf<button class="btn btn--ghost btn--sm" type="submit">Criar execução</button></form>
+                            <form method="POST" action="{{ $backupPolicy->method === 'a10_system' ? route('backup-policies.associations.run-a10', [$backupPolicy, $association]) : route('backup-policies.associations.executions.store', [$backupPolicy, $association]) }}">@csrf<button class="btn {{ $backupPolicy->method === 'a10_system' ? 'btn--primary' : 'btn--ghost' }} btn--sm" type="submit">{{ $backupPolicy->method === 'a10_system' ? 'Executar backup A10' : 'Criar execução' }}</button></form>
                         @elseif($backupPolicy->method === 'ftp_push' && $association->device->platform === 'network')
                             <span class="muted-text">Recebimento automático</span>
                         @endif

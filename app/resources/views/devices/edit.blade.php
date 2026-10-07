@@ -17,7 +17,7 @@
         $isHuaweiFtp = $device->isHuaweiFtpEligible();
         $isOlt = $device->platform === 'olt';
         $isVsol = mb_strtolower(trim($device->vendor)) === 'vsol';
-        $deviceFormErrors = $errors->hasAny(['site_id', 'name', 'hostname', 'management_ip', 'vendor', 'platform', 'device_kind', 'device_function', 'model', 'os_version', 'notes', 'is_active']);
+        $deviceFormErrors = $errors->hasAny(['site_id', 'name', 'hostname', 'management_ip', 'vendor', 'platform', 'device_kind', 'device_function', 'model', 'os_version', 'a10_transfer_interface', 'notes', 'is_active']);
         $autoOpenDeviceEdit = $deviceFormErrors || (! $errors->any() && ! request()->boolean('olt_wizard') && ! session('success'));
     @endphp
 
@@ -183,6 +183,9 @@
 set save-configuration backup-to-server server {{ $wizard['host'] }} transport-type ftp user {{ $wizard['account']->username }} password &lt;senha FTP guardada na criação da conta&gt;
 set save-configuration interval 30</code></pre>
             <p><strong>Não use a opção <code>path</code> desse comando.</strong> A conta FTP já é isolada na própria pasta do equipamento; se o comando enviar o arquivo para um subdiretório (via <code>path</code>), o sistema não vai enxergá-lo — só é observada a raiz da conta.</p>
+            @if (! $isOlt)
+            <p role="note"><strong>Backup por alteração:</strong> em roteadores e switches Huawei (VRP) o equipamento só envia um arquivo quando a configuração muda e é salva (<code>save</code>/<code>commit</code>). Se ninguém alterar o equipamento, <strong>não chega arquivo novo</strong> — o último arquivo continua sendo uma cópia fiel da configuração. Por isso este modo não gera alerta de "sem backup". Para equipamentos críticos, mantenha também um backup SSH diário.</p>
+            @endif
             <p>No NE8000, <code>interval</code> aceita de <strong>30 a 43200 minutos</strong> (não dá pra usar um valor menor só pra testar mais rápido); o comando também aceita <code>delay &lt;minutos&gt;</code> junto do <code>interval</code>. Depois de configurar, pode ser necessário rodar <code>commit</code> para aplicar (equipamentos com configuração por candidato mostram <code>[*...]</code> até o commit e <code>[~...]</code> depois). A sintaxe exata varia conforme o modelo/firmware — confirme os comandos aceitos pelo seu equipamento antes de prosseguir.</p>
             @endif
             @if (! $wizard['confirmed'])
@@ -197,10 +200,13 @@ set save-configuration interval 30</code></pre>
             @endif
         </section>
         <section class="olt-wizard-panel" data-wizard-panel="5" aria-label="Teste de integração" @if ($wizardStep !== 5) hidden @endif>
+            @if ($isOlt)
+                <p>O painel valida o arquivo após o recebimento, mas não inicia o envio na OLT. Para testar agora, execute na OLT o comando com o nome mostrado nesta tentativa. O backup automático só chega no horário configurado no equipamento.</p>
+            @endif
             @if (! $wizard['confirmed'])
                 <p>Confirme primeiro a configuração {{ $daOrDo }} {{ $equipmentName }}.</p>
             @elseif (! $isOlt && ! $wizard['execution'])
-                <p role="status">Aguardando o próximo envio automático do equipamento (respeite o intervalo configurado no comando <code>set save-configuration interval</code>). Esta tela será atualizada automaticamente quando um arquivo for recebido e validado.</p>
+                <p role="status">Aguardando o próximo envio do equipamento, que ocorre depois de uma alteração de configuração salva (para acelerar o teste, altere algo e rode <code>save</code>). Esta tela será atualizada automaticamente quando um arquivo for recebido e validado.</p>
             @elseif (! $wizard['execution'])
                 <p>Inicie o teste para gerar um nome de arquivo único. O sistema aguardará o envio manual da OLT.</p>
                 <form method="POST" action="{{ route('devices.olt-ftp.test', $device) }}">@csrf<button type="submit">Iniciar teste de integração</button></form>

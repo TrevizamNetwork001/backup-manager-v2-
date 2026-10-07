@@ -5,11 +5,14 @@ namespace App\Http\Controllers;
 use App\Models\BackupArtifact;
 use App\Models\Device;
 use App\Models\Site;
+use App\Services\A10ConfigurationViewer;
 use App\Services\ArtifactDeletionService;
 use App\Services\ArtifactStorage;
+use App\Services\ConfigurationVersions;
 use App\Support\DestructiveMode;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
@@ -85,6 +88,40 @@ class BackupArtifactController extends Controller
         return view('backup-artifacts.show', compact('backupArtifact', 'preview', 'confirmationPhrase'));
     }
 
+    public function versions(Request $request, BackupArtifact $backupArtifact, ConfigurationVersions $service): Response
+    {
+        $this->authorize('backup_artifacts.download');
+        abort_unless($backupArtifact->type === 'config' ||
+            ($backupArtifact->type === 'binary' && $backupArtifact->backupPolicy?->method === 'a10_system'), 404);
+        $selectedId = $request->validate(['version' => ['nullable', 'integer']])['version'] ?? null;
+        $versions = $service->forArtifact($backupArtifact);
+        $selected = $selectedId === null
+            ? $versions->first()
+            : $versions->first(fn ($version) => $version['artifact']->id === (int) $selectedId);
+        abort_unless($selected, 404);
+        $index = $versions->search(fn ($version) => $version['artifact']->id === $selected['artifact']->id);
+        $previous = $versions->get($index + 1);
+        $difference = $previous ? $service->diff($previous['artifact'], $selected['artifact']) : null;
+        $backupArtifact->load('device:id,name');
+
+        return response()->view('backup-artifacts.versions', compact('backupArtifact', 'versions', 'selected', 'previous', 'difference'))
+            ->header('Cache-Control', 'no-store, private');
+    }
+
+    public function a10Configuration(Request $request, BackupArtifact $backupArtifact, A10ConfigurationViewer $viewer): Response
+    {
+        $this->authorize('backup_artifacts.download');
+        $slot = $request->validate(['slot' => ['required', 'in:pri,sec']])['slot'];
+        $backupArtifact->load(['backupPolicy:id,method', 'device:id,name']);
+        $content = $viewer->read($backupArtifact, $slot);
+        abort_if($content === null, 404);
+
+        return response()->view('backup-artifacts.a10-configuration', compact('backupArtifact', 'slot', 'content'))
+            ->header('Cache-Control', 'no-store, private')
+            ->header('Referrer-Policy', 'no-referrer')
+            ->header('X-Content-Type-Options', 'nosniff');
+    }
+
     /**
      * FEATURES-FINAL-1 Part P: the `backup_artifacts.download` permission has
      * existed since ADMIN-2 with no route to back it — this closes that gap.
@@ -103,8 +140,14 @@ class BackupArtifactController extends Controller
             abort(404, 'Arquivo do artifact não está disponível.');
         }
 
-        $extension = pathinfo($backupArtifact->relative_path, PATHINFO_EXTENSION) ?: 'bin';
-        $stem = pathinfo($backupArtifact->original_filename ?: ('artifact-'.$backupArtifact->id), PATHINFO_FILENAME);
+        $extension = $backupArtifact->type === 'binary' && str_ends_with($backupArtifact->relative_path, '.tar.gz')
+            ? 'tar.gz' : ($backupArtifact->backupExecution?->origin === 'ftp_received'
+            && preg_match('/\.zip\z/i', (string) $backupArtifact->original_filename)
+                ? 'zip'
+                : (pathinfo($backupArtifact->relative_path, PATHINFO_EXTENSION) ?: 'bin'));
+        $originalName = $backupArtifact->original_filename ?: ('artifact-'.$backupArtifact->id);
+        $stem = $extension === 'tar.gz' && str_ends_with($originalName, '.tar.gz')
+            ? substr($originalName, 0, -7) : pathinfo($originalName, PATHINFO_FILENAME);
         $filename = trim(preg_replace('/[^A-Za-z0-9_-]+/', '-', $stem), '-');
         $filename = ($filename ?: 'artifact-'.$backupArtifact->id).'.'.$extension;
 

@@ -13,6 +13,7 @@ use App\Services\EngineJobService;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Tests\TestCase;
@@ -46,6 +47,7 @@ class BackupExecutionTest extends TestCase
         $this->get(route('backup-executions.show', $execution))->assertRedirect('/login');
         $this->get(route('backup-executions.status', $execution))->assertRedirect('/login');
         $this->post(route('backup-policies.associations.executions.store', [$association->backup_policy_id, $association]))->assertRedirect('/login');
+        $this->post(route('backup-policies.associations.run-a10', [$association->backup_policy_id, $association]))->assertRedirect('/login');
         $this->post(route('backup-executions.queue', $execution))->assertRedirect('/login');
     }
 
@@ -62,6 +64,78 @@ class BackupExecutionTest extends TestCase
         $this->assertNull($execution->started_at);
         $this->assertNull($execution->finished_at);
         $this->assertArrayNotHasKey('secret', $execution->getAttributes());
+    }
+
+    public function test_a10_run_now_from_panel_creates_and_queues_one_execution(): void
+    {
+        config()->set('backup.a10_enabled', true);
+        $this->actingAs(User::factory()->create());
+        $association = $this->association();
+        $association->device->update(['name' => 'CGNAT-A10', 'vendor' => 'A10 Networks', 'platform' => 'network', 'a10_transfer_interface' => 'management']);
+        $association->backupPolicy->update(['method' => 'a10_system', 'artifact_mode' => 'binary']);
+        $url = route('backup-policies.associations.run-a10', [$association->backupPolicy, $association]);
+
+        $this->get(route('devices.index'))->assertOk()->assertSee('Executar backup A10')->assertSee($url, false);
+        $this->get(route('backup-policies.edit', $association->backupPolicy))->assertOk()
+            ->assertSee('Executar backup A10')->assertSee($url, false);
+        $this->post($url)->assertRedirect();
+        $execution = BackupExecution::sole();
+        $this->assertSame('queued', $execution->status);
+        $this->assertSame('manual', $execution->origin);
+        $this->get(route('devices.index'))->assertOk()->assertSee('Acompanhar backup')
+            ->assertDontSee('Executar backup A10');
+        $this->get(route('backup-executions.show', $execution))->assertOk()
+            ->assertSee('Exportação A10 em andamento');
+
+        $this->post($url)->assertSessionHasErrors('association');
+        $this->assertDatabaseCount('backup_executions', 1);
+    }
+
+    public function test_a10_run_now_is_hidden_when_integration_is_disabled_or_policy_is_not_a10(): void
+    {
+        $this->actingAs(User::factory()->create());
+        $association = $this->association();
+        $url = route('backup-policies.associations.run-a10', [$association->backupPolicy, $association]);
+        $this->post($url)->assertNotFound();
+        config()->set('backup.a10_enabled', true);
+        $this->post($url)->assertNotFound();
+        $this->assertDatabaseCount('backup_executions', 0);
+    }
+
+    public function test_a10_run_now_requires_execution_permission(): void
+    {
+        config()->set('backup.a10_enabled', true);
+        $this->actingAs(User::factory()->viewer()->create());
+        $association = $this->association();
+        $association->device->update(['vendor' => 'A10 Networks', 'platform' => 'network', 'a10_transfer_interface' => 'management']);
+        $association->backupPolicy->update(['method' => 'a10_system', 'artifact_mode' => 'binary']);
+
+        $this->post(route('backup-policies.associations.run-a10', [$association->backupPolicy, $association]))
+            ->assertForbidden();
+        $this->assertDatabaseCount('backup_executions', 0);
+    }
+
+    public function test_scp_receiver_only_accepts_a_running_a10_execution(): void
+    {
+        config()->set('backup.a10_enabled', true);
+        $association = $this->association();
+        $association->device->update(['name' => 'CGNAT A10', 'vendor' => 'A10 Networks', 'platform' => 'network', 'a10_transfer_interface' => 'management']);
+        $association->backupPolicy->update(['method' => 'a10_system', 'artifact_mode' => 'binary']);
+        $job = BackupExecution::createManual($association);
+
+        Artisan::call('a10:expected', ['id' => $job->id]);
+        $this->assertSame('{}', trim(Artisan::output()));
+
+        $job->transitionTo('queued');
+        app(EngineJobService::class)->claim();
+        $this->assertSame('segredo-confidencial-123', app(EngineJobService::class)->secret($job->id, $job->fresh()->worker_id));
+        Artisan::call('a10:expected', ['id' => $job->id]);
+        $response = json_decode(Artisan::output(), true);
+        $this->assertMatchesRegularExpression('/\ACGNAT-A10_[0-9]{14}-exec-'.$job->id.'\.tar\.gz\z/', $response['filename']);
+
+        $job->refresh()->update(['cancellation_requested_at' => now()]);
+        Artisan::call('a10:expected', ['id' => $job->id]);
+        $this->assertSame('{}', trim(Artisan::output()));
     }
 
     public function test_dashboard_shows_execution_duration_and_pending_placeholder(): void
@@ -103,6 +177,19 @@ class BackupExecutionTest extends TestCase
             ->assertDontSee('2 / 3')
             ->assertDontSee('<th>Erro</th>', false);
         $this->get(route('dashboard'))->assertOk()->assertSee('6s');
+    }
+
+    public function test_history_displays_ftp_method_for_ftp_policy(): void
+    {
+        $this->actingAs(User::factory()->admin()->create());
+        $association = $this->association();
+        BackupExecution::createManual($association);
+        $association->backupPolicy->update(['method' => 'ftp_push']);
+
+        $this->get(route('backup-executions.index'))->assertOk()
+            ->assertSee('data-label="Política">Política 1</td>', false)
+            ->assertSee('data-label="Método">Envio via FTP</td>', false)
+            ->assertDontSee('data-label="Método">Coleta via SSH</td>', false);
     }
 
     public function test_history_shows_portuguese_error_only_when_present(): void

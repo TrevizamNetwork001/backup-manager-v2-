@@ -37,10 +37,13 @@ Route::middleware(['auth', 'active'])->group(function () {
     Route::get('ftp/accounts/{ftpAccount}', [FtpAdminController::class, 'show'])->name('ftp.show');
     Route::post('ftp/accounts/{ftpAccount}/prepare', [FtpAdminController::class, 'prepare'])->name('ftp.prepare');
     Route::post('ftp/accounts/{ftpAccount}/rotate', [FtpAdminController::class, 'rotate'])->name('ftp.rotate');
+    Route::post('ftp/accounts/{ftpAccount}/secret/reveal', [FtpAdminController::class, 'revealSecret'])
+        ->middleware('throttle:6,1')->name('ftp.secret.reveal');
     Route::patch('ftp/accounts/{ftpAccount}/status', [FtpAdminController::class, 'status'])->name('ftp.status');
     Route::delete('ftp/accounts/{ftpAccount}', [FtpAdminController::class, 'delete'])->name('ftp.delete');
     Route::get('settings', [InstanceSettingsController::class, 'edit'])->name('settings.edit');
     Route::put('settings', [InstanceSettingsController::class, 'update'])->name('settings.update');
+    Route::put('settings/ftp-access', [InstanceSettingsController::class, 'updateFtpAccess'])->name('settings.ftp-access.update');
     Route::post('settings/retention/preview', [InstanceSettingsController::class, 'previewRetention'])->name('settings.retention.preview');
     Route::patch('settings/retention', [InstanceSettingsController::class, 'updateRetention'])->name('settings.retention.update');
     Route::get('settings/notifications', [NotificationSettingsController::class, 'edit'])->name('settings.notifications.edit');
@@ -107,6 +110,7 @@ Route::middleware(['auth', 'active'])->group(function () {
     Route::patch('backup-policies/{backup_policy}/associations/{association}', [DeviceBackupPolicyController::class, 'update'])->name('backup-policies.associations.update');
     Route::delete('backup-policies/{backup_policy}/associations/{association}', [DeviceBackupPolicyController::class, 'destroy'])->name('backup-policies.associations.destroy');
     Route::post('backup-policies/{backup_policy}/associations/{association}/executions', [BackupExecutionController::class, 'storeManual'])->name('backup-policies.associations.executions.store');
+    Route::post('backup-policies/{backup_policy}/associations/{association}/run-a10', [BackupExecutionController::class, 'runA10'])->name('backup-policies.associations.run-a10');
 
     Route::get('backup-executions', [BackupExecutionController::class, 'index'])->name('backup-executions.index');
     Route::get('backup-executions/{backup_execution}/status', [BackupExecutionController::class, 'status'])->name('backup-executions.status');
@@ -114,6 +118,8 @@ Route::middleware(['auth', 'active'])->group(function () {
     Route::post('backup-executions/{backup_execution}/queue', [BackupExecutionController::class, 'queue'])->name('backup-executions.queue');
     Route::post('backup-executions/{backup_execution}/cancel', [BackupExecutionController::class, 'cancel'])->name('backup-executions.cancel');
     Route::get('backup-artifacts', [BackupArtifactController::class, 'index'])->name('backup-artifacts.index');
+    Route::get('backup-artifacts/{backup_artifact}/versions', [BackupArtifactController::class, 'versions'])->name('backup-artifacts.versions');
+    Route::get('backup-artifacts/{backup_artifact}/a10-configuration', [BackupArtifactController::class, 'a10Configuration'])->name('backup-artifacts.a10-configuration');
     Route::get('backup-artifacts/{backup_artifact}', [BackupArtifactController::class, 'show'])->name('backup-artifacts.show');
     Route::get('backup-artifacts/{backup_artifact}/download', [BackupArtifactController::class, 'download'])->name('backup-artifacts.download');
     Route::delete('backup-artifacts/{backup_artifact}', [BackupArtifactController::class, 'destroy'])->name('backup-artifacts.destroy');

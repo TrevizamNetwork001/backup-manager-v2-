@@ -28,7 +28,9 @@ def main():
             # OLT backups remain FTP push; this checks SSH access only.
             result = probe_huawei_olt_authentication(context)
         else:
-            driver = registry.resolve(data['vendor'].strip().casefold(), data['platform'], 'ssh_pull')
+            vendor = data['vendor'].strip().casefold()
+            method = 'a10_system' if vendor == 'a10 networks' and data['platform'].strip().casefold() == 'network' else 'ssh_pull'
+            driver = registry.resolve(vendor, data['platform'], method)
             if PROBE not in driver.capabilities:
                 raise ValueError('unsupported_driver')
             result = driver.probe(context)

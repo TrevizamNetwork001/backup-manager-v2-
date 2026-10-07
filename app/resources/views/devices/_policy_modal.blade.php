@@ -31,7 +31,7 @@
                         <div class="device-policy-dialog__association-main">
                             <div class="device-policy-dialog__association-info">
                                 <strong>{{ $association->backupPolicy->name }}</strong>
-                                <small>{{ $association->backupPolicy->method === 'ftp_push' ? 'Envio via FTP' : 'Coleta via SSH' }} · {{ $association->backupPolicy->method === 'ftp_push' ? 'Conta FTP do equipamento' : ($association->credential?->name ?? 'Credencial não definida') }}</small>
+                                <small>{{ \App\Support\OperationalLabels::METHODS[$association->backupPolicy->method] ?? $association->backupPolicy->method }} · {{ $association->backupPolicy->method === 'ftp_push' ? 'Conta FTP do equipamento' : ($association->credential?->name ?? 'Credencial não definida') }}</small>
                             </div>
                             <span class="badge badge--{{ $association->is_active && $association->backupPolicy->is_active ? 'success' : 'neutral' }}">{{ ! $association->backupPolicy->is_active ? 'Política inativa' : ($association->is_active ? 'Ativa' : 'Inativa') }}</span>
                         </div>
@@ -39,6 +39,18 @@
                             <small class="device-policy-dialog__history">{{ $association->backup_executions_count }} {{ $association->backup_executions_count === 1 ? 'execução registrada' : 'execuções registradas' }}</small>
                         @endif
                         <div class="device-policy-dialog__actions">
+                            @can('backup_executions.run')
+                                @if(config('backup.a10_enabled') && $device->is_active && $association->is_active && $association->backupPolicy->is_active && $association->backupPolicy->method === 'a10_system' && $association->credential?->is_active)
+                                    @if($liveExecutionsByDevice->has($device->id))
+                                        <a href="{{ route('backup-executions.show', $liveExecutionsByDevice->get($device->id)) }}" class="btn btn--ghost btn--sm">Acompanhar backup</a>
+                                    @else
+                                        <form method="POST" action="{{ route('backup-policies.associations.run-a10', [$association->backupPolicy, $association]) }}">
+                                            @csrf
+                                            <button type="submit" class="btn btn--primary btn--sm">Executar backup A10</button>
+                                        </form>
+                                    @endif
+                                @endif
+                            @endcan
                             <form method="POST" action="{{ route('backup-policies.associations.update', [$association->backupPolicy, $association]) }}">
                                 @csrf @method('PATCH')
                                 <input type="hidden" name="return_to" value="devices"><input type="hidden" name="page" value="{{ $devices->currentPage() }}"><input type="hidden" name="policy_device_id" value="{{ $device->id }}">
@@ -74,7 +86,7 @@
                             <div class="form-field"><label class="form-label" for="device-policy-select-{{ $device->id }}">Política *</label><select class="form-control" id="device-policy-select-{{ $device->id }}" name="backup_policy_id" data-device-policy-select required>
                                 <option value="">Selecione uma política</option>
                                 @foreach($availablePolicies as $policy)
-                                    <option value="{{ $policy->id }}" data-method="{{ $policy->method }}" data-store-url="{{ route('backup-policies.associations.store', $policy) }}" @selected(old('policy_device_id') == $device->id && old('backup_policy_id') == $policy->id)>{{ $policy->name }} · {{ $policy->method === 'ftp_push' ? 'FTP' : 'SSH' }}</option>
+                                    <option value="{{ $policy->id }}" data-method="{{ $policy->method }}" data-store-url="{{ route('backup-policies.associations.store', $policy) }}" @selected(old('policy_device_id') == $device->id && old('backup_policy_id') == $policy->id)>{{ $policy->name }} · {{ $policy->method === 'ftp_push' ? 'FTP' : ($policy->method === 'a10_system' ? 'A10 completo' : 'SSH') }}</option>
                                 @endforeach
                             </select></div>
                             <div class="form-field" data-device-policy-credential-field hidden><label class="form-label" for="device-policy-credential-{{ $device->id }}">Credencial SSH *</label><select class="form-control" id="device-policy-credential-{{ $device->id }}" name="credential_id" data-device-policy-credential disabled>

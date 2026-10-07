@@ -26,6 +26,9 @@
     @if(session('warning') && ! session('policy_device_id'))
         <div class="alert alert--warning" role="alert">{{ session('warning') }}</div>
     @endif
+    @error('association')
+        <div class="alert alert--warning" role="alert">{{ $message }}</div>
+    @enderror
     @if($sites->isEmpty())
         <div class="alert alert--warning" role="status">
             Nenhum Site / POP ativo está disponível.
@@ -92,7 +95,7 @@
                             </td>
                             <td data-label="Método">
                                 <div class="entity-cell">
-                                    <span class="entity-cell__title">{{ ($health['method'] ?? null) === 'ftp_push' ? 'Envio via FTP' : (($health['method'] ?? null) === 'ssh_pull' ? 'Coleta via SSH' : '—') }}</span>
+                                    <span class="entity-cell__title">{{ collect($health['methods'] ?? [])->map(fn ($method) => \App\Support\OperationalLabels::METHODS[$method] ?? $method)->implode(' · ') ?: '—' }}</span>
                                 </div>
                             </td>
                             <td data-label="Último backup" class="tech-value">{{ $health && $health['last_backup_at'] ? app(\App\Services\InstanceTimezone::class)->format(\Illuminate\Support\Carbon::parse($health['last_backup_at']), 'd/m/Y H:i') : '—' }}</td>
@@ -114,6 +117,22 @@
                                     @endcan
                                     @can('backup_policies.manage')
                                         <button type="button" class="btn btn--ghost btn--sm" data-open-device-policy="{{ $device->id }}">Política de backup</button>
+                                    @endcan
+                                    @can('backup_executions.run')
+                                        @if(config('backup.a10_enabled') && $device->is_active)
+                                            @foreach($device->deviceBackupPolicies as $association)
+                                                @if($association->archived_at === null && $association->is_active && $association->backupPolicy?->is_active && $association->backupPolicy?->method === 'a10_system' && $association->credential?->is_active)
+                                                    @if($liveExecutionsByDevice->has($device->id))
+                                                        <a href="{{ route('backup-executions.show', $liveExecutionsByDevice->get($device->id)) }}" class="btn btn--ghost btn--sm">Acompanhar backup</a>
+                                                    @else
+                                                        <form method="POST" action="{{ route('backup-policies.associations.run-a10', [$association->backupPolicy, $association]) }}">
+                                                            @csrf
+                                                            <button type="submit" class="btn btn--primary btn--sm">Executar backup A10</button>
+                                                        </form>
+                                                    @endif
+                                                @endif
+                                            @endforeach
+                                        @endif
                                     @endcan
                                     @can('devices.delete')
                                         <form method="POST" action="{{ route('devices.destroy', $device) }}" onsubmit="return confirm('Remover este equipamento? Só é possível sem histórico ou vínculos.');">
@@ -197,7 +216,10 @@
                 && ! $device->deviceBackupPolicies->contains(fn ($association) => $association->is_active && $association->backupPolicy?->is_active && $association->backupPolicy->method === $policy->method)
                 && ($policy->method === 'ssh_pull'
                     ? ($device->platform !== 'olt' || mb_strtolower(trim($device->vendor)) === 'vsol') && $sshCredentialsByDevice->has($device->id)
-                    : $policy->method === 'ftp_push' && $policy->schedule_type === 'manual' && $device->isHuaweiFtpEligible() && $device->ftpAccount?->is_active)),
+                    : ($policy->method === 'ftp_push' && $policy->schedule_type === 'manual' && $device->isHuaweiFtpEligible() && $device->ftpAccount?->is_active)
+                        || ($policy->method === 'a10_system' && config('backup.a10_enabled') && $policy->artifact_mode === 'binary'
+                            && $device->platform === 'network' && mb_strtolower(trim($device->vendor)) === 'a10 networks'
+                            && $sshCredentialsByDevice->has($device->id)))),
             'sshCredentials' => $sshCredentialsByDevice->get($device->id, collect()),
         ])
     @endforeach
@@ -222,7 +244,7 @@
         const submit = dialog.querySelector('[data-device-policy-submit]');
         const sync = () => {
             const selected = policy.selectedOptions[0];
-            const isSsh = selected?.dataset.method === 'ssh_pull';
+            const isSsh = ['ssh_pull', 'a10_system'].includes(selected?.dataset.method);
             form.action = selected?.dataset.storeUrl || '';
             credentialField.hidden = !isSsh;
             credential.disabled = !isSsh;

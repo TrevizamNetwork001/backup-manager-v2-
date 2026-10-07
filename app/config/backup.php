@@ -4,6 +4,8 @@ return [
     'storage_root' => env('BACKUP_STORAGE_ROOT', '/data/backups'),
     'ftp_root' => env('BACKUP_FTP_ROOT', '/data/ftp'),
     'max_artifact_bytes' => 8 * 1024 * 1024,
+    'a10_max_bytes' => 64 * 1024 * 1024,
+    'a10_enabled' => env('BACKUP_A10_ENABLED', false),
     'ftp_max_bytes' => (int) env('BACKUP_FTP_MAX_BYTES', 8 * 1024 * 1024),
     'engine_stale_seconds' => (int) env('BACKUP_ENGINE_STALE_SECONDS', 300),
     // Overall wall-clock budget for a single execution, independent of heartbeat

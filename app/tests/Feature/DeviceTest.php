@@ -244,16 +244,33 @@ class DeviceTest extends TestCase
         $cases = array_merge(Device::VENDORS, ['HUAWEI', 'huawei', 'Mikrotik', 'mikrotik', ' MiKroTik ', ' a10 networks ', 'HILLSTONE']);
         foreach ($cases as $index => $vendor) {
             $ip = '192.0.2.'.(10 + $index);
-            $this->post(route('devices.store'), array_replace($data, ['vendor' => $vendor, 'management_ip' => $ip]))
+            $interface = Device::normalizeVendor($vendor) === 'A10 Networks' ? 'management' : null;
+            $this->post(route('devices.store'), array_replace($data, ['vendor' => $vendor, 'management_ip' => $ip,
+                'a10_transfer_interface' => $interface]))
                 ->assertRedirect(route('devices.index'))->assertSessionHasNoErrors();
             $this->assertDatabaseHas('devices', ['management_ip' => $ip, 'vendor' => Device::normalizeVendor($vendor),
-                'model' => $data['model']]);
+                'model' => $data['model'], 'a10_transfer_interface' => $interface]);
         }
         foreach (['Acme Legacy', '', ['Huawei']] as $vendor) {
             $this->post(route('devices.store'), array_replace($data, ['vendor' => $vendor, 'management_ip' => '192.0.2.100']))
                 ->assertSessionHasErrors('vendor');
             $this->assertDatabaseMissing('devices', ['management_ip' => '192.0.2.100']);
         }
+    }
+
+    public function test_a10_requires_an_explicit_transfer_interface(): void
+    {
+        $site = Site::create(['name' => 'POP A10', 'is_active' => true]);
+        $this->actingAs(User::factory()->operator()->create());
+        $payload = ['site_id' => $site->id, 'name' => 'CGNAT A10', 'management_ip' => '192.0.2.20',
+            'vendor' => 'A10 Networks', 'device_kind' => 'router', 'is_active' => 1];
+        $this->post(route('devices.store'), $payload)->assertSessionHasErrors('a10_transfer_interface');
+        $this->post(route('devices.store'), $payload + ['a10_transfer_interface' => 'management'])
+            ->assertRedirect(route('devices.index'));
+        $this->assertDatabaseHas('devices', ['name' => 'CGNAT A10', 'a10_transfer_interface' => 'management']);
+        $this->get(route('devices.edit', Device::firstOrFail()))->assertOk()
+            ->assertSee('Saída do backup A10')
+            ->assertSee('value="management" selected', false);
     }
 
     public function test_known_legacy_vendor_is_selected_and_normalized_only_when_saved(): void

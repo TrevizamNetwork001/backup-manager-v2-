@@ -63,6 +63,13 @@
         </section>
     @endif
 
+    @if($backupExecution->backupPolicy->method === 'a10_system' && $isActive)
+        <section class="alert alert--info execution-instruction" aria-label="Envio SFTP A10">
+            <h3 class="alert__title">Exportação A10 em andamento</h3>
+            <p class="alert__description">O Backup Manager acessa o A10 por SSH e solicita o envio do arquivo completo por SFTP. Esta página atualiza o resultado automaticamente; não é necessário iniciar o envio na interface do A10.</p>
+        </section>
+    @endif
+
     @if($backupExecution->origin === 'manual' && $backupExecution->backupPolicy->method === 'ftp_push' && $backupExecution->device->platform === 'network')
         <section class="alert alert--info execution-instruction" aria-label="Orientação de envio FTP">
             <h3 class="alert__title">Envio FTP automático pelo roteador</h3>
@@ -99,8 +106,13 @@
         <section class="card" aria-labelledby="execution-artifact-title">
             <div class="card__header"><div><h2 class="card__title" id="execution-artifact-title">Artefato gerado</h2><p class="card__description">Arquivo associado a esta execução.</p></div><span class="badge badge--{{ $backupExecution->artifact->status === 'available' ? 'success' : ($backupExecution->artifact->status === 'deleted' ? 'neutral' : 'warning') }}">{{ $backupExecution->artifact->statusLabel() }}</span></div>
             <div class="card__body">
+                @can('backup_artifacts.download')
+                    @if($backupExecution->artifact->status === 'available')
+                        <a href="{{ route('backup-artifacts.download', $backupExecution->artifact) }}" class="btn btn--primary">{{ $backupExecution->backupPolicy->method === 'a10_system' ? 'Baixar backup A10' : 'Baixar arquivo' }}</a>
+                    @endif
+                @endcan
                 <dl class="execution-detail-grid execution-detail-grid--compact">
-                    <div class="execution-detail-field"><dt>Tipo</dt><dd><a class="link" href="{{ route('backup-artifacts.show', $backupExecution->artifact) }}">{{ $backupExecution->artifact->type }}</a></dd></div>
+                    <div class="execution-detail-field"><dt>Tipo</dt><dd><a class="link" href="{{ route('backup-artifacts.show', $backupExecution->artifact) }}">{{ $backupExecution->artifact->type === 'binary' ? 'Binário' : 'Configuração' }}</a></dd></div>
                     <div class="execution-detail-field"><dt>Tamanho</dt><dd>{{ number_format($backupExecution->artifact->size_bytes / 1024, 1, ',', '.') }} KB</dd></div>
                     <div class="execution-detail-field execution-detail-field--wide"><dt>SHA256</dt><dd class="text-technical">{{ $backupExecution->artifact->sha256 }}</dd></div>
                     @if($backupExecution->backupPolicy->method === 'ftp_push')

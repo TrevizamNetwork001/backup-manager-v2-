@@ -141,6 +141,51 @@ class HuaweiOltFtpTest extends TestCase
         }
     }
 
+    public function test_received_zip_keeps_zip_extension_for_storage_and_download(): void
+    {
+        [$device, $policy] = $this->fixture();
+        DeviceBackupPolicy::create(['device_id' => $device->id, 'backup_policy_id' => $policy->id,
+            'credential_id' => null, 'is_active' => true]);
+        $root = sys_get_temp_dir().'/olt-zip-test-'.bin2hex(random_bytes(8));
+        mkdir($root, 0700);
+        config()->set('backup.storage_root', $root);
+        $engine = app(EngineJobService::class);
+        $worker = bin2hex(random_bytes(16));
+        $received = $engine->receiveFtp($device->id, bin2hex(random_bytes(16)), 'config.zip', time(), $worker);
+        $relative = $received['relative_path'];
+        $this->assertStringEndsWith('.zip', $relative);
+        $path = $root.'/'.$relative;
+        mkdir(dirname($path), 0700, true);
+
+        try {
+            $zip = new \ZipArchive;
+            $this->assertTrue($zip->open($path, \ZipArchive::CREATE));
+            $zip->addFromString('config', file_get_contents($this->ma5800FixturePath()));
+            $zip->close();
+            $artifact = $engine->complete($received['id'], $relative, $worker);
+            $this->actingAs(User::factory()->create())->get(route('backup-artifacts.download', $artifact))
+                ->assertOk()->assertDownload('config.zip');
+
+            $legacyPath = substr($path, 0, -4).'.cfg';
+            rename($path, $legacyPath);
+            $artifact->update(['relative_path' => substr($relative, 0, -4).'.cfg']);
+            $this->get(route('backup-artifacts.download', $artifact))
+                ->assertOk()->assertDownload('config.zip');
+        } finally {
+            if (isset($legacyPath) && is_file($legacyPath)) {
+                unlink($legacyPath);
+            } elseif (is_file($path)) {
+                unlink($path);
+            }
+            $dir = dirname($path);
+            while ($dir !== $root) {
+                rmdir($dir);
+                $dir = dirname($dir);
+            }
+            rmdir($root);
+        }
+    }
+
     public function test_spontaneous_receipt_requires_valid_account_and_device(): void
     {
         [$device, $policy] = $this->fixture(false);

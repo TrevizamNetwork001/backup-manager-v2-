@@ -30,6 +30,10 @@ class DeviceController extends Controller
         $healthByDevice = collect($backupHealth->rows())
             ->whereIn('device_id', $devices->pluck('id')->all())
             ->keyBy('device_id');
+        $liveExecutionsByDevice = BackupExecution::query()
+            ->whereIn('device_id', $devices->pluck('id')->all())
+            ->whereIn('status', BackupExecution::LIVE_STATUSES)
+            ->latest('id')->get(['id', 'device_id', 'status'])->keyBy('device_id');
         $sites = Site::query()->where('is_active', true)->orderBy('name')->get();
 
         $policies = BackupPolicy::query()->where('is_active', true)->whereNull('archived_at')->orderBy('name')->get();
@@ -41,7 +45,7 @@ class DeviceController extends Controller
             ->get(['id', 'device_id', 'name', 'username'])
             ->groupBy('device_id');
 
-        return view('devices.index', compact('devices', 'healthByDevice', 'sites', 'policies', 'sshCredentialsByDevice'));
+        return view('devices.index', compact('devices', 'healthByDevice', 'liveExecutionsByDevice', 'sites', 'policies', 'sshCredentialsByDevice'));
     }
 
     public function create(): View
@@ -76,6 +80,8 @@ class DeviceController extends Controller
             'device_function' => ['nullable', 'string', 'max:100'],
             'model' => ['nullable', 'string', 'max:255'],
             'os_version' => ['nullable', 'string', 'max:255'],
+            'a10_transfer_interface' => ['nullable', Rule::in(['management', 'data'])],
+            'expected_ftp_interval_hours' => ['nullable', 'integer', 'between:1,720'],
             'notes' => ['nullable', 'string', 'max:2000'],
             'is_active' => ['required', 'boolean'],
         ]);
@@ -85,6 +91,10 @@ class DeviceController extends Controller
                 throw ValidationException::withMessages(['platform' => 'Atualização do banco pendente.']);
             }
             unset($validated['platform']);
+        }
+        $this->validateA10Interface($validated);
+        if (Device::pushesOnlyOnConfigChange($validated['vendor'], $validated['platform'] ?? null)) {
+            $validated['expected_ftp_interval_hours'] = null; // silence is normal for change-driven push
         }
         Device::create($validated);
 
@@ -129,6 +139,8 @@ class DeviceController extends Controller
             'device_function' => ['nullable', 'string', 'max:100'],
             'model' => ['nullable', 'string', 'max:255'],
             'os_version' => ['nullable', 'string', 'max:255'],
+            'a10_transfer_interface' => ['nullable', Rule::in(['management', 'data'])],
+            'expected_ftp_interval_hours' => ['nullable', 'integer', 'between:1,720'],
             'notes' => ['nullable', 'string', 'max:2000'],
             'is_active' => ['required', 'boolean'],
         ]);
@@ -138,6 +150,10 @@ class DeviceController extends Controller
                 throw ValidationException::withMessages(['platform' => 'Atualização do banco pendente.']);
             }
             unset($validated['platform']);
+        }
+        $this->validateA10Interface($validated);
+        if (Device::pushesOnlyOnConfigChange($validated['vendor'], $validated['platform'] ?? null)) {
+            $validated['expected_ftp_interval_hours'] = null; // silence is normal for change-driven push
         }
         DB::transaction(function () use ($device, $validated) {
             $locked = Device::query()->lockForUpdate()->findOrFail($device->id);
@@ -238,11 +254,29 @@ class DeviceController extends Controller
                 : $request->input('device_function'),
             'model' => trim((string) $request->input('model')) ?: null,
             'os_version' => trim((string) $request->input('os_version')) ?: null,
+            'a10_transfer_interface' => is_string($request->input('vendor')) &&
+                Device::normalizeVendor($request->input('vendor')) === 'A10 Networks'
+                ? ($request->input('a10_transfer_interface') ?: null) : null,
             'notes' => trim((string) $request->input('notes')) ?: null,
             'is_active' => $request->boolean('is_active'),
         ]);
         if ($request->exists('hostname')) {
             $request->merge(['hostname' => trim((string) $request->input('hostname')) ?: null]);
+        }
+    }
+
+    private function validateA10Interface(array &$validated): void
+    {
+        if (! Schema::hasColumn('devices', 'a10_transfer_interface')) {
+            if ($validated['vendor'] === 'A10 Networks') {
+                throw ValidationException::withMessages(['a10_transfer_interface' => 'Atualização do banco para A10 pendente.']);
+            }
+            unset($validated['a10_transfer_interface']);
+
+            return;
+        }
+        if ($validated['vendor'] === 'A10 Networks' && empty($validated['a10_transfer_interface'])) {
+            throw ValidationException::withMessages(['a10_transfer_interface' => 'Escolha a interface de saída do backup A10.']);
         }
     }
 }

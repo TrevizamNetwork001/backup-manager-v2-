@@ -52,6 +52,8 @@ class Device extends Model
         'device_function',
         'model',
         'os_version',
+        'a10_transfer_interface',
+        'expected_ftp_interval_hours',
         'notes',
         'is_active',
     ];
@@ -60,6 +62,7 @@ class Device extends Model
     {
         return [
             'is_active' => 'boolean',
+            'expected_ftp_interval_hours' => 'integer',
             'ssh_host_key_trusted_at' => 'datetime',
             'ssh_observed_at' => 'datetime',
         ];
@@ -80,6 +83,17 @@ class Device extends Model
 
         return ($vendor === 'huawei' && in_array($this->platform, ['olt', 'network'], true))
             || ($vendor === 'vsol' && $this->platform === 'olt' && ! $this->isVsolV1600Gt());
+    }
+
+    /**
+     * Huawei routers/switches (VRP `set save-configuration backup-to-server`)
+     * only push a file when the configuration changed and was saved; silence
+     * is normal, so "no file for N hours" must never be treated as a failure.
+     * (Huawei OLTs push on a device-side schedule and are not affected.)
+     */
+    public static function pushesOnlyOnConfigChange(?string $vendor, ?string $platform): bool
+    {
+        return mb_strtolower(trim((string) $vendor)) === 'huawei' && ($platform ?? 'network') === 'network';
     }
 
     public function isVsolV1600Gt(): bool

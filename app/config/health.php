@@ -34,6 +34,9 @@ return [
     'device_weekly_warning_hours' => (int) env('HEALTH_DEVICE_WEEKLY_WARNING_HOURS', 192),  // 8 days
     'device_weekly_critical_hours' => (int) env('HEALTH_DEVICE_WEEKLY_CRITICAL_HOURS', 240), // 10 days
 
+    'device_ftp_warning_grace_hours' => (int) env('HEALTH_DEVICE_FTP_WARNING_GRACE_HOURS', 6),
+    'device_ftp_critical_grace_hours' => (int) env('HEALTH_DEVICE_FTP_CRITICAL_GRACE_HOURS', 24),
+
     // Consecutive failed/timed_out executions (most recent first) before a
     // device is 'critical' regardless of freshness.
     'device_consecutive_failures_critical' => (int) env('HEALTH_DEVICE_CONSECUTIVE_FAILURES', 3),

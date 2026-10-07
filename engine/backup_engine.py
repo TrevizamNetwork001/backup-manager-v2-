@@ -17,6 +17,8 @@ from registry_setup import registry
 from drivers.huawei_olt_ftp import collect_config as collect_huawei_olt_config
 from ftp_incoming import existing_files, scan_orphans
 from ftp_spontaneous import scan as scan_spontaneous
+from a10_incoming import inbox_path, remove_received, store_archive, wait_for_archive
+from a10_scp_server import password_for
 from storage import store, validate_ssh_command_output
 from health_snapshot import build_snapshot, write_snapshot
 
@@ -92,7 +94,11 @@ def execute(job):
         vendor = job['vendor'].strip().casefold()
         driver = registry.resolve(vendor, job['platform'], job['method'])
         received = RECEIVED_PAYLOAD in driver.capabilities
-        if received:
+        a10_system = job['method'] == 'a10_system'
+        if a10_system:
+            if os.environ.get('BACKUP_A10_ENABLED', 'false').lower() != 'true' or job['artifact_mode'] != 'binary':
+                raise BackupError('UNSUPPORTED_POLICY')
+        elif received:
             # OLT FTP Push is claimed for the manual diagnostic path only —
             # the real spontaneous auto-backup bypasses engine:claim entirely
             # (see ftp_spontaneous.scan, driven straight from main()).
@@ -105,7 +111,81 @@ def execute(job):
             raise BackupError('UNSUPPORTED_POLICY')
         if not job['eligible']:
             raise BackupError('CREDENTIAL_INVALID')
-        if received:
+        if a10_system:
+            transport = os.environ.get('BACKUP_A10_TRANSPORT', 'scp').lower()
+            root = os.environ.get('BACKUP_A10_SFTP_ROOT', '') if transport == 'sftp' else os.environ.get('BACKUP_A10_SCP_ROOT', '')
+            host = os.environ.get('BACKUP_A10_TRANSFER_HOST', '') or os.environ.get('BACKUP_A10_SCP_HOST', '')
+            interface = job.get('a10_transfer_interface')
+            if transport not in ('scp', 'sftp') or not root or not host or interface not in ('management', 'data'):
+                raise BackupError('A10_RECEIVER_UNAVAILABLE')
+            if transport == 'scp':
+                key_path = os.path.join(root, 'auth.key')
+                if not os.path.exists(key_path):
+                    raise BackupError('A10_RECEIVER_UNAVAILABLE')
+                key_info = os.lstat(key_path)
+                if key_info.st_mode & 0o077 or not os.path.isfile(key_path) or os.path.islink(key_path):
+                    raise BackupError('A10_RECEIVER_UNAVAILABLE')
+                with open(key_path, 'rb') as key_file:
+                    key = key_file.read()
+                if len(key) < 32:
+                    raise BackupError('A10_RECEIVER_UNAVAILABLE')
+                transfer_user = f'bmexec{job_id}'
+                transfer_password = password_for(key, job_id)
+            else:
+                transfer_user = os.environ.get('BACKUP_A10_SFTP_USER', '')
+                password_path = os.path.join(root, 'transfer.password')
+                if not transfer_user or not os.path.exists(password_path):
+                    raise BackupError('A10_RECEIVER_UNAVAILABLE')
+                password_info = os.lstat(password_path)
+                if password_info.st_mode & 0o077 or not os.path.isfile(password_path) or os.path.islink(password_path):
+                    raise BackupError('A10_RECEIVER_UNAVAILABLE')
+                with open(password_path, 'rb') as password_file:
+                    password_bytes = password_file.read(129).strip()
+                if not 24 <= len(password_bytes) <= 128 or any(byte < 33 or byte > 126 for byte in password_bytes):
+                    raise BackupError('A10_RECEIVER_UNAVAILABLE')
+                transfer_password = password_bytes.decode('ascii')
+            expected = json.loads(command('a10:expected', job_id)).get('filename')
+            if not expected:
+                raise BackupError('CREDENTIAL_INVALID')
+            inbox = inbox_path(root, expected)
+            if not inbox.exists():
+                ssh_secret = secret_for(job_id)
+                observe = lambda algorithm, fingerprint: command('engine:observe-host-key', job_id,
+                                                                 WORKER_ID, job['host'], algorithm, fingerprint)
+                context = BackupContext(execution_id=job_id, device_id=job['device_id'], host=job['host'],
+                                        port=job['port'], username=job['username'], vendor=vendor,
+                                        platform=job['platform'], method=job['method'], policy_id=job['policy_id'],
+                                        ssh_host_key_algorithm=job.get('ssh_host_key_algorithm'),
+                                        ssh_host_key_fingerprint=job.get('ssh_host_key_fingerprint'))
+                options = {'method': transport, 'host': host, 'username': transfer_user,
+                           'filename': expected, 'interface': interface}
+                if transport == 'sftp':
+                    options['directory'] = 'incoming'
+                context.metadata['command_options'] = options
+                try:
+                    result = driver.backup(context, secret=(ssh_secret, transfer_password),
+                                           observe=observe, cancel_check=cancelled.is_set)
+                    if not result.success:
+                        raise BackupError(result.code)
+                finally:
+                    del ssh_secret
+            path, identity, data, _ = wait_for_archive(root, expected, cancel_check=cancelled.is_set)
+            if cancelled.is_set():
+                raise BackupError('CANCELLED')
+            relative = store_archive(os.environ['BACKUP_STORAGE_ROOT'], job['relative_path'], data, job_id)
+            command('engine:complete', job_id, relative, WORKER_ID)
+            try:
+                remove_received(path, identity)
+            except OSError:
+                logging.warning(json.dumps({'event': 'a10_inbox_cleanup_failed', 'execution_id': job_id}))
+            try:
+                analysis = driver.analyze(data)
+                logging.info(json.dumps({'event': 'a10_content_analysis', 'execution_id': job_id,
+                                         'status': analysis.status, 'warnings': analysis.warnings,
+                                         'entries': analysis.metadata.get('entries')}))
+            except Exception:
+                logging.warning(json.dumps({'event': 'a10_content_analysis_failed', 'execution_id': job_id}))
+        elif received:
             collect_huawei_olt_config(job,
                                       lambda relative: command('engine:complete', job_id, relative, WORKER_ID))
         else:

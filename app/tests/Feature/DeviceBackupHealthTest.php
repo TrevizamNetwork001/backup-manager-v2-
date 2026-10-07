@@ -143,6 +143,61 @@ class DeviceBackupHealthTest extends TestCase
         $this->assertSame(1, $summary['counts']['healthy']);
     }
 
+    public function test_expected_ftp_arrival_is_checked_independently_of_recent_ssh_success(): void
+    {
+        $device = $this->deviceWithPolicy('1', 'daily');
+        $device->update(['expected_ftp_interval_hours' => 24]);
+        $ftpPolicy = BackupPolicy::create(['name' => 'FTP', 'method' => 'ftp_push',
+            'artifact_mode' => 'config', 'schedule_type' => 'manual', 'is_active' => true]);
+        $ftpAssociation = DeviceBackupPolicy::create(['device_id' => $device->id,
+            'backup_policy_id' => $ftpPolicy->id, 'is_active' => true]);
+
+        $ftpExecution = BackupExecution::create(['device_backup_policy_id' => $ftpAssociation->id,
+            'backup_policy_id' => $ftpPolicy->id, 'device_id' => $device->id,
+            'origin' => 'ftp_received', 'status' => 'succeeded', 'attempt' => 1]);
+        DB::table('backup_executions')->where('id', $ftpExecution->id)
+            ->update(['created_at' => now()->subHours(32)]);
+        $this->succeed($device, now());
+
+        $row = collect(app(DeviceBackupHealth::class)->rows())->firstWhere('device_id', $device->id);
+        $this->assertSame('warning', $row['status']);
+        $this->assertSame('ftp_backup_delayed', $row['reason']);
+
+        DB::table('backup_executions')->where('id', $ftpExecution->id)
+            ->update(['created_at' => now()->subHours(50)]);
+        $row = collect(app(DeviceBackupHealth::class)->rows())->firstWhere('device_id', $device->id);
+        $this->assertSame('critical', $row['status']);
+        $this->assertSame('ftp_backup_stale', $row['reason']);
+    }
+
+    public function test_expected_ftp_without_any_receipt_is_critical(): void
+    {
+        $device = $this->deviceWithPolicy('1', 'manual');
+        $device->update(['expected_ftp_interval_hours' => 24]);
+        $ftpPolicy = BackupPolicy::create(['name' => 'FTP', 'method' => 'ftp_push',
+            'artifact_mode' => 'config', 'schedule_type' => 'manual', 'is_active' => true]);
+        DeviceBackupPolicy::create(['device_id' => $device->id,
+            'backup_policy_id' => $ftpPolicy->id, 'is_active' => true]);
+
+        $row = collect(app(DeviceBackupHealth::class)->rows())->firstWhere('device_id', $device->id);
+        $this->assertSame('critical', $row['status']);
+        $this->assertSame('ftp_never_received', $row['reason']);
+    }
+
+    public function test_manual_device_with_previous_success_and_latest_failure_needs_attention(): void
+    {
+        $device = $this->deviceWithPolicy('1', 'manual');
+        $this->succeed($device, now()->subDay());
+        $this->failExecution($device);
+
+        $summary = app(DeviceBackupHealth::class)->summary();
+        $this->assertSame(1, $summary['counts']['warning']);
+        $this->assertSame('latest_backup_failed', $summary['problem_devices'][0]['reason']);
+
+        $this->actingAs(User::factory()->viewer()->create());
+        $this->get(route('backup-health.index'))->assertOk()->assertSee('Última tentativa falhou');
+    }
+
     public function test_manual_only_device_never_backed_up_is_unknown_not_critical(): void
     {
         $device = $this->deviceWithPolicy('1', 'manual');
@@ -205,6 +260,41 @@ class DeviceBackupHealthTest extends TestCase
             ->assertSee('Coleta via SSH')
             ->assertSee('Saudável')
             ->assertSee('Não avaliado');
+    }
+
+    public function test_device_list_method_comes_from_active_policies_instead_of_old_executions(): void
+    {
+        $device = $this->deviceWithPolicy('1', 'manual');
+        $this->succeed($device, now()->subDay());
+        $oldAssociation = $device->deviceBackupPolicies()->firstOrFail();
+        $oldAssociation->update(['is_active' => false, 'archived_at' => now()]);
+
+        $ftpPolicy = BackupPolicy::create(['name' => 'Huawei FTP', 'method' => 'ftp_push',
+            'artifact_mode' => 'config', 'schedule_type' => 'manual', 'is_active' => true]);
+        DeviceBackupPolicy::create(['device_id' => $device->id, 'backup_policy_id' => $ftpPolicy->id,
+            'credential_id' => null, 'is_active' => true]);
+
+        $row = collect(app(DeviceBackupHealth::class)->rows())->firstWhere('device_id', $device->id);
+        $this->assertSame('ftp_push', $row['method']);
+        $this->assertSame(['ftp_push'], $row['methods']);
+        $this->assertSame('Huawei FTP', $row['policy_name']);
+        $this->assertNotNull($row['last_backup_at']);
+
+        $this->actingAs(User::factory()->viewer()->create());
+        $this->get(route('devices.index'))->assertOk()->assertSee('Envio via FTP');
+    }
+
+    public function test_device_list_shows_both_active_backup_methods(): void
+    {
+        $device = $this->deviceWithPolicy('1', 'manual');
+        $ftpPolicy = BackupPolicy::create(['name' => 'Huawei FTP', 'method' => 'ftp_push',
+            'artifact_mode' => 'config', 'schedule_type' => 'manual', 'is_active' => true]);
+        DeviceBackupPolicy::create(['device_id' => $device->id, 'backup_policy_id' => $ftpPolicy->id,
+            'credential_id' => null, 'is_active' => true]);
+
+        $this->actingAs(User::factory()->viewer()->create());
+        $this->get(route('devices.index'))->assertOk()
+            ->assertSee('Coleta via SSH · Envio via FTP');
     }
 
     public function test_affected_device_list_includes_devices_beyond_first_page(): void

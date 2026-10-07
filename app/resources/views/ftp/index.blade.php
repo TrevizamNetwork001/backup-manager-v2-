@@ -32,7 +32,14 @@
                 <td data-label="Equipamento"><strong>{{ $account->device?->name ?? 'Nenhum' }}</strong></td>
                 <td data-label="Status"><span class="badge badge--{{ $account->is_active ? 'success' : 'neutral' }}">{{ $account->is_active ? '● Ativa' : '○ Desativada' }}</span></td>
                 <td data-label="Último recebimento"><span>{{ $receipts->get($account->id) ? \Illuminate\Support\Carbon::parse($receipts->get($account->id))->format('d/m/Y H:i') : 'Nunca recebeu' }}</span></td>
-                <td data-label="Ações"><details class="row-menu"><summary>Ações</summary><div class="table-actions"><a class="ftp-open-btn" href="{{ route('ftp.show', $account) }}">Abrir <span aria-hidden="true">→</span></a></div></details></td>
+                <td data-label="Ações"><details class="row-menu"><summary>Ações</summary><div class="table-actions">
+                    <a class="ftp-open-btn" href="{{ route('ftp.show', $account) }}">Abrir <span aria-hidden="true">→</span></a>
+                    @can('ftp.delete')
+                        @if(!$receipts->get($account->id) && !$account->deletion_mode)
+                            <a class="ftp-open-btn" href="{{ route('ftp.show', [$account, 'deletion_preview' => 1]) }}">Excluir conta</a>
+                        @endif
+                    @endcan
+                </div></details></td>
             </tr>
         @endforeach
         <tr id="ftp-empty-row" @unless($accounts->isEmpty()) hidden @endunless><td colspan="6">Nenhuma conta FTP encontrada.</td></tr>

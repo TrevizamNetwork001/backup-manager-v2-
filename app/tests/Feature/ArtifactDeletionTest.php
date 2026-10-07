@@ -110,6 +110,38 @@ class ArtifactDeletionTest extends TestCase
         $this->assertFileExists($this->path($artifact));
     }
 
+    public function test_a10_binary_archive_is_completed_verified_and_downloaded_with_full_extension(): void
+    {
+        config()->set('backup.a10_enabled', true);
+        $source = $this->source();
+        $source->device->update(['vendor' => 'A10 Networks', 'platform' => 'network', 'a10_transfer_interface' => 'management']);
+        $source->backupPolicy->update(['method' => 'a10_system', 'artifact_mode' => 'binary']);
+        $job = BackupExecution::createManual($source);
+        $job->transitionTo('queued');
+        $engine = app(EngineJobService::class);
+        $engine->claim();
+        $job->refresh();
+        $relative = $engine->relativePath($job);
+        $this->assertStringEndsWith('.tar.gz', $relative);
+        $this->assertTrue($engine->matchesFinalPath($job, $relative));
+        $this->assertTrue($engine->matchesFinalPath($job, substr($relative, 0, -7).'-exec-'.$job->id.'.tar.gz'));
+        $path = $this->root.'/'.$relative;
+        mkdir(dirname($path), 0700, true);
+        $content = gzencode('A10 binary archive fixture');
+        file_put_contents($path, $content);
+
+        $artifact = $engine->complete($job->id, $relative, $job->worker_id);
+
+        $this->assertSame('binary', $artifact->type);
+        $this->assertSame(hash('sha256', $content), $artifact->sha256);
+        $this->assertSame('valid', app(ArtifactStorage::class)->verify($artifact)['result']);
+        $this->actingAs(User::factory()->admin()->create());
+        $this->get(route('backup-artifacts.download', $artifact))->assertOk()
+            ->assertDownload($artifact->original_filename);
+        file_put_contents($path, 'changed');
+        $this->get(route('backup-artifacts.download', $artifact))->assertNotFound();
+    }
+
     public function test_auditor_cannot_download_an_artifact(): void
     {
         $artifact = $this->artifact($this->source());

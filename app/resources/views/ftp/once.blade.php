@@ -7,7 +7,7 @@
 @php($server = app(\App\Services\FtpServerSettings::class)->get())
 <div class="ftp-once-page"><article class="ftp-once-content">
     <div class="ftp-once-heading"><span class="ftp-success-mark" aria-hidden="true"><x-icon name="check" /></span><div><h2>{{ $isRotation ? 'Nova senha pronta' : 'Conta FTP criada' }}</h2><p>{{ $message }}</p></div></div>
-    <div class="alert alert--warning" role="status">Esta senha será exibida somente agora. Guarde-a antes de fechar.</div>
+    <div class="alert alert--warning" role="status">Guarde esta senha antes de fechar. Quem administra a conta FTP também poderá consultá-la na página da conta.</div>
     @if ($isRotation && $account->purpose === 'backup')<p class="alert alert--info">Atualize a credencial no equipamento antes do próximo envio.</p>@endif
     <dl class="ftp-access-list">
         <div><dt>Servidor</dt><dd class="tech-value" id="ftp-access-server">{{ $server['host'] ?: 'Não configurado' }}</dd></div>

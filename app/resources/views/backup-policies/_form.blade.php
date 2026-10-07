@@ -26,6 +26,9 @@
     <div class="form-field"><label class="form-label" for="method">Método *</label><select class="form-control" id="method" name="method" required>
         <option value="ssh_pull" @selected(old('method', $backupPolicy->method ?? 'ssh_pull') === 'ssh_pull')>Coleta via SSH</option>
         <option value="ftp_push" @selected(old('method', $backupPolicy->method ?? '') === 'ftp_push')>Envio via FTP</option>
+        @if(config('backup.a10_enabled') || ($backupPolicy->method ?? null) === 'a10_system')
+            <option value="a10_system" @selected(old('method', $backupPolicy->method ?? '') === 'a10_system')>Backup completo A10</option>
+        @endif
     </select>@error('method') <span class="form-error">{{ $message }}</span> @enderror</div>
     <div class="form-field"><label class="form-label" for="artifact_mode">Artefato *</label><select class="form-control" id="artifact_mode" name="artifact_mode" required>
         <option value="config" @selected(old('artifact_mode', $backupPolicy->artifact_mode ?? 'config') === 'config')>Configuração</option>
@@ -38,6 +41,7 @@
         <option value="weekly" @selected(old('schedule_type', $backupPolicy->schedule_type ?? '') === 'weekly')>Semanal</option>
     </select>@error('schedule_type') <span class="form-error">{{ $message }}</span> @enderror</div>
     <div id="ftp-manual-note" class="form-field form-span-2" @if(old('method', $backupPolicy->method ?? 'ssh_pull') !== 'ftp_push') hidden @endif><small>Para receber backup FTP todos os dias, configure o envio automático em cada equipamento Huawei. O Backup Manager recebe os arquivos; esta política não agenda o envio. O teste da OLT continua manual.</small></div>
+    <div id="a10-scp-note" class="form-field form-span-2" @if(old('method', $backupPolicy->method ?? 'ssh_pull') !== 'a10_system') hidden @endif><small>Backup system do A10: conexão SSH de controle, envio do arquivo binário .tar.gz ao servidor. A execução só termina quando o arquivo é recebido e validado.</small></div>
     <div id="daily-schedule-note" class="form-field form-span-2" @if(old('schedule_type', $backupPolicy->schedule_type ?? 'daily') !== 'daily') hidden @endif><small>Diário: o backup é programado todos os dias, de domingo a sábado, no horário escolhido.</small></div>
     <div class="form-field"><label class="form-label" for="schedule_time">Horário (diário/semanal)</label><input class="form-control" id="schedule_time" name="schedule_time" type="time" value="{{ old('schedule_time', isset($backupPolicy) ? substr($backupPolicy->schedule_time ?? '', 0, 5) : '03:00') }}">@error('schedule_time') <span class="form-error">{{ $message }}</span> @enderror</div>
     <div class="form-field"><label class="form-label" for="schedule_weekday">Dia da semana (somente semanal)</label><select class="form-control" id="schedule_weekday" name="schedule_weekday">
@@ -80,7 +84,9 @@ function syncPolicyScheduleFields() {
 }
 function syncPolicyMethodFields() {
     const ftp = document.getElementById('method').value === 'ftp_push';
+    const a10 = document.getElementById('method').value === 'a10_system';
     const schedule = document.getElementById('schedule_type');
+    if (a10) document.getElementById('artifact_mode').value = 'binary';
     schedule.querySelector('[value="manual"]').textContent = ftp ? 'Envio pelo equipamento' : 'Manual';
     for (const value of ['daily', 'weekly']) {
         const option = schedule.querySelector(`[value="${value}"]`);
@@ -89,6 +95,7 @@ function syncPolicyMethodFields() {
     }
     if (ftp) schedule.value = 'manual';
     document.getElementById('ftp-manual-note').hidden = !ftp;
+    document.getElementById('a10-scp-note').hidden = !a10;
     syncPolicyScheduleFields();
 }
 document.getElementById('method').addEventListener('change', syncPolicyMethodFields);

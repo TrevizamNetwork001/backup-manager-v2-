@@ -41,6 +41,12 @@ class DeviceBackupPolicyController extends Controller
              ! $device->ftpAccount?->is_active || $backupPolicy->artifact_mode !== 'config')) {
             throw ValidationException::withMessages(['device_id' => 'FTP Push requer um equipamento compatível e conta FTP ativa.']);
         }
+        if ($backupPolicy->method === 'a10_system' && (! config('backup.a10_enabled') ||
+            $backupPolicy->artifact_mode !== 'binary' || $device->platform !== 'network' ||
+            ! in_array($device->a10_transfer_interface, ['management', 'data'], true) ||
+            mb_strtolower(trim($device->vendor)) !== 'a10 networks')) {
+            throw ValidationException::withMessages(['device_id' => 'Backup A10 requer equipamento A10 de rede, recepção habilitada e política binária.']);
+        }
         // VSOL OLT is the one exception: unlike Huawei OLT (never SSH-managed),
         // this vendor's OLT genuinely accepts an SSH-pulled `show
         // running-config`, so it's allowed either method — see
@@ -74,6 +80,9 @@ class DeviceBackupPolicyController extends Controller
         $validated = $request->validate(['is_active' => ['required', 'boolean']]);
         if ($backupPolicy->method === 'ftp_push' && $backupPolicy->schedule_type !== 'manual' && $validated['is_active']) {
             throw ValidationException::withMessages(['schedule_type' => 'Nesta fase, FTP Push não usa o agendador do Backup Manager; configure o intervalo no equipamento.']);
+        }
+        if ($backupPolicy->method === 'a10_system' && $validated['is_active'] && ! config('backup.a10_enabled')) {
+            throw ValidationException::withMessages(['is_active' => 'Recepção do backup A10 não está habilitada.']);
         }
         DB::transaction(function () use ($association, $backupPolicy, $validated): void {
             Device::query()->lockForUpdate()->findOrFail($association->device_id);
@@ -118,7 +127,9 @@ class DeviceBackupPolicyController extends Controller
     {
         if ($activating && $policy->is_active && DeviceBackupPolicy::hasActiveMethod($deviceId, $policy->method, $exceptAssociationId)) {
             throw ValidationException::withMessages([
-                'is_active' => 'Este equipamento já possui uma política ativa para '.($policy->method === 'ssh_pull' ? 'SSH' : 'FTP').'. Desative o vínculo atual antes de ativar outra política do mesmo método.',
+                'is_active' => 'Este equipamento já possui uma política ativa para '.match ($policy->method) {
+                    'ssh_pull' => 'SSH', 'a10_system' => 'A10 completo', default => 'FTP',
+                }.'. Desative o vínculo atual antes de ativar outra política do mesmo método.',
             ]);
         }
     }

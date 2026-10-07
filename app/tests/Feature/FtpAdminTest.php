@@ -64,6 +64,36 @@ class FtpAdminTest extends TestCase
         $this->assertSame('ValidPassword123!', $device->ftpAccount->secret);
     }
 
+    public function test_current_ftp_password_is_revealed_only_to_managers_on_request(): void
+    {
+        $device = $this->device();
+        $account = new FtpAccount(['device_id' => $device->id, 'account_uuid' => (string) Str::uuid(),
+            'purpose' => 'backup', 'home_layout' => 'account', 'username' => 'oltbackup', 'is_active' => true]);
+        $account->secret = 'CurrentFtpPass123!';
+        $account->save();
+        $url = route('ftp.secret.reveal', $account);
+
+        $this->postJson($url)->assertUnauthorized();
+        $this->actingAs(User::factory()->viewer()->create());
+        $this->get(route('ftp.show', $account))->assertOk()
+            ->assertDontSee('Mostrar acesso FTP')->assertDontSee('CurrentFtpPass123!');
+        $this->postJson($url)->assertForbidden();
+
+        $manager = User::factory()->operator()->create();
+        $this->actingAs($manager);
+        $this->get(route('ftp.show', $account))->assertOk()
+            ->assertSee('Mostrar acesso FTP')->assertDontSee('CurrentFtpPass123!');
+        $this->postJson($url)->assertOk()
+            ->assertHeader('Cache-Control', 'no-store, private')
+            ->assertJsonPath('username', 'oltbackup')
+            ->assertJsonPath('secret', 'CurrentFtpPass123!');
+
+        $event = DB::table('audit_events')->where('action', 'ftp.account.secret_revealed')->first();
+        $this->assertSame($manager->id, $event->actor_user_id);
+        $this->assertSame((string) $account->id, $event->resource_id);
+        $this->assertStringNotContainsString('CurrentFtpPass123!', $event->metadata);
+    }
+
     public function test_provisioned_router_account_does_not_claim_backup_support(): void
     {
         $this->admin();

@@ -12,7 +12,7 @@ class OperationalLabels
 
     public const EXECUTION_ORIGINS = ['manual' => 'Manual', 'scheduler' => 'Agendamento', 'ftp_received' => 'FTP recebido'];
 
-    public const METHODS = ['ssh_pull' => 'Coleta via SSH', 'ftp_push' => 'Envio via FTP'];
+    public const METHODS = ['ssh_pull' => 'Coleta via SSH', 'ftp_push' => 'Envio via FTP', 'a10_system' => 'Backup completo A10'];
 
     public const ARTIFACT_STATUSES = ['available' => 'Disponível', 'deleted' => 'Removido', 'missing' => 'Ausente'];
 

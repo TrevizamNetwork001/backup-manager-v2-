@@ -157,6 +157,26 @@
         @enderror
     </div>
 
+    <div class="form-field" data-a10-interface-field @if(old('vendor', $device->vendor ?? '') !== 'A10 Networks') hidden @endif>
+        <label class="form-label" for="a10_transfer_interface">Saída do backup A10 *</label>
+        <select class="form-control" id="a10_transfer_interface" name="a10_transfer_interface">
+            <option value="">Selecione...</option>
+            <option value="management" @selected(old('a10_transfer_interface', $device->a10_transfer_interface ?? '') === 'management')>Management</option>
+            <option value="data" @selected(old('a10_transfer_interface', $device->a10_transfer_interface ?? '') === 'data')>Data</option>
+        </select>
+        <small class="form-help">Interface usada pelo A10 para enviar o backup ao servidor.</small>
+        @error('a10_transfer_interface') <span class="form-error">{{ $message }}</span> @enderror
+    </div>
+
+    <div class="form-field">
+        <label class="form-label" for="expected_ftp_interval_hours">Intervalo esperado do FTP (horas)</label>
+        <input class="form-control" id="expected_ftp_interval_hours" name="expected_ftp_interval_hours" type="number"
+            min="1" max="720" value="{{ old('expected_ftp_interval_hours', $device->expected_ftp_interval_hours ?? '') }}"
+            placeholder="24">
+        <small class="form-help">Monitora a chegada dos arquivos, sem agendar o envio. Em Huawei, a gravação automática pode depender de mudanças na configuração; o alerta indica ausência de arquivo novo, não comprova falha. Deixe vazio se não houver prazo esperado.</small>
+        @error('expected_ftp_interval_hours') <span class="form-error">{{ $message }}</span> @enderror
+    </div>
+
     <div class="form-field form-span-2">
         <label class="form-label" for="notes">Observações</label>
 
@@ -194,6 +214,23 @@
         </label>
     </div>
 </div>
+<script>
+(() => {
+    const field = document.querySelector('[data-a10-interface-field]');
+    const form = field?.closest('form');
+    const vendor = form?.querySelector('[name="vendor"]');
+    const select = field?.querySelector('select');
+    if (!field || !vendor || !select) return;
+    const sync = () => {
+        const a10 = vendor.value === 'A10 Networks';
+        field.hidden = !a10;
+        select.disabled = !a10;
+        select.required = a10;
+    };
+    vendor.addEventListener('change', sync);
+    sync();
+})();
+</script>
 
 @if(($createModal ?? false) || ($editModal ?? false))
     </div>

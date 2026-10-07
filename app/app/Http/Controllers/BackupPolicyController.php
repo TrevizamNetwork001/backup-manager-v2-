@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\BackupArtifact;
 use App\Models\BackupExecution;
 use App\Models\BackupPolicy;
 use App\Models\Device;
@@ -60,7 +61,16 @@ class BackupPolicyController extends Controller
         $this->authorize('backup_policies.manage');
         abort_if($backupPolicy->archived_at !== null, 404);
         $validated = $this->validated($request);
-        $newType = $validated['method'] === 'ssh_pull' ? 'ssh' : 'none';
+        $newType = in_array($validated['method'], ['ssh_pull', 'a10_system'], true) ? 'ssh' : 'none';
+
+        if ($validated['method'] !== 'a10_system' && $backupPolicy->method === 'a10_system' &&
+            BackupArtifact::query()->where('backup_policy_id', $backupPolicy->id)->where('type', 'binary')->exists()) {
+            throw ValidationException::withMessages(['method' => 'Esta política possui backups binários A10 no histórico e não pode mudar de método.']);
+        }
+        if ($validated['method'] !== 'a10_system' && $backupPolicy->method === 'a10_system' &&
+            $backupPolicy->deviceBackupPolicies()->exists()) {
+            throw ValidationException::withMessages(['method' => 'Remova os vínculos A10 antes de alterar o método da política.']);
+        }
 
         if ($validated['method'] !== $backupPolicy->method && $backupPolicy->deviceBackupPolicies()
             ->where(function ($query) use ($newType) {
@@ -81,6 +91,10 @@ class BackupPolicyController extends Controller
             if ($incompatible) {
                 throw ValidationException::withMessages(['method' => 'FTP Push requer um equipamento compatível (Huawei OLT/rede ou VSOL OLT).']);
             }
+        }
+        if ($validated['method'] === 'a10_system' && $backupPolicy->deviceBackupPolicies()->whereHas('device', fn ($query) => $query
+            ->where('platform', '!=', 'network')->orWhereRaw('LOWER(TRIM(vendor)) != ?', ['a10 networks']))->exists()) {
+            throw ValidationException::withMessages(['method' => 'Backup A10 requer somente equipamentos A10 de rede.']);
         }
 
         DB::transaction(function () use ($backupPolicy, $validated): void {
@@ -176,6 +190,9 @@ class BackupPolicyController extends Controller
         }
         if ($validated['method'] === 'ftp_push' && $validated['schedule_type'] !== 'manual') {
             throw ValidationException::withMessages(['schedule_type' => 'Nesta fase, FTP Push não usa o agendador do Backup Manager; configure o intervalo no equipamento.']);
+        }
+        if ($validated['method'] === 'a10_system' && ((! config('backup.a10_enabled') && $validated['is_active']) || $validated['artifact_mode'] !== 'binary')) {
+            throw ValidationException::withMessages(['method' => 'Backup A10 requer recepção habilitada e artefato binário.']);
         }
 
         if ($validated['schedule_type'] !== 'weekly') {

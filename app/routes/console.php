@@ -7,6 +7,7 @@ use App\Services\BackupScheduler;
 use App\Services\EngineDiagnosticSnapshot;
 use App\Services\EngineHealth;
 use App\Services\EngineJobService;
+use App\Services\FtpAccessSettings;
 use App\Services\FtpAccountDeletionService;
 use App\Services\InstanceTimezone;
 use App\Services\RecoveryCheck;
@@ -18,6 +19,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schedule;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
@@ -26,6 +28,32 @@ Artisan::command('inspire', function () {
 Artisan::command('engine:claim {worker}', function (EngineJobService $engine) {
     $job = $engine->claim($this->argument('worker'));
     $this->line(json_encode($job ? $engine->job($job->id) : null));
+});
+
+Artisan::command('a10:expected {id}', function (EngineJobService $engine) {
+    $id = (int) $this->argument('id');
+    $job = BackupExecution::query()->with(['device', 'backupPolicy', 'artifact'])->find($id);
+    if (! config('backup.a10_enabled') || ! $job || $job->status !== 'running' || $job->cancellation_requested_at || $job->artifact ||
+        $job->backupPolicy?->method !== 'a10_system' || $job->backupPolicy->artifact_mode !== 'binary' ||
+        $job->device?->platform !== 'network' || mb_strtolower(trim($job->device->vendor)) !== 'a10 networks') {
+        $this->line('{}');
+
+        return;
+    }
+    $payload = $engine->job($id);
+    if (! $payload['eligible']) {
+        $this->line('{}');
+
+        return;
+    }
+    $slug = rtrim(substr(strtoupper(trim(preg_replace('/[^A-Za-z0-9]+/', '-', Str::ascii($job->device->name)), '-')), 0, 40), '-');
+    if ($slug === '') {
+        $this->line('{}');
+
+        return;
+    }
+    $filename = $slug.'_'.$job->created_at->copy()->utc()->format('YmdHis').'-exec-'.$id.'.tar.gz';
+    $this->line(json_encode(['filename' => $filename]));
 });
 
 Artisan::command('engine:secret {id} {worker}', function (EngineJobService $engine) {
@@ -195,6 +223,15 @@ Artisan::command('ftp:physical-report {id} {version} {payload}', function (FtpAc
 
 Artisan::command('ftp:puredb-revoked {id}', function (FtpAccountDeletionService $service) {
     $service->puredbRevoked((int) $this->argument('id'));
+});
+
+Artisan::command('ftp:acl-export', function (FtpAccessSettings $settings) {
+    $current = $settings->get();
+    $this->line(json_encode(['cidrs' => $current['cidrs'], 'revision' => $current['revision']], JSON_THROW_ON_ERROR));
+});
+
+Artisan::command('ftp:acl-applied {revision}', function (FtpAccessSettings $settings) {
+    $settings->markApplied((int) $this->argument('revision'));
 });
 
 Artisan::command('ftp:physical-failed {id} {code}', function (FtpAccountDeletionService $service) {

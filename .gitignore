@@ -10,6 +10,7 @@ storage/backups/
 storage/incoming/
 storage/quarantine/
 storage/tmp/
+storage/a10-sftp/
 
 # Backups de configuração locais
 compose.yml.bak
@@ -47,3 +48,6 @@ __pycache__/
 *.pyc
 
 database/backups/
+
+# Amostras de backup A10 contêm configuração e material criptográfico.
+referencia/*backup_system*.tar.gz

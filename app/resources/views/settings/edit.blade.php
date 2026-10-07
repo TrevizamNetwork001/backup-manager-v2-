@@ -24,6 +24,9 @@
     @error('enabled')
         <div class="alert alert--warning" role="alert">{{ $message }}</div>
     @enderror
+    @error('ftp_allowed_cidrs')
+        <div class="alert alert--warning" role="alert">{{ $message }}</div>
+    @enderror
 
     <section class="card settings-card" aria-labelledby="timezone-title">
         <div class="card__header">
@@ -55,6 +58,39 @@
                     <div class="settings-form__actions"><button class="btn btn--primary" type="submit">Salvar alterações</button></div>
                 @endcan
             </form>
+        </div>
+    </section>
+
+    <section class="card settings-card" id="ftp-access" aria-labelledby="ftp-access-title">
+        <div class="card__header">
+            <div>
+                <h2 class="card__title" id="ftp-access-title">Origens permitidas no FTP</h2>
+                <p class="card__description">Restrinja o recebimento às redes e IPs de origem dos equipamentos.</p>
+            </div>
+            @if($ftpAccessAvailable)
+                <span class="badge badge--{{ $ftpAccess['revision'] > 0 && $ftpAccess['revision'] === $ftpAccess['applied_revision'] ? 'success' : 'warning' }}">
+                    {{ $ftpAccess['revision'] > 0 && $ftpAccess['revision'] === $ftpAccess['applied_revision'] ? 'Aplicada no firewall' : 'Aguardando aplicação' }}
+                </span>
+            @endif
+        </div>
+        <div class="card__body">
+            @unless($ftpAccessAvailable)
+                <p>Esta configuração aguarda a atualização do banco.</p>
+            @else
+                <p>Informe um IPv4 por linha em formato CIDR; para um endereço único, use <code>/32</code>. A regra cobre a porta 21 e as portas passivas 30000–30009. Use os endereços vistos pelo servidor após o NAT.</p>
+                <form method="POST" action="{{ route('settings.ftp-access.update') }}" class="settings-form">
+                    @csrf @method('PUT')
+                    <div class="form-field">
+                        <label class="form-label" for="ftp_allowed_cidrs">Redes e IPs permitidos</label>
+                        <textarea class="form-control" id="ftp_allowed_cidrs" name="ftp_allowed_cidrs" rows="7" maxlength="4096" required
+                            @cannot('settings.manage') readonly @endcannot>{{ old('ftp_allowed_cidrs', implode("\n", $ftpAccess['cidrs'])) }}</textarea>
+                    </div>
+                    @can('settings.manage')
+                        <div class="settings-form__actions"><button class="btn btn--primary" type="submit">Salvar origens FTP</button></div>
+                    @endcan
+                </form>
+                <p class="form-help">Somente administradores podem alterar esta lista. Uma origem fora dela não consegue iniciar uma nova transferência FTP.</p>
+            @endunless
         </div>
     </section>
 

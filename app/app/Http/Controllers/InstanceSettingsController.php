@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Services\AuditEvents;
 use App\Services\BackupRetention;
+use App\Services\FtpAccessSettings;
 use App\Services\InstanceTimezone;
 use App\Services\RetentionSettings;
 use DateTimeZone;
@@ -15,7 +16,7 @@ use Illuminate\View\View;
 
 class InstanceSettingsController extends Controller
 {
-    public function edit(Request $request, InstanceTimezone $timezone, RetentionSettings $retentionSettings): View
+    public function edit(Request $request, InstanceTimezone $timezone, RetentionSettings $retentionSettings, FtpAccessSettings $ftpAccess): View
     {
         $this->authorize('settings.view');
 
@@ -50,6 +51,8 @@ class InstanceSettingsController extends Controller
             'retentionEnabled' => $retentionSettings->enabled(),
             'retentionAvailable' => $retentionSettings->available(),
             'retentionPreview' => $request->session()->get('retention_preview'),
+            'ftpAccessAvailable' => $ftpAccess->available(),
+            'ftpAccess' => $ftpAccess->get(),
         ]);
     }
 
@@ -62,6 +65,26 @@ class InstanceSettingsController extends Controller
         $timezone->set($validated['timezone']);
 
         return redirect()->route('settings.edit')->with('success', 'Fuso horário atualizado.');
+    }
+
+    public function updateFtpAccess(Request $request, FtpAccessSettings $ftpAccess): RedirectResponse
+    {
+        $this->authorize('settings.manage');
+        abort_unless($ftpAccess->available(), 503);
+        $validated = $request->validate([
+            'ftp_allowed_cidrs' => ['required', 'string', 'max:4096'],
+        ]);
+        $cidrs = $ftpAccess->normalize($validated['ftp_allowed_cidrs']);
+        $before = $ftpAccess->get()['cidrs'];
+        if ($before !== $cidrs) {
+            $revision = $ftpAccess->set($cidrs);
+            app(AuditEvents::class)->record('ftp.access.changed', 'application_settings', '1', 'Origens FTP',
+                'success', ['cidrs_before' => $before, 'cidrs_after' => $cidrs, 'revision' => $revision],
+                $request->user()->id, $request->ip());
+        }
+
+        return redirect()->to(route('settings.edit').'#ftp-access')
+            ->with('success', 'Origens FTP salvas. A aplicação no firewall será confirmada nesta tela.');
     }
 
     public function previewRetention(Request $request, BackupRetention $retention): RedirectResponse
