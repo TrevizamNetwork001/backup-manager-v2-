@@ -55,8 +55,8 @@
                         <div class="failures-list__identity">
                             <span class="failures-list__rank">{{ str_pad((string) $loop->iteration, 2, '0', STR_PAD_LEFT) }}</span>
                             <div class="failures-list__name">
-                                <a href="{{ route('reports.executions', ['error_code' => $row['error_code']]) }}"><code>{{ $row['error_code'] }}</code></a>
-                                <span class="failures-list__detail">Última ocorrência: {{ app(\App\Services\InstanceTimezone::class)->format(\Carbon\CarbonImmutable::parse($row['last_seen_at'])) }}</span>
+                                <a href="{{ route('reports.executions', ['error_code' => $row['error_code']]) }}">{{ \App\Support\ErrorCodes::message($row['error_code']) }}</a>
+                                <span class="failures-list__detail">Código <code>{{ $row['error_code'] }}</code> · Última ocorrência: {{ app(\App\Services\InstanceTimezone::class)->format(\Carbon\CarbonImmutable::parse($row['last_seen_at'])) }}</span>
                             </div>
                         </div>
                         <div class="failures-list__meta">

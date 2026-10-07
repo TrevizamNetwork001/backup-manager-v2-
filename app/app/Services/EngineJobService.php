@@ -15,6 +15,38 @@ use Illuminate\Validation\ValidationException;
 
 class EngineJobService
 {
+    /**
+     * Mensagem em português para cada código de erro do motor (usada ao falhar uma
+     * execução e nos relatórios). Mantida junto de RETRYABLE_CODES e de engine/errors.py.
+     */
+    public const ERROR_MESSAGES = [
+        'SSH_CONNECT_FAILED' => 'Conexão SSH falhou.', 'SSH_AUTH_FAILED' => 'Autenticação SSH falhou.',
+        'SSH_CONNECTION_REFUSED' => 'Conexão SSH recusada.', 'SSH_NEGOTIATION_FAILED' => 'Negociação SSH incompatível.',
+        'SSH_TIMEOUT' => 'Tempo limite SSH excedido.', 'UNSUPPORTED_VENDOR' => 'Vendor não suportado.',
+        'UNSUPPORTED_POLICY' => 'Política não suportada.', 'CREDENTIAL_INVALID' => 'Credencial incompatível ou inativa.',
+        'EXPORT_FAILED' => 'Export de configuração falhou.', 'ARTIFACT_INVALID' => 'Artefato inválido.',
+        'STORAGE_FAILED' => 'Falha no armazenamento local.', 'ENGINE_FAILED' => 'Falha interna do engine.',
+        'SSH_HOST_KEY_UNKNOWN' => 'Chave SSH desconhecida; aprove a chave observada no equipamento.',
+        'SSH_HOST_KEY_MISMATCH' => 'Chave SSH diferente da confiada; verifique e aprove explicitamente.',
+        'HUAWEI_PROMPT_FAILED' => 'Prompt Huawei não reconhecido.',
+        'HUAWEI_PAGING_FAILED' => 'Paginação Huawei não pôde ser desativada.',
+        'HUAWEI_EXPORT_FAILED' => 'Export de configuração Huawei falhou.',
+        'VSOL_PROMPT_FAILED' => 'Prompt da OLT VSOL não reconhecido.',
+        'VSOL_PRIVILEGED_MODE_FAILED' => 'A OLT VSOL não liberou o modo privilegiado.',
+        'VSOL_EXPORT_FAILED' => 'Export de configuração da OLT VSOL falhou.',
+        'FTP_ACCOUNT_UNAVAILABLE' => 'Conta FTP indisponível.',
+        'FTP_TRIGGER_FAILED' => 'Disparo do backup FTP falhou.',
+        'FTP_RECEIVE_TIMEOUT' => 'Arquivo FTP não recebido no prazo.',
+        'A10_RECEIVE_TIMEOUT' => 'Arquivo do A10 não recebido no prazo.',
+        'A10_VERSION_UNSUPPORTED' => 'Versão ACOS não homologada para backup.',
+        'A10_TRANSFER_FAILED' => 'O A10 recusou ou interrompeu o envio do backup.',
+        'A10_RECEIVER_UNAVAILABLE' => 'Recepção do backup A10 indisponível.',
+        'FTP_FILE_INVALID' => 'Arquivo FTP inválido.',
+        'FTP_FILE_UNCORRELATED' => 'Arquivo FTP sem execução correspondente.',
+        'FTP_STORAGE_FAILED' => 'Falha ao armazenar arquivo FTP.',
+        'FTP_QUARANTINED' => 'Arquivo FTP movido para quarentena.',
+    ];
+
     // Mirrors engine/errors.py RETRYABLE_CODES (see docs/ENGINE_QUEUE.md for why
     // this can't be a single shared source of truth across PHP/Python) plus two
     // codes that only ever originate on this side (ENGINE_STALE, ENGINE_TIMEOUT
@@ -579,33 +611,7 @@ class EngineJobService
 
     public function fail(int $id, string $code, ?string $workerId = null): void
     {
-        $messages = [
-            'SSH_CONNECT_FAILED' => 'Conexão SSH falhou.', 'SSH_AUTH_FAILED' => 'Autenticação SSH falhou.',
-            'SSH_CONNECTION_REFUSED' => 'Conexão SSH recusada.', 'SSH_NEGOTIATION_FAILED' => 'Negociação SSH incompatível.',
-            'SSH_TIMEOUT' => 'Tempo limite SSH excedido.', 'UNSUPPORTED_VENDOR' => 'Vendor não suportado.',
-            'UNSUPPORTED_POLICY' => 'Política não suportada.', 'CREDENTIAL_INVALID' => 'Credencial incompatível ou inativa.',
-            'EXPORT_FAILED' => 'Export de configuração falhou.', 'ARTIFACT_INVALID' => 'Artefato inválido.',
-            'STORAGE_FAILED' => 'Falha no armazenamento local.', 'ENGINE_FAILED' => 'Falha interna do engine.',
-            'SSH_HOST_KEY_UNKNOWN' => 'Chave SSH desconhecida; aprove a chave observada no equipamento.',
-            'SSH_HOST_KEY_MISMATCH' => 'Chave SSH diferente da confiada; verifique e aprove explicitamente.',
-            'HUAWEI_PROMPT_FAILED' => 'Prompt Huawei não reconhecido.',
-            'HUAWEI_PAGING_FAILED' => 'Paginação Huawei não pôde ser desativada.',
-            'HUAWEI_EXPORT_FAILED' => 'Export de configuração Huawei falhou.',
-            'VSOL_PROMPT_FAILED' => 'Prompt da OLT VSOL não reconhecido.',
-            'VSOL_PRIVILEGED_MODE_FAILED' => 'A OLT VSOL não liberou o modo privilegiado.',
-            'VSOL_EXPORT_FAILED' => 'Export de configuração da OLT VSOL falhou.',
-            'FTP_ACCOUNT_UNAVAILABLE' => 'Conta FTP indisponível.',
-            'FTP_TRIGGER_FAILED' => 'Disparo do backup FTP falhou.',
-            'FTP_RECEIVE_TIMEOUT' => 'Arquivo FTP não recebido no prazo.',
-            'A10_RECEIVE_TIMEOUT' => 'Arquivo do A10 não recebido no prazo.',
-            'A10_VERSION_UNSUPPORTED' => 'Versão ACOS não homologada para backup.',
-            'A10_TRANSFER_FAILED' => 'O A10 recusou ou interrompeu o envio do backup.',
-            'A10_RECEIVER_UNAVAILABLE' => 'Recepção do backup A10 indisponível.',
-            'FTP_FILE_INVALID' => 'Arquivo FTP inválido.',
-            'FTP_FILE_UNCORRELATED' => 'Arquivo FTP sem execução correspondente.',
-            'FTP_STORAGE_FAILED' => 'Falha ao armazenar arquivo FTP.',
-            'FTP_QUARANTINED' => 'Arquivo FTP movido para quarentena.',
-        ];
+        $messages = self::ERROR_MESSAGES;
         if (! isset($messages[$code])) {
             $code = 'ENGINE_FAILED';
         }
