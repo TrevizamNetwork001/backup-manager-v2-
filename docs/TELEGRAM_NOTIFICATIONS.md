@@ -65,6 +65,36 @@ chamado a cada minuto por `notifications:run` (só com o canal habilitado).
   reais (`kind=test`), sem consumir a chave do período.
 - Ao ativar depois do horário configurado, o resumo do período anterior sai logo.
 
+## Alerta de login FTP recusado
+
+Motivo: um equipamento com a senha FTP diferente da conta do servidor tenta enviar e é
+recusado, sem nunca gerar arquivo — o BNG-NE8000 ficou assim por três dias sem nenhum aviso.
+
+```text
+pure-ftpd (syslog) -> docker/ftp/server.py (/dev/log) -> docker logs  +  auth-events.log
+auth-events.log (volume ftp-log, leitura no scheduler) -> FtpAuthFailures -> NotificationManager
+```
+
+- **Registro:** `server.py` cria `/dev/log`, encaminha tudo ao `docker logs` e grava em
+  `/var/log/backup-ftp/auth-events.log` apenas `epoch<TAB>F|S<TAB>usuário<TAB>ip`
+  (F = recusa, S = login com sucesso) **de contas provisionadas**. Usernames desconhecidos
+  (ruído da internet) são descartados, e o padrão do usuário não aceita espaço, então uma
+  linha não pode ser forjada. O arquivo gira em 512 KB (`.1`).
+- **Leitura:** `FtpAuthFailures` (stateless; a janela é o estado) lê os dois arquivos, conta as
+  recusas de cada conta desde o último sucesso e só considera contas ativas cadastradas.
+  Padrão: **3 recusas em 30 min** (`BACKUP_FTP_AUTH_THRESHOLD`,
+  `BACKUP_FTP_AUTH_WINDOW_MINUTES`; `BACKUP_FTP_LOG_DIR`).
+- **Alerta:** condição `ftp-auth:<usuário>`, "Login FTP recusado: <equipamento>", com a
+  contagem, o último IP e a orientação de rotacionar a conta e reconfigurar o equipamento.
+  Segue cooldown, agrupamento e janela de manutenção como as demais.
+- **Normalização:** quando o equipamento volta a logar (S) ou passam 30 min sem recusas.
+- **Falha de leitura:** se o diretório ou o arquivo não puder ser lido, as condições `ftp-auth`
+  já ativas são **mantidas**; uma leitura falha nunca produz um "normalizado" falso.
+- Compose: volume `ftp-log` (escrita no `ftp`, somente leitura no `scheduler`).
+- Homologado em 07/10/2026 às 18:00 com 3 logins errados na conta `bng-ne8000`; o IP mostrado
+  foi o da rede interna do Docker (teste feito do próprio servidor).
+- Testes: `FtpAuthFailuresTest` (5 casos) e testes do launcher em `docker/ftp/test_admin.py`.
+
 ## Tela (Configurações → Notificações)
 
 - Token do bot: cifrado (`Crypt`), nunca vem no HTML. O botão do **olho** busca o

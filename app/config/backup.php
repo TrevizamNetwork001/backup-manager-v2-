@@ -6,6 +6,11 @@ return [
     'max_artifact_bytes' => 8 * 1024 * 1024,
     'a10_max_bytes' => 64 * 1024 * 1024,
     'a10_enabled' => env('BACKUP_A10_ENABLED', false),
+    // Login events written by the FTP container (read-only volume) feed the
+    // "login recusado" alert: N refusals of one account inside the window.
+    'ftp_log_dir' => env('BACKUP_FTP_LOG_DIR', '/var/log/backup-ftp'),
+    'ftp_auth_threshold' => (int) env('BACKUP_FTP_AUTH_THRESHOLD', 3),
+    'ftp_auth_window_minutes' => (int) env('BACKUP_FTP_AUTH_WINDOW_MINUTES', 30),
     'ftp_max_bytes' => (int) env('BACKUP_FTP_MAX_BYTES', 8 * 1024 * 1024),
     'engine_stale_seconds' => (int) env('BACKUP_ENGINE_STALE_SECONDS', 300),
     // Overall wall-clock budget for a single execution, independent of heartbeat

@@ -143,6 +143,7 @@ services:
       - ./app/storage:/var/www/html/storage
       - ./app/bootstrap/cache:/var/www/html/bootstrap/cache
       - backups:/data/backups
+      - ftp-log:/var/log/backup-ftp:ro
     networks:
       - backup-manager-v2
     depends_on:
@@ -171,6 +172,7 @@ services:
     volumes:
       - ftp-data:/data/ftp
       - ftp-db:/etc/backup-ftp:ro
+      - ftp-log:/var/log/backup-ftp
     networks:
       - backup-manager-v2
     depends_on:
@@ -290,5 +292,6 @@ volumes:
   backups:
   ftp-data:
   ftp-db:
+  ftp-log:
   engine-health:
   a10-scp-data:

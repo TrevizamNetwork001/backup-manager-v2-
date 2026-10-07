@@ -52,6 +52,7 @@ class NotificationManager
         private readonly DeviceBackupHealth $devices,
         private readonly InstanceTimezone $timezone,
         private readonly NotificationSummary $summary,
+        private readonly FtpAuthFailures $ftpAuth,
     ) {}
 
     /** @return array{queued:int,sent:int,failed:int} */
@@ -80,6 +81,40 @@ class NotificationManager
             $conditions["device:{$row['device_id']}"] = [
                 'label' => "Backup com problema: {$row['name']}", 'severity' => $row['status'],
                 'reason' => $row['reason'], 'detail' => ucfirst($reason).'.',
+            ];
+        }
+
+        return $conditions + $this->ftpAuthConditions();
+    }
+
+    /**
+     * Accounts whose FTP logins keep being refused (typically a device whose
+     * stored password drifted from the panel's). If the log cannot be read, the
+     * conditions already active are carried over so a read failure never
+     * fabricates a "normalized" message.
+     *
+     * @return array<string, array{label:string,severity:string,reason:string,detail:string}>
+     */
+    private function ftpAuthConditions(): array
+    {
+        $active = $this->ftpAuth->active();
+        if ($active === null) {
+            return DB::table('notification_states')->where('active', true)
+                ->where('condition_key', 'like', 'ftp-auth:%')->get()
+                ->mapWithKeys(fn ($s) => [$s->condition_key => [
+                    'label' => $s->label, 'severity' => 'warning', 'reason' => (string) $s->reason, 'detail' => '',
+                ]])->all();
+        }
+
+        $window = (int) config('backup.ftp_auth_window_minutes');
+        $conditions = [];
+        foreach ($active as $username => $failure) {
+            $conditions["ftp-auth:{$username}"] = [
+                'label' => "Login FTP recusado: {$failure['label']}",
+                'severity' => 'warning',
+                'reason' => 'ftp_auth_refused',
+                'detail' => "{$failure['count']} recusas nos últimos {$window} min (último IP {$failure['last_ip']}). "
+                    .'A senha configurada no equipamento pode estar diferente da conta no servidor: rotacione a conta no painel e reconfigure o equipamento.',
             ];
         }
 

@@ -27,6 +27,31 @@ class FtpAdminTests(unittest.TestCase):
             ftp_server.format_log_line(b'<179>pure-ftpd: (?@1.2.3.4) [WARNING] Authentication failed for user [x]\x00\n'))
         self.assertEqual(500, len(ftp_server.format_log_line(b'a' * 5000)))
 
+    def test_auth_events_keep_only_known_accounts_and_cannot_be_forged(self):
+        users = frozenset({'bng-ne8000'})
+        failed = 'pure-ftpd: (?@10.1.2.3) [WARNING] Authentication failed for user [bng-ne8000]'
+        self.assertEqual('100\tF\tbng-ne8000\t10.1.2.3', ftp_server.parse_auth_event(failed, 100, users))
+        self.assertEqual('100\tS\tbng-ne8000\t10.1.2.3', ftp_server.parse_auth_event(
+            'pure-ftpd: (bng-ne8000@10.1.2.3) [INFO] bng-ne8000 is now logged in', 100, users))
+        self.assertIsNone(ftp_server.parse_auth_event(failed.replace('bng-ne8000', 'root'), 100, users))
+        self.assertIsNone(ftp_server.parse_auth_event(
+            'pure-ftpd: (?@1.1.1.1) [WARNING] Authentication failed for user [bng-ne8000\tS\tx]', 100, users))
+        self.assertIsNone(ftp_server.parse_auth_event('pure-ftpd: (?@1.1.1.1) [INFO] New connection', 100, users))
+
+    def test_auth_events_are_appended_and_rotated(self):
+        import tempfile
+        users = frozenset({'bng-ne8000'})
+        line = 'pure-ftpd: (?@10.1.2.3) [WARNING] Authentication failed for user [bng-ne8000]'
+        with tempfile.TemporaryDirectory() as directory:
+            ftp_server.record_auth_event(line, directory, 100, users)
+            ftp_server.record_auth_event(line.replace('bng-ne8000', 'nobody'), directory, 101, users)
+            path = Path(directory) / ftp_server.EVENT_FILE
+            self.assertEqual('100\tF\tbng-ne8000\t10.1.2.3\n', path.read_text())
+            path.write_text('x' * (ftp_server.EVENT_ROTATE_BYTES + 1))
+            ftp_server.record_auth_event(line, directory, 102, users)
+            self.assertEqual('102\tF\tbng-ne8000\t10.1.2.3\n', path.read_text())
+            self.assertTrue((Path(directory) / (ftp_server.EVENT_FILE + '.1')).exists())
+
     def test_server_passive_address_accepts_private_ipv4_and_rejects_commands(self):
         self.assertEqual(['-P', '10.23.45.67'], ftp_server.arguments('10.23.45.67')[-2:])
         self.assertNotIn('-P', ftp_server.arguments())

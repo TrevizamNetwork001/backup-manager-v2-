@@ -27,7 +27,7 @@ class NotificationTest extends TestCase
         $manager = \Mockery::mock(NotificationManager::class, [
             app(NotificationSettings::class), app(EngineHealth::class),
             app(\App\Services\DeviceBackupHealth::class), app(\App\Services\InstanceTimezone::class),
-            app(\App\Services\NotificationSummary::class),
+            app(\App\Services\NotificationSummary::class), app(\App\Services\FtpAuthFailures::class),
         ])->makePartial();
         $manager->shouldReceive('conditions')->andReturnUsing(fn () => $conditions);
 
