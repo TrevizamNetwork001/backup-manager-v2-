@@ -5,6 +5,7 @@ import fcntl
 import ipaddress
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -14,10 +15,17 @@ from pathlib import Path
 PROJECT = Path('/opt/backup-manager-v2')
 CONFIG = Path('/etc/backup-manager-v2/ftp-acl.json')
 LOCK = Path('/run/backup-manager-ftp-acl.lock')
-INTERFACE = 'ens192'
-DESTINATION = '45.239.157.250'
+INTERFACE = os.environ.get('BACKUP_FTP_ACL_INTERFACE', 'ens192')
+DESTINATION = os.environ.get('BACKUP_FTP_ACL_DESTINATION', '45.239.157.250')
 PORTS = '21,30000:30009'
 CHAINS = ('BM_FTP_A', 'BM_FTP_B')
+
+
+def validate_host_settings():
+    if not re.fullmatch(r'[A-Za-z0-9_.-]{1,15}', INTERFACE):
+        raise ValueError('invalid_interface')
+    if not isinstance(ipaddress.ip_address(DESTINATION), ipaddress.IPv4Address):
+        raise ValueError('invalid_destination')
 
 
 def command(*args, timeout=20):
@@ -94,6 +102,7 @@ def persist(data):
 def main():
     if os.geteuid() != 0:
         raise SystemExit('root_required')
+    validate_host_settings()
     with LOCK.open('w') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         os.chdir(PROJECT)

@@ -23,6 +23,7 @@
 # APP_KEY must be preserved separately, by you, in a password manager or
 # secrets vault — see docs/DISASTER_RECOVERY.md.
 set -euo pipefail
+umask 077
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
@@ -32,6 +33,7 @@ DUMP_FILE="${OUT_DIR}/system-backup-${TIMESTAMP}.dump"
 MANIFEST_FILE="${OUT_DIR}/system-backup-${TIMESTAMP}.manifest.json"
 
 mkdir -p "$OUT_DIR"
+chmod 700 "$OUT_DIR"
 
 echo "==> Dumping PostgreSQL (custom format) to ${DUMP_FILE}"
 docker compose exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" --format=custom' > "$DUMP_FILE"

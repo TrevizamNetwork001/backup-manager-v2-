@@ -4,6 +4,7 @@ After=docker.service
 
 [Service]
 Type=oneshot
+EnvironmentFile=-/etc/backup-manager-v2/ftp-acl.env
 ExecStart=/usr/bin/python3 /opt/backup-manager-v2/scripts/ftp_acl_host.py
 Restart=on-failure
 RestartSec=2s
