@@ -23,7 +23,7 @@
                     @if($user->avatar_path)
                         <img src="{{ route('profile.avatar.show') }}" alt="">
                     @elseif($user->avatar_preset)
-                        <img src="{{ asset('assets/avatars/'.$user->avatar_preset.'.png') }}" alt="">
+                        <img src="{{ asset('assets/avatars/'.$user->avatar_preset.'.png') }}?v={{ filemtime(public_path('assets/avatars/'.$user->avatar_preset.'.png')) }}" alt="">
                     @else
                         {{ mb_strtoupper(mb_substr($user->name, 0, 1)) }}
                     @endif
@@ -57,7 +57,7 @@
                             @foreach(\App\Models\User::AVATAR_PRESETS as $preset)
                                 <label class="profile-preset">
                                     <input type="radio" name="avatar_preset" value="{{ $preset }}" @checked(old('avatar_preset', $user->avatar_preset) === $preset) required>
-                                    <span class="profile-preset__image" aria-hidden="true"><img src="{{ asset('assets/avatars/'.$preset.'.png') }}" alt=""></span>
+                                    <span class="profile-preset__image" aria-hidden="true"><img src="{{ asset('assets/avatars/'.$preset.'.png') }}?v={{ filemtime(public_path('assets/avatars/'.$preset.'.png')) }}" alt=""></span>
                                     <span>{{ \App\Models\User::AVATAR_PRESET_LABELS[$preset] }}</span>
                                 </label>
                             @endforeach

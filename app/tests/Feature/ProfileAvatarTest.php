@@ -64,13 +64,14 @@ class ProfileAvatarTest extends TestCase
             ->assertSessionHasErrors('avatar_preset');
         $this->assertSame('verde', $user->fresh()->avatar_preset);
 
-        foreach (['homem-careca' => 'Homem careca', 'boi' => 'Boi'] as $preset => $label) {
+        foreach (['homem-careca' => 'Homem', 'boi' => 'Boi', 'kuririn' => 'Kuririn'] as $preset => $label) {
             $this->patch(route('profile.avatar.preset'), ['avatar_preset' => $preset])
                 ->assertRedirect(route('profile.edit'));
             $this->assertSame($preset, $user->fresh()->avatar_preset);
             $this->get(route('profile.edit'))->assertOk()->assertSee($label)
                 ->assertSee('assets/avatars/'.$preset.'.png');
         }
+        $this->get(route('profile.edit'))->assertDontSee('Homem careca');
     }
 
     public function test_invalid_upload_does_not_change_avatar(): void

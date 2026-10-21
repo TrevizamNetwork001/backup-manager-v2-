@@ -140,7 +140,7 @@
                     @if(auth()->user()->avatar_path)
                         <img src="{{ route('profile.avatar.show') }}" alt="">
                     @elseif(auth()->user()->avatar_preset)
-                        <img src="{{ asset('assets/avatars/'.auth()->user()->avatar_preset.'.png') }}" alt="">
+                        <img src="{{ asset('assets/avatars/'.auth()->user()->avatar_preset.'.png') }}?v={{ filemtime(public_path('assets/avatars/'.auth()->user()->avatar_preset.'.png')) }}" alt="">
                     @else
                         {{ mb_strtoupper(mb_substr(auth()->user()->name, 0, 1)) }}
                     @endif

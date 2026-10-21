@@ -11,7 +11,7 @@ class User extends Authenticatable
 {
     use HasFactory, Notifiable;
 
-    public const AVATAR_PRESETS = ['azul', 'verde', 'violeta', 'laranja', 'rosa', 'grafite', 'homem-careca', 'boi'];
+    public const AVATAR_PRESETS = ['azul', 'verde', 'violeta', 'laranja', 'rosa', 'grafite', 'homem-careca', 'boi', 'kuririn'];
 
     public const AVATAR_PRESET_LABELS = [
         'azul' => 'Golfinho',
@@ -20,8 +20,9 @@ class User extends Authenticatable
         'laranja' => 'Raposa',
         'rosa' => 'Flor',
         'grafite' => 'Robô',
-        'homem-careca' => 'Homem careca',
+        'homem-careca' => 'Homem',
         'boi' => 'Boi',
+        'kuririn' => 'Kuririn',
     ];
 
     protected $fillable = [
