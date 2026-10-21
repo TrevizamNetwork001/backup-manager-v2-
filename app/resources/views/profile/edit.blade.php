@@ -57,7 +57,7 @@
                             @foreach(\App\Models\User::AVATAR_PRESETS as $preset)
                                 <label class="profile-preset">
                                     <input type="radio" name="avatar_preset" value="{{ $preset }}" @checked(old('avatar_preset', $user->avatar_preset) === $preset) required>
-                                    <span class="profile-preset__image" aria-hidden="true"><img src="{{ asset('assets/avatars/'.$preset.'.png') }}?v={{ filemtime(public_path('assets/avatars/'.$preset.'.png')) }}" alt=""></span>
+                                    <span class="profile-preset__image" aria-hidden="true"><img src="{{ asset('assets/avatars/'.$preset.'.png') }}?v={{ filemtime(public_path('assets/avatars/'.$preset.'.png')) }}" alt="" loading="lazy" decoding="async"></span>
                                     <span>{{ \App\Models\User::AVATAR_PRESET_LABELS[$preset] }}</span>
                                 </label>
                             @endforeach
