@@ -22,7 +22,10 @@
 <div class="users-list stack">
 
 @if(session('success') && !isset($editingUser))
-    <div class="alert alert--success" role="status">{{ session('success') }}</div>
+    <div class="alert alert--success toast-notice" role="status" data-auto-dismiss data-toast="true">{{ session('success') }}</div>
+@endif
+@if(session('warning'))
+    <div class="alert alert--warning" role="alert">{{ session('warning') }}</div>
 @endif
 <div class="toolbar">
     <div class="toolbar__primary">
@@ -84,6 +87,13 @@
                                             {{ $user->is_active ? 'Desativar' : 'Ativar' }}
                                         </button>
                                     </form>
+                                    @can('users.manage')
+                                        <form method="POST" action="{{ route('users.destroy', $user) }}" onsubmit="return confirm('Excluir este usuário? A conta e suas sessões serão removidas. O histórico de auditoria será preservado.');">
+                                            @csrf
+                                            @method('DELETE')
+                                            <button type="submit" class="btn btn--ghost btn--sm table-actions__danger">Excluir</button>
+                                        </form>
+                                    @endcan
                                 @endif
                             </div>
                         </td>

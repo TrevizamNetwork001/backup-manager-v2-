@@ -149,6 +149,41 @@ class UserController extends Controller
             ->with('success', $user->is_active ? 'Usuário ativado.' : 'Usuário desativado.');
     }
 
+    public function destroy(Request $request, User $user, AuditEvents $audit): RedirectResponse
+    {
+        $this->authorize('users.manage');
+
+        if ($user->id === $request->user()->id) {
+            return redirect()->route('users.index')->with('warning', 'Você não pode excluir sua própria conta.');
+        }
+
+        $deleted = DB::transaction(function () use ($user, $request, $audit): bool {
+            $activeAdmins = $this->lockedActiveAdmins();
+            $current = User::query()->lockForUpdate()->findOrFail($user->id);
+
+            if ($current->role === Rbac::ROLE_ADMIN && $current->is_active &&
+                $activeAdmins->where('id', '!=', $current->id)->isEmpty()) {
+                return false;
+            }
+
+            DB::table('sessions')->where('user_id', $current->id)->delete();
+            DB::table('password_reset_tokens')->where('email', $current->email)->delete();
+            $current->delete();
+
+            $audit->record('user.deleted', 'user', (string) $current->id, $current->name, 'success', [
+                'target_user_id' => $current->id,
+                'target_user_name' => $current->name,
+                'target_user_email' => $current->email,
+                'old_role' => $current->role,
+            ], $request->user()->id, $request->ip());
+
+            return true;
+        });
+
+        return redirect()->route('users.index')->with($deleted ? 'success' : 'warning',
+            $deleted ? 'Usuário excluído com sucesso.' : 'Não é possível excluir o último administrador ativo.');
+    }
+
     /**
      * Must be called inside the same DB::transaction() that performs the
      * save. Locks every active-admin row first so two concurrent requests

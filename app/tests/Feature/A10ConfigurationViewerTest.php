@@ -72,6 +72,11 @@ class A10ConfigurationViewerTest extends TestCase
     {
         $artifact = $this->artifact();
         $this->actingAs(User::factory()->viewer()->create());
+        $this->get(route('backup-artifacts.index', ['artifact' => $artifact->id]))
+            ->assertOk()->assertSee(route('backup-artifacts.versions', $artifact));
+        $this->get(route('backup-artifacts.show', $artifact))
+            ->assertOk()->assertSee(route('backup-artifacts.versions', $artifact))
+            ->assertSee(route('backup-artifacts.a10-configuration', [$artifact, 'slot' => 'pri']));
         $this->get(route('backup-artifacts.a10-configuration', [$artifact, 'slot' => 'pri']))
             ->assertOk()->assertSee('hostname A10-TEST')
             ->assertSee('&lt;script&gt;alert(1)&lt;/script&gt;', false)

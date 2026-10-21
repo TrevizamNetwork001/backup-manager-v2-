@@ -12,6 +12,12 @@
     <div class="page-header__actions">
         <a href="{{ route('backup-artifacts.index') }}" class="btn btn--secondary"><x-icon name="arrow-right" size="sm" /> Voltar aos artefatos</a>
         @can('backup_artifacts.download')
+            @if($backupArtifact->type === 'config' || ($backupArtifact->type === 'binary' && $backupArtifact->backupPolicy?->method === 'a10_system'))
+                <a href="{{ route('backup-artifacts.versions', $backupArtifact) }}" class="btn btn--secondary">Ver versões e diferenças</a>
+            @endif
+            @if($backupArtifact->type === 'binary' && $backupArtifact->backupPolicy?->method === 'a10_system' && $backupArtifact->status === 'available')
+                <a href="{{ route('backup-artifacts.a10-configuration', [$backupArtifact, 'slot' => 'pri']) }}" class="btn btn--secondary">Ver configuração A10</a>
+            @endif
             @if($backupArtifact->status === 'available')<a href="{{ route('backup-artifacts.download', $backupArtifact) }}" class="btn btn--primary">Baixar arquivo</a>@endif
         @endcan
     </div>

@@ -117,7 +117,7 @@
         <div class="card__body">
             <p class="form-help">Usa o mesmo bot configurado acima. Crie um supergrupo (ou um tópico) só para backups, adicione o bot e informe o ID abaixo. Só os backups feitos <strong>depois de ligar</strong> são enviados. Arquivos de texto vão em <code>.zip</code>; os já compactados seguem como estão. Limite do Telegram: 50&nbsp;MB por arquivo. <strong>Atenção:</strong> as configurações dos equipamentos contêm dados sensíveis (hashes e acessos); deixe o grupo privado e só com quem precisa.</p>
             <p>Enviados: <strong>{{ $copyStats['sent'] }}</strong> · Pendentes: {{ $copyStats['pending'] }} · Falhas nas últimas 24 h: {{ $copyStats['failed24h'] }} · Último envio: {{ $fmt($copyStats['lastSent']) }}</p>
-            <form method="POST" action="{{ route('settings.notifications.backup-copy.update') }}" class="settings-form">
+            <form method="POST" action="{{ route('settings.notifications.backup-copy.update') }}" class="settings-form" id="backup-copy-form">
                 @csrf @method('PUT')
                 <label class="form-check"><input type="checkbox" name="backup_copy_enabled" value="1" @checked(old('backup_copy_enabled', $settings->backup_copy_enabled))> Enviar os backups para o Telegram</label>
                 <div class="form-field">
@@ -131,30 +131,48 @@
                     <small class="form-help">Só para supergrupos com tópicos. Vazio = chat geral do grupo.</small>
                     @error('backup_copy_thread_id')<span class="form-error">{{ $message }}</span>@enderror
                 </div>
-                @can('settings.manage')
-                    <div class="settings-form__actions"><button class="btn btn--primary" type="submit">Salvar cópia de backups</button></div>
-                @endcan
             </form>
             @can('settings.manage')
-                <form method="POST" action="{{ route('settings.notifications.backup-copy.test') }}" class="settings-form">
-                    @csrf
-                    <button class="btn btn--secondary" type="submit">Enviar arquivo de teste</button>
-                    <small class="form-help">Salve antes. Envia um arquivo de texto ao grupo de backups e mostra aqui se funcionou.</small>
-                </form>
+                <div class="notification-copy-actions">
+                    <button class="btn btn--secondary btn--sm" type="submit" form="backup-copy-form">Salvar cópia de backups</button>
+                    <form method="POST" action="{{ route('settings.notifications.backup-copy.test') }}">
+                        @csrf
+                        <button class="btn btn--ghost btn--sm" type="submit">Enviar arquivo de teste</button>
+                    </form>
+                </div>
+                <small class="form-help notification-copy-actions__help">Salve antes de testar. O teste envia um arquivo de texto ao grupo de backups.</small>
             @endcan
         </div>
     </section>
 
     <section class="card settings-card" aria-labelledby="tg-history">
-        <div class="card__header"><div><h2 class="card__title" id="tg-history">Histórico recente</h2><p class="card__description">Últimas 30 mensagens. Erros mostram apenas códigos seguros.</p></div></div>
-        <div class="card__body">
-            @forelse($history as $item)
-                <p><strong>{{ $kindLabel[$item->kind] ?? $item->kind }}</strong> · {{ $item->title }}
-                    <br><small>{{ $fmt($item->created_at) }} · {{ $statusLabel[$item->status] ?? $item->status }}@if($item->attempts) · tentativa {{ $item->attempts }}@endif @if($item->last_error) · {{ $errorLabels[$item->last_error] ?? 'Falha no envio' }}@endif</small></p>
-            @empty
-                <p>Nenhuma notificação registrada ainda.</p>
-            @endforelse
+        <div class="card__header">
+            <div><h2 class="card__title" id="tg-history">Histórico recente</h2><p class="card__description">As últimas 30 mensagens enviadas ou agendadas.</p></div>
+            <span class="badge badge--neutral">{{ $history->count() }} {{ $history->count() === 1 ? 'registro' : 'registros' }}</span>
         </div>
+        @if($history->isEmpty())
+            <div class="notification-history__empty">
+                <strong>Nenhuma mensagem registrada</strong>
+                <span>Os envios e as tentativas aparecerão aqui.</span>
+            </div>
+        @else
+            <ul class="notification-history">
+                @foreach($history as $item)
+                    <li class="notification-history__item">
+                        <div class="notification-history__main">
+                            <div class="notification-history__details">
+                                <strong class="notification-history__title">{{ $item->title }}</strong>
+                                <span class="notification-history__meta">{{ $kindLabel[$item->kind] ?? $item->kind }} <span aria-hidden="true">·</span> {{ $fmt($item->created_at) }}@if($item->attempts) <span aria-hidden="true">·</span> {{ $item->attempts }}ª tentativa @endif</span>
+                            </div>
+                            <span class="badge badge--{{ ['sent' => 'success', 'failed' => 'danger', 'pending' => 'warning'][$item->status] ?? 'neutral' }}">{{ $statusLabel[$item->status] ?? $item->status }}</span>
+                        </div>
+                        @if($item->last_error)
+                            <p class="notification-history__error">{{ $errorLabels[$item->last_error] ?? 'Falha no envio' }}</p>
+                        @endif
+                    </li>
+                @endforeach
+            </ul>
+        @endif
     </section>
 </div>
 <script>

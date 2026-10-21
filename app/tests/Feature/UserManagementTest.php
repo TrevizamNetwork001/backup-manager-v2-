@@ -2,6 +2,8 @@
 
 namespace Tests\Feature;
 
+use App\Models\Device;
+use App\Models\Site;
 use App\Models\User;
 use App\Support\Rbac;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -96,6 +98,80 @@ class UserManagementTest extends TestCase
         $this->assertTrue(Hash::check('BrandNewPassword123!', $user->fresh()->password));
     }
 
+    public function test_admin_can_delete_another_user(): void
+    {
+        $admin = $this->admin();
+        $user = User::factory()->viewer()->create();
+        DB::table('sessions')->insert([
+            'id' => 'deleted-user-session', 'user_id' => $user->id, 'payload' => '', 'last_activity' => time(),
+        ]);
+
+        $this->get(route('users.index'))->assertOk()
+            ->assertSee('action="'.route('users.destroy', $user).'" onsubmit=', false);
+
+        $this->delete(route('users.destroy', $user))
+            ->assertRedirect(route('users.index'));
+
+        $this->get(route('users.index'))->assertOk()
+            ->assertSee('data-auto-dismiss data-toast="true"', false)
+            ->assertSeeText('Usuário excluído com sucesso.');
+
+        $this->assertDatabaseMissing('users', ['id' => $user->id]);
+        $this->assertDatabaseMissing('sessions', ['id' => 'deleted-user-session']);
+        $this->assertDatabaseHas('audit_events', [
+            'action' => 'user.deleted', 'resource_id' => (string) $user->id, 'actor_user_id' => $admin->id,
+        ]);
+    }
+
+    public function test_admin_cannot_delete_own_account(): void
+    {
+        $admin = $this->admin();
+        User::factory()->admin()->create();
+
+        $this->get(route('users.index'))->assertOk()
+            ->assertDontSee('action="'.route('users.destroy', $admin).'" onsubmit=', false);
+
+        $this->delete(route('users.destroy', $admin))
+            ->assertSessionHas('warning');
+
+        $this->assertDatabaseHas('users', ['id' => $admin->id]);
+    }
+
+    public function test_admin_can_delete_another_admin_when_one_remains_active(): void
+    {
+        $this->admin();
+        $otherAdmin = User::factory()->admin()->create();
+
+        $this->delete(route('users.destroy', $otherAdmin))
+            ->assertRedirect(route('users.index'));
+
+        $this->assertDatabaseMissing('users', ['id' => $otherAdmin->id]);
+    }
+
+    public function test_deleting_user_preserves_ftp_audit_history(): void
+    {
+        $admin = $this->admin();
+        $user = User::factory()->operator()->create();
+        $site = Site::create(['name' => 'Lab', 'is_active' => true]);
+        $device = Device::create([
+            'site_id' => $site->id, 'name' => 'OLT', 'management_ip' => '192.0.2.10',
+            'vendor' => 'Huawei', 'platform' => 'olt', 'is_active' => true,
+        ]);
+
+        $this->actingAs($user)->post(route('ftp.store'), [
+            'device_id' => $device->id, 'username' => 'oltteste',
+            'password' => 'ValidPassword123!', 'password_confirmation' => 'ValidPassword123!',
+        ])->assertOk();
+        $auditId = DB::table('ftp_account_audits')->where('user_id', $user->id)->value('id');
+        $this->assertNotNull($auditId);
+
+        $this->actingAs($admin)->delete(route('users.destroy', $user))
+            ->assertRedirect(route('users.index'));
+
+        $this->assertDatabaseMissing('users', ['id' => $user->id]);
+        $this->assertDatabaseHas('ftp_account_audits', ['id' => $auditId, 'user_id' => null]);
+    }
+
     // PROTEÇÕES
 
     public function test_last_admin_cannot_be_demoted(): void
@@ -164,6 +240,7 @@ class UserManagementTest extends TestCase
         $this->put(route('users.update', $target), [])->assertForbidden();
         $this->patch(route('users.status', $target), ['is_active' => '0'])->assertForbidden();
         $this->post(route('users.reset-password', $target), [])->assertForbidden();
+        $this->delete(route('users.destroy', $target))->assertForbidden();
     }
 
     // AUDITORIA

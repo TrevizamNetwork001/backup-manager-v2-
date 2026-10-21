@@ -35,6 +35,7 @@ class AuditPresenter
         'user.role_changed' => 'Alteração de papel do usuário',
         'user.enabled' => 'Ativação de usuário',
         'user.disabled' => 'Desativação de usuário',
+        'user.deleted' => 'Exclusão de usuário',
         'user.password_reset' => 'Redefinição de senha do usuário',
         'backup_artifact.delete' => 'Excluir artefato de backup',
         'backup_artifact.delete_failed' => 'Falha ao excluir artefato de backup',

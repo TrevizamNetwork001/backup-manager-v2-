@@ -175,6 +175,31 @@
 </div>
 @include('partials.session-timeout-modal')
 <script>
+    document.querySelectorAll('.alert--success[role="status"], .alert-success, .alert[data-auto-dismiss]').forEach((notice) => {
+        const dismiss = document.createElement('button');
+        dismiss.type = 'button';
+        dismiss.className = 'alert__dismiss';
+        dismiss.setAttribute('aria-label', 'Fechar mensagem');
+        dismiss.textContent = '×';
+        dismiss.addEventListener('click', () => notice.remove());
+        notice.appendChild(dismiss);
+
+        if (notice.dataset.persist === 'true') return;
+        if (notice.dataset.toast === 'true') {
+            window.setTimeout(() => notice.remove(), 5000);
+            return;
+        }
+
+        let timer = window.setTimeout(() => notice.remove(), 6000);
+        notice.addEventListener('mouseenter', () => window.clearTimeout(timer));
+        notice.addEventListener('mouseleave', () => {
+            timer = window.setTimeout(() => notice.remove(), 6000);
+        });
+        notice.addEventListener('focusin', () => window.clearTimeout(timer));
+        notice.addEventListener('focusout', () => {
+            timer = window.setTimeout(() => notice.remove(), 6000);
+        });
+    });
     document.querySelectorAll('.sidebar-nav .nav-link.active').forEach(link => link.setAttribute('aria-current', 'page'));
     const sidebar = document.querySelector('.sidebar');
     const sidebarSize = new ResizeObserver(() => {
@@ -245,27 +270,6 @@
                 button.classList.add('is-loading');
                 button.setAttribute('aria-busy', 'true');
             }
-        });
-    });
-    document.querySelectorAll('.alert--success[role="status"], .alert-success, .alert[data-auto-dismiss]').forEach((notice) => {
-        const dismiss = document.createElement('button');
-        dismiss.type = 'button';
-        dismiss.className = 'alert__dismiss';
-        dismiss.setAttribute('aria-label', 'Fechar mensagem');
-        dismiss.textContent = '×';
-        dismiss.addEventListener('click', () => notice.remove());
-        notice.appendChild(dismiss);
-
-        if (notice.dataset.persist === 'true') return;
-
-        let timer = window.setTimeout(() => notice.remove(), 6000);
-        notice.addEventListener('mouseenter', () => window.clearTimeout(timer));
-        notice.addEventListener('mouseleave', () => {
-            timer = window.setTimeout(() => notice.remove(), 6000);
-        });
-        notice.addEventListener('focusin', () => window.clearTimeout(timer));
-        notice.addEventListener('focusout', () => {
-            timer = window.setTimeout(() => notice.remove(), 6000);
         });
     });
 </script>

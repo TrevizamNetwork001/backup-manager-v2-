@@ -32,7 +32,7 @@ class BackupArtifactController extends Controller
             'artifact' => ['nullable', 'integer'],
         ]);
 
-        $query = BackupArtifact::query()->with(['device:id,name,management_ip,vendor,platform,model,site_id', 'device.site:id,name', 'backupPolicy:id,name']);
+        $query = BackupArtifact::query()->with(['device:id,name,management_ip,vendor,platform,model,site_id', 'device.site:id,name', 'backupPolicy:id,name,method']);
         if ($search = trim($filters['search'] ?? '')) {
             $query->where(function ($query) use ($search) {
                 $query->where('original_filename', 'like', "%{$search}%")
@@ -75,7 +75,7 @@ class BackupArtifactController extends Controller
         $this->authorize('backup_artifacts.view');
         $backupArtifact->load([
             'device:id,name,management_ip,vendor,platform,model,site_id', 'device.site:id,name',
-            'backupPolicy:id,name', 'backupExecution.device:id,name',
+            'backupPolicy:id,name,method', 'backupExecution.device:id,name',
         ]);
 
         $preview = null;

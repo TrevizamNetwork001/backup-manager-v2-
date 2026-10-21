@@ -2,13 +2,13 @@
 
 @section('title', 'Artefatos — Backup Manager')
 @section('page-title', 'Artefatos')
-@section('page-description', 'Visualize, filtre e baixe os arquivos de configuração coletados.')
+@section('page-description', 'Visualize, filtre e baixe os arquivos de backup armazenados.')
 
 @section('page-header')
 <header class="page-header artifact-page-header">
     <div class="page-header__content">
         <h1 class="page-header__title">Artefatos de backup</h1>
-        <p class="page-header__description">Visualize, filtre e baixe os arquivos de configuração coletados.</p>
+        <p class="page-header__description">Visualize, filtre e baixe os arquivos de backup armazenados.</p>
     </div>
     <nav class="artifact-breadcrumb" aria-label="Caminho"><a href="{{ route('dashboard') }}">Home</a><x-icon name="chevron-right" size="sm" /><span>Artefatos</span></nav>
 </header>
@@ -99,6 +99,9 @@
                         @can('backup_artifacts.download')
                             @if($selectedArtifact->status === 'available')
                                 <a class="btn btn--primary" href="{{ route('backup-artifacts.download', $selectedArtifact) }}"><x-icon name="backup" size="sm" /> Baixar</a>
+                            @endif
+                            @if($selectedArtifact->type === 'config' || ($selectedArtifact->type === 'binary' && $selectedArtifact->backupPolicy?->method === 'a10_system'))
+                                <a class="btn btn--secondary" href="{{ route('backup-artifacts.versions', $selectedArtifact) }}">Ver versões</a>
                             @endif
                         @endcan
                         <a class="btn btn--secondary" href="{{ route('backup-artifacts.show', $selectedArtifact) }}"><x-icon name="eye" size="sm" /> Ver detalhes</a>
