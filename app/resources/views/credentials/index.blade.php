@@ -23,7 +23,7 @@
 @section('content')
 <div class="credentials-list stack">
     @if(session('success'))
-        <div class="alert alert--success" role="status">{{ session('success') }}</div>
+        <div class="alert alert--success toast-notice" role="status" data-auto-dismiss data-toast="true">{{ session('success') }}</div>
     @endif
     @if(session('warning'))
         <div class="alert alert--warning" role="alert">{{ session('warning') }}</div>
