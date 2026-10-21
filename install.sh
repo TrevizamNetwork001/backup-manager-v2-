@@ -332,7 +332,15 @@ USER_COUNT=$(docker compose exec -T app php artisan tinker --execute 'echo \App\
 if [[ ! "$USER_COUNT" =~ ^[0-9]+$ ]]; then echo 'Não foi possível verificar os usuários.' >&2; exit 1; fi
 if ((USER_COUNT == 0)); then
     docker compose exec -T app php artisan app:create-admin --bootstrap
+    BOOTSTRAP_CREATED=true
+else
+    BOOTSTRAP_CREATED=false
 fi
 
 docker compose exec -T app php artisan engine:health
-echo "Instalação pronta em $URL. Primeiro acesso: backup_manager / backup_manager. Cadastre seu e-mail e nova senha no navegador."
+echo "Instalação pronta em $URL."
+if [[ "$BOOTSTRAP_CREATED" == true ]]; then
+    echo 'Primeiro acesso: backup_manager / backup_manager. Cadastre seu e-mail e nova senha no navegador.'
+else
+    echo 'Acesse com as credenciais já configuradas.'
+fi

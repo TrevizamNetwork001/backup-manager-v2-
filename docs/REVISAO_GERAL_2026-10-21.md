@@ -12,6 +12,7 @@ Esta revisão complementa [a investigação de segurança](INVESTIGACAO_SEGURANC
 | Usuários, textos | “Papel” foi substituído por “Perfil de acesso” nas telas de criação, listagem e edição. |
 | Usuários, alinhamento | Os campos Perfil de acesso e Senha no modal de cadastro passaram a alinhar rótulo e controle pelo topo; a lista de requisitos da senha pode crescer sem esticar o campo ao lado. |
 | Perfis de acesso | O cadastro e a edição passam a oferecer somente Administrador e Operador. Operador reúne as funções operacionais e a consulta de auditoria. A migração converte os perfis antigos para Operador, registra a alteração e exige novo login dessas contas. |
+| Instalação | O `install.sh` já inclui as imagens atuais, migrações, acesso por IP em HTTPS e criação da conta inicial. A mensagem final do `--resume` foi corrigida para não anunciar a senha padrão depois que houver usuários configurados. A instalação completa em host limpo ainda não foi executada nesta instância. |
 | Testes de equipamentos | Três expectativas antigas foram atualizadas para os nomes de políticas efetivamente mostrados na lista de equipamentos. |
 
 ## Proteções confirmadas
