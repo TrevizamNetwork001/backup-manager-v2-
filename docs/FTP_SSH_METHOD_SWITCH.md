@@ -19,7 +19,7 @@ Atualizado em 2026-10-02. Este documento descreve o contrato atual do Backup Man
 
 ### Teste FTP do MK-BORDA-01
 
-O equipamento cadastrado está em RouterOS 7.20. Use [mikrotik-ftp-test-routeros7.rsc](../scripts/mikrotik-ftp-test-routeros7.rsc); o arquivo [mikrotik-ftp-test-routeros6.rsc](../scripts/mikrotik-ftp-test-routeros6.rsc) serve à versão 6.43 ou mais recente. Ambos contêm o IP e o usuário FTP configurados para esta conta em 21/10/2026. Confirme esses dois valores no painel antes de executar, pois podem mudar.
+O operador confirmou que o **MK-BORDA-01 usa RouterOS 6**; o valor `7.20` que constava no cadastro estava incorreto. Use [mikrotik-ftp-test-routeros6.rsc](../scripts/mikrotik-ftp-test-routeros6.rsc) para o teste. O arquivo [mikrotik-ftp-test-routeros7.rsc](../scripts/mikrotik-ftp-test-routeros7.rsc) fica como referência para outros equipamentos em RouterOS 7. Ambos contêm o IP e o usuário FTP configurados para esta conta em 21/10/2026. Confirme esses dois valores no painel antes de executar, pois podem mudar. A versão menor exata do RouterOS 6 ainda não foi confirmada.
 
 1. Na conta FTP do **MK-BORDA-01**, use **Mostrar acesso FTP** para consultar a senha. Substitua `SENHA_FTP_AQUI` no arquivo local. Se a senha contiver `\`, `"` ou `$`, escape esses caracteres para uma string RouterOS ou gere uma credencial hexadecimal antes do teste.
 2. Execute o conteúdo do arquivo uma vez no terminal do RouterOS correspondente à versão. O script gera `backup-manager-test-1.rsc`, faz upload para a raiz da conta FTP e remove o arquivo local. Ele não cria scheduler nem script persistente.

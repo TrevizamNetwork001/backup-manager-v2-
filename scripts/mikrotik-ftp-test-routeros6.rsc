@@ -1,4 +1,4 @@
-# Backup Manager V2 - teste unico FTP - MK-BORDA-01 - RouterOS 6.43+
+# Backup Manager V2 - teste unico FTP - MK-BORDA-01 - RouterOS 6
 # Preencha a senha FTP da conta deste equipamento antes de executar.
 :local bmHost "45.239.157.250"
 :local bmPort 21
