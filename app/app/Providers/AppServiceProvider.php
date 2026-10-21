@@ -65,5 +65,9 @@ class AppServiceProvider extends ServiceProvider
             ->by('integrate:'.($request->user()?->id ?? $request->ip()).':'.(data_get($request->route('ftpAccount'), 'id') ?? $request->route('ftpAccount'))));
         RateLimiter::for('mikrotik-ftp-status', fn ($request) => Limit::perMinute(30)
             ->by('status:'.($request->user()?->id ?? $request->ip()).':'.(data_get($request->route('ftpAccount'), 'id') ?? $request->route('ftpAccount'))));
+        RateLimiter::for('integration-api', fn ($request) => [
+            Limit::perMinute(30)->by('integration-ip:'.$request->ip()),
+            Limit::perMinute(120)->by('integration-token:'.hash('sha256', (string) $request->bearerToken())),
+        ]);
     }
 }

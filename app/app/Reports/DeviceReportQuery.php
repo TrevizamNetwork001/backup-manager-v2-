@@ -14,9 +14,7 @@ use Illuminate\Support\Collection;
  */
 class DeviceReportQuery
 {
-    public function __construct(private readonly DeviceBackupHealth $health)
-    {
-    }
+    public function __construct(private readonly DeviceBackupHealth $health) {}
 
     public function filtered(array $filters): Collection
     {
@@ -33,7 +31,7 @@ class DeviceReportQuery
             ->sortBy('name')->values();
     }
 
-    public function paginate(array $filters, int $perPage = 25): LengthAwarePaginator
+    public function paginate(array $filters, int $perPage = 25, ?array $query = null): LengthAwarePaginator
     {
         $rows = $this->filtered($filters);
         $page = max(1, (int) request('page', 1));
@@ -43,7 +41,7 @@ class DeviceReportQuery
             $rows->count(),
             $perPage,
             $page,
-            ['path' => request()->url(), 'query' => request()->query()],
+            ['path' => request()->url(), 'query' => $query ?? request()->query()],
         );
     }
 }
