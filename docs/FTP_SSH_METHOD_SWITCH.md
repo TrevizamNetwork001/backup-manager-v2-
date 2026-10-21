@@ -17,6 +17,16 @@ Atualizado em 2026-10-02. Este documento descreve o contrato atual do Backup Man
 
 **Estado em 21/10/2026:** a recepção de export textual `.rsc` do MikroTik foi implementada e passou em testes sintéticos para conteúdos RouterOS 6 e 7. O script e o agendamento do RouterOS ainda precisam ser configurados e validados no equipamento. Arquivo binário `.backup` é recusado. A política compartilhada **ZTE e MikroTik FTP** não habilita ZTE: ainda não há modelo ZTE cadastrado nem formato de envio homologado. Um upload ZTE continua bloqueado.
 
+### Teste FTP do MK-BORDA-01
+
+O equipamento cadastrado está em RouterOS 7.20. Use [mikrotik-ftp-test-routeros7.rsc](../scripts/mikrotik-ftp-test-routeros7.rsc); o arquivo [mikrotik-ftp-test-routeros6.rsc](../scripts/mikrotik-ftp-test-routeros6.rsc) serve à versão 6.43 ou mais recente. Ambos contêm o IP e o usuário FTP configurados para esta conta em 21/10/2026. Confirme esses dois valores no painel antes de executar, pois podem mudar.
+
+1. Na conta FTP do **MK-BORDA-01**, use **Mostrar acesso FTP** para consultar a senha. Substitua `SENHA_FTP_AQUI` no arquivo local. Se a senha contiver `\`, `"` ou `$`, escape esses caracteres para uma string RouterOS ou gere uma credencial hexadecimal antes do teste.
+2. Execute o conteúdo do arquivo uma vez no terminal do RouterOS correspondente à versão. O script gera `backup-manager-test-1.rsc`, faz upload para a raiz da conta FTP e remove o arquivo local. Ele não cria scheduler nem script persistente.
+3. No painel, confirme o recibo FTP, uma execução `ftp_received` com status `succeeded` e o artefato `.rsc`. Uma mensagem de sucesso no RouterOS comprova o upload, mas ainda não comprova o processamento no servidor. A validação em hardware continua pendente até esta conferência.
+
+O comando com a senha pode permanecer no histórico da CLI ou em um arquivo de importação usado no equipamento. Remova a cópia preenchida após o teste e não publique a senha em commits, capturas de tela ou logs. Se `backup-manager-test-1.rsc` já existir no MikroTik, o teste para antes de sobrescrevê-lo.
+
 Os scripts do sistema antigo (`mikrotik_ftp_scripts.py`, `mikrotik_routeros_v6.py` e `mikrotik_routeros_v7.py`) serviram de referência. RouterOS 6 gera o export com `/export compact file=...`; RouterOS 7 usa `/export file=...`. Ambos enviam o `.rsc` com `/tool fetch mode=ftp upload=yes`. Na V2, o agendamento é responsabilidade do RouterOS, e a conta FTP identifica o equipamento; não se copia o banco nem o script do sistema antigo para a instância nova. Confira o host e a credencial na tela da conta FTP, faça um envio controlado e valide execução, artefato e hash antes de ativar a rotina periódica. Não compartilhe a senha FTP em logs, tickets ou chat.
 
 Para roteadores e switches Huawei, FTP não possui o botão “enviar agora” no Backup Manager. A linha VRP `set save-configuration backup-to-server` define somente o **destino**; `set save-configuration interval` configura separadamente a **periodicidade**. A tela não deve oferecer uma execução manual com nome arbitrário para esse caso.
