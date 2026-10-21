@@ -22,6 +22,11 @@ server_spec.loader.exec_module(ftp_server)
 
 
 class FtpAdminTests(unittest.TestCase):
+    def test_sync_failure_log_identifies_command_without_arguments(self):
+        error = subprocess.CalledProcessError(1, ['php', '/var/www/html/artisan', 'ftp:provisioned',
+                                                  '14', 'secret-value'])
+        self.assertEqual('ftp:provisioned', ftp_admin.sync_failure_label(error))
+
     def test_server_log_line_strips_syslog_priority_and_is_bounded(self):
         self.assertEqual('pure-ftpd: (?@1.2.3.4) [WARNING] Authentication failed for user [x]',
             ftp_server.format_log_line(b'<179>pure-ftpd: (?@1.2.3.4) [WARNING] Authentication failed for user [x]\x00\n'))
@@ -128,6 +133,34 @@ class FtpAdminTests(unittest.TestCase):
                 self.assertEqual('finalize', commands[-1][0])
                 self.assertEqual('3', commands[-1][1][0])
                 self.assertEqual('ok', json.loads(__import__('base64').urlsafe_b64decode(commands[-1][1][1]))['status'])
+
+    def test_reconciler_does_not_reprovision_account_after_status_only_update(self):
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name)
+            identifier = '4a923771-0d3d-4cd2-b3af-bcdbf2036d20'
+            row = {'id': 3, 'device_id': 12, 'account_uuid': identifier, 'home_layout': 'account',
+                   'username': 'routerbackup', 'is_active': True, 'updated_at': '2026-10-21T19:05:27Z',
+                   'provisioned_at': '2026-10-21T19:04:09Z', 'sync_error': None}
+            provisioned = []
+            def artisan(command, *args, **kwargs):
+                if command == 'ftp:accounts': return json.dumps([row]).encode()
+                if command == 'ftp:inspection-requests': return b'[]'
+                if command == 'ftp:secret': return b'Strong!Pass12345'
+                if command == 'ftp:provisioned':
+                    provisioned.append(args)
+                    return b''
+                raise AssertionError(command)
+            with patch.object(ftp_admin, 'ROOT', root), \
+                 patch.object(ftp_admin, 'PASSWD', str(root / 'pureftpd.passwd')), \
+                 patch.object(ftp_admin, 'PUREDB', str(root / 'pureftpd.pdb')), \
+                 patch.object(ftp_admin, 'artisan', side_effect=artisan), \
+                 patch.object(ftp_admin, 'pure'), \
+                 patch.object(ftp_admin.os, 'chown'):
+                ftp_admin.sync_once()
+                self.assertEqual([], provisioned)
+                row['sync_error'] = 'Falha transitória'
+                ftp_admin.sync_once()
+                self.assertEqual([('3', row['updated_at'])], provisioned)
 
     def test_reconciler_rejects_symlinked_device_directory(self):
         with tempfile.TemporaryDirectory() as name:

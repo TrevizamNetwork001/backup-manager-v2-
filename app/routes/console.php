@@ -191,8 +191,7 @@ Artisan::command('ftp:provisioned {id} {version}', function () {
 
 Artisan::command('ftp:sync-failed', function () {
     DB::table('ftp_accounts')->where('is_active', true)
-        ->where(fn ($query) => $query->whereNull('provisioned_at')
-            ->orWhereColumn('provisioned_at', '<', 'updated_at'))
+        ->whereNull('provisioned_at')
         ->update(['sync_error' => 'Não foi possível sincronizar a conta no PureDB.']);
     if (Schema::hasColumn('ftp_accounts', 'deletion_mode')) {
         DB::table('ftp_accounts')->whereNotNull('deletion_mode')

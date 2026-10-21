@@ -110,6 +110,25 @@ class FtpAdminTest extends TestCase
         $this->assertStringNotContainsString('CurrentFtpPass123!', $event->metadata);
     }
 
+    public function test_sync_failure_does_not_invalidate_provisioned_account_after_status_update(): void
+    {
+        $this->admin();
+        $device = $this->device();
+        $this->post(route('ftp.store'), ['device_id' => $device->id, 'username' => 'statusonly',
+            'password' => 'ValidPassword123!', 'password_confirmation' => 'ValidPassword123!'])->assertOk();
+        $account = $device->ftpAccount()->firstOrFail();
+        DB::table('ftp_accounts')->where('id', $account->id)->update([
+            'provisioned_at' => now()->subMinute(), 'updated_at' => now(),
+        ]);
+
+        Artisan::call('ftp:sync-failed');
+        $this->assertNull($account->fresh()->sync_error);
+
+        DB::table('ftp_accounts')->where('id', $account->id)->update(['provisioned_at' => null]);
+        Artisan::call('ftp:sync-failed');
+        $this->assertNotNull($account->fresh()->sync_error);
+    }
+
     public function test_provisioned_router_account_is_not_ready_without_a_policy(): void
     {
         $this->admin();

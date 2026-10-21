@@ -65,6 +65,12 @@ def pure(*args, password=None):
         raise RuntimeError('pure_pw_failed')
 
 
+def sync_failure_label(error):
+    if isinstance(error, subprocess.CalledProcessError):
+        return next((part for part in error.cmd if isinstance(part, str) and re.fullmatch(r'ftp:[a-z-]+', part)), 'artisan')
+    return type(error).__name__
+
+
 def sync_once():
     root = ROOT
     if root.is_symlink() or not root.is_dir():
@@ -121,7 +127,8 @@ def sync_once():
                 raise RuntimeError('secret_invalid')
             pure('useradd', username, '-u', '65534', '-g', '65534', '-d', str(home),
                  '-f', temporary_passwd, password=password + b'\n' + password + b'\n')
-            provisioned.append((str(int(row['id'])), row['updated_at']))
+            if not row.get('provisioned_at') or row.get('sync_error'):
+                provisioned.append((str(int(row['id'])), row['updated_at']))
         fd, temporary_db = tempfile.mkstemp(prefix='.pureftpd-db-', dir=Path(PUREDB).parent)
         os.close(fd)
         pure('mkdb', temporary_db, '-f', temporary_passwd)
@@ -157,10 +164,10 @@ if __name__ == '__main__':
     while True:
         try:
             sync_once()
-        except Exception:
+        except Exception as error:
             try:
                 artisan('ftp:sync-failed')
             except Exception:
                 pass
-            print('ftp_account_sync_failed', flush=True)
+            print('ftp_account_sync_failed ' + sync_failure_label(error), flush=True)
         time.sleep(15)
