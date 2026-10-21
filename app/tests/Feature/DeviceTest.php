@@ -2,7 +2,9 @@
 
 namespace Tests\Feature;
 
+use App\Models\BackupPolicy;
 use App\Models\Device;
+use App\Models\DeviceBackupPolicy;
 use App\Models\Site;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -26,6 +28,26 @@ class DeviceTest extends TestCase
             ->get('/devices')
             ->assertOk()
             ->assertSee('Equipamentos');
+    }
+
+    public function test_device_list_shows_current_policy_names_without_method_labels(): void
+    {
+        $site = Site::create(['name' => 'POP Teste', 'is_active' => true]);
+        $device = Device::create(['site_id' => $site->id, 'name' => 'MK-BORDA-01',
+            'management_ip' => '192.0.2.10', 'vendor' => 'MikroTik', 'platform' => 'network', 'is_active' => true]);
+        foreach ([['MikroTik SSH', 'ssh_pull'], ['MikroTik FTP', 'ftp_push']] as [$name, $method]) {
+            $policy = BackupPolicy::create(['name' => $name, 'method' => $method,
+                'artifact_mode' => 'config', 'schedule_type' => 'manual', 'is_active' => true]);
+            DeviceBackupPolicy::create(['device_id' => $device->id, 'backup_policy_id' => $policy->id,
+                'is_active' => true]);
+        }
+        $this->actingAs(User::factory()->admin()->create());
+
+        $html = $this->html($this->get(route('devices.index'))->assertOk()->getContent());
+        $cell = '//tr[@data-list-row="devices-rows"]/td[@data-label="Políticas de backup"]';
+        $this->assertSame('MikroTik FTP · MikroTik SSH', trim($html->evaluate('string('.$cell.'//span[contains(@class, "entity-cell__title")])')));
+        $this->assertStringNotContainsString('Envio via FTP', $html->evaluate('string('.$cell.')'));
+        $this->assertStringNotContainsString('Coleta via SSH', $html->evaluate('string('.$cell.')'));
     }
 
     public function test_authenticated_user_can_create_device(): void

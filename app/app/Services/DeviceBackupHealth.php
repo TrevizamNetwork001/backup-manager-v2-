@@ -68,7 +68,7 @@ class DeviceBackupHealth
      * summary().
      *
      * @return list<array{device_id:int,name:string,site_id:?int,vendor:?string,model:?string,
-     *   method:?string,methods:list<string>,policy_name:?string,last_backup_at:?string,last_success_at:?string,
+     *   method:?string,methods:list<string>,policy_name:?string,policy_names:list<string>,last_backup_at:?string,last_success_at:?string,
      *   last_failure_at:?string,latest_artifact_size:?int,consecutive_failures:int,status:string,reason:string}>
      */
     public function rows(): array
@@ -125,6 +125,7 @@ class DeviceBackupHealth
         foreach ($devices as $device) {
             $association = $device->deviceBackupPolicies->first();
             $methods = $device->deviceBackupPolicies->pluck('backupPolicy.method')->unique()->values()->all();
+            $policyNames = $device->deviceBackupPolicies->pluck('backupPolicy.name')->unique()->sort()->values()->all();
             $cadence = $this->dominantCadence($device->deviceBackupPolicies);
             $streak = $this->consecutiveFailureStreak($recentByDevice->get($device->id, collect()));
             [$status, $reason] = $this->classify($cadence, $latestSuccess[$device->id] ?? null, $streak);
@@ -148,6 +149,7 @@ class DeviceBackupHealth
                 'method' => $association?->backupPolicy?->method,
                 'methods' => $methods,
                 'policy_name' => $association?->backupPolicy?->name,
+                'policy_names' => $policyNames,
                 'has_policy' => $association !== null,
                 'last_backup_at' => $latestDeviceExecution->created_at ?? null,
                 'last_success_at' => $latestSuccess[$device->id] ?? null,

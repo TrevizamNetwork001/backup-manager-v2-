@@ -62,7 +62,7 @@
                         <th>Equipamento</th>
                         <th>Site / POP</th>
                         <th>Fabricante / Modelo</th>
-                        <th>Método</th>
+                        <th>Políticas de backup</th>
                         <th>Último backup</th>
                         <th>Saúde</th>
                         <th>Status</th>
@@ -93,9 +93,9 @@
                                     @if($device->model)<span class="entity-cell__meta">{{ $device->model }}</span>@endif
                                 </div>
                             </td>
-                            <td data-label="Método">
+                            <td data-label="Políticas de backup">
                                 <div class="entity-cell">
-                                    <span class="entity-cell__title">{{ collect($health['methods'] ?? [])->map(fn ($method) => \App\Support\OperationalLabels::METHODS[$method] ?? $method)->implode(' · ') ?: '—' }}</span>
+                                    <span class="entity-cell__title">{{ implode(' · ', $health['policy_names'] ?? []) ?: '—' }}</span>
                                 </div>
                             </td>
                             <td data-label="Último backup" class="tech-value">{{ $health && $health['last_backup_at'] ? app(\App\Services\InstanceTimezone::class)->format(\Illuminate\Support\Carbon::parse($health['last_backup_at']), 'd/m/Y H:i') : '—' }}</td>
