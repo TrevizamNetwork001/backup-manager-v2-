@@ -69,6 +69,21 @@ class SpontaneousTests(unittest.TestCase):
         self.assertEqual(2, len(list(Path(self.storage.name).rglob('*.cfg'))))
         self.assertEqual([], self.sidecars())
 
+    def test_zte_nested_backup_files_are_received_without_moving_directories(self):
+        folder = self.home / 'ZXAN_136.1.1.100' / '2026-10-21-20.48.50-cfg'
+        folder.mkdir(parents=True)
+        (folder / 'startrun.dat').write_bytes(b'zte data backup')
+        (folder / 'startrun.sav').write_bytes(b'zte saved configuration')
+
+        self.scan(stable=0)
+        self.scan(stable=0)
+
+        self.assertEqual(2, len(self.completed))
+        self.assertEqual({'startrun.dat', 'startrun.sav'}, {item['name'] for item in self.receipts.values()})
+        self.assertTrue(folder.is_dir())
+        self.assertEqual([], list(folder.iterdir()))
+        self.assertEqual([], self.sidecars())
+
     def test_unknown_content_is_stored_and_missing_account_is_quarantined(self):
         (self.home / 'broken.cfg').write_bytes(b'<html>error</html>')
         (self.home / 'no-account.cfg').write_bytes(FIXTURE.read_bytes())

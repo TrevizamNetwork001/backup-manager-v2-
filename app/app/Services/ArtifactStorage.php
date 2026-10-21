@@ -40,7 +40,7 @@ class ArtifactStorage
             ($attributes['type'] === 'binary' && $job->backupPolicy?->method !== 'a10_system') ||
             ($attributes['type'] === 'binary' && ! str_ends_with($relative, '.tar.gz')) ||
             ($attributes['type'] === 'config' && str_ends_with($relative, '.tar.gz')) ||
-            ! preg_match('~\A(?:Backup Manager/[A-Z0-9-]+/[A-Z0-9-]+/[0-9]{2}-[0-9]{2}-[0-9]{4}/[A-Z0-9-]+_[0-9]{14}(?:-exec-[1-9][0-9]*)?\.(?:rsc|cfg|dat|zip|tar\.gz)|[1-9][0-9]*/[0-9]{4}/[0-9]{2}/[0-9]{2}/execution-[1-9][0-9]*-config\.(?:rsc|cfg))\z~D', $relative)) {
+            ! preg_match('~\A(?:Backup Manager/[A-Z0-9-]+/[A-Z0-9-]+/[0-9]{2}-[0-9]{2}-[0-9]{4}/[A-Z0-9-]+_[0-9]{14}(?:-exec-[1-9][0-9]*)?\.(?:rsc|cfg|dat|sav|zip|tar\.gz)|[1-9][0-9]*/[0-9]{4}/[0-9]{2}/[0-9]{2}/execution-[1-9][0-9]*-config\.(?:rsc|cfg))\z~D', $relative)) {
             return ['result' => 'invalid_path'];
         }
         $root = realpath(config('backup.storage_root'));

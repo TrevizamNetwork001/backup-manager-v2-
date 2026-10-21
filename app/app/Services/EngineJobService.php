@@ -486,7 +486,7 @@ class EngineJobService
 
     public function resolvePath(string $relative): string
     {
-        if (! preg_match('~\ABackup Manager/[A-Z0-9-]+/[A-Z0-9-]+/[0-9]{2}-[0-9]{2}-[0-9]{4}/[A-Z0-9-]+_[0-9]{14}(?:-exec-[1-9][0-9]*)?\.(?:rsc|cfg|dat|zip|tar\.gz)\z~D', $relative)) {
+        if (! preg_match('~\ABackup Manager/[A-Z0-9-]+/[A-Z0-9-]+/[0-9]{2}-[0-9]{2}-[0-9]{4}/[A-Z0-9-]+_[0-9]{14}(?:-exec-[1-9][0-9]*)?\.(?:rsc|cfg|dat|sav|zip|tar\.gz)\z~D', $relative)) {
             throw new \RuntimeException('Caminho inválido.');
         }
         $root = realpath(config('backup.storage_root'));

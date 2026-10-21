@@ -40,6 +40,31 @@ def safe_name(name):
         return False
 
 
+def incoming_files(home, nested=True):
+    """Yield files beneath an account home without treating FTP-created folders as uploads."""
+    def walk(folder, remaining):
+        try:
+            children = list(folder.iterdir())
+        except (FileNotFoundError, NotADirectoryError, PermissionError):
+            return
+        for child in children:
+            try:
+                info = child.lstat()
+            except FileNotFoundError:
+                continue
+            if stat.S_ISDIR(info.st_mode):
+                if remaining and safe_name(child.name):
+                    try:
+                        if child.resolve(strict=True).is_relative_to(home) and not child.is_symlink():
+                            yield from walk(child, remaining - 1)
+                    except (FileNotFoundError, NotADirectoryError, PermissionError):
+                        continue
+                continue
+            yield child
+
+    yield from walk(home, 2 if nested else 0)
+
+
 def identity(info):
     return info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_nlink, info.st_mode
 
@@ -321,8 +346,8 @@ def _scan(root_name, storage_root, stable_seconds, observed, expected, receive, 
     now = time.monotonic()
     for account, home in homes:
         device_id = account.get('device_id')
-        for path in home.iterdir():
-            key = (str(home), path.name)
+        for path in incoming_files(home, account.get('purpose') == 'backup'):
+            key = (str(path.parent), path.name)
             if account.get('purpose') == 'backup' and RESERVED.fullmatch(path.name):
                 continue  # Reserved for the manual diagnostic receiver.
             if path.name.lower().endswith(IN_PROGRESS_SUFFIXES):
@@ -393,7 +418,7 @@ def scan(root_name, storage_root, stable_seconds, observed, expected, receive, c
         # Small batches amortize PHP bootstrap better on one transport.
         if workers > 1:
             count = sum(1 for metadata in stage.iterdir() if TOKEN.fullmatch(metadata.name))
-            count += sum(1 for account, home in homes for path in home.iterdir()
+            count += sum(1 for account, home in homes for path in incoming_files(home, account.get('purpose') == 'backup')
                          if not path.name.lower().endswith(IN_PROGRESS_SUFFIXES)
                          and not (account.get('purpose') == 'backup' and RESERVED.fullmatch(path.name)))
             parallel_sources = any(a.get('purpose') == 'file_server' for a, _ in homes) or len(homes) > 1

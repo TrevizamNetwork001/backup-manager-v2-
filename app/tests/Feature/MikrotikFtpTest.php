@@ -10,6 +10,7 @@ use App\Models\DeviceBackupPolicy;
 use App\Models\FtpAccount;
 use App\Models\Site;
 use App\Models\User;
+use App\Services\ArtifactStorage;
 use App\Services\EngineJobService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
@@ -74,6 +75,20 @@ class MikrotikFtpTest extends TestCase
         $result = app(EngineJobService::class)->receiveFtp($zte->id, str_repeat('c', 32), 'startrun.sav', time(), $worker);
         $this->assertSame('running', $result['status']);
         $this->assertStringEndsWith('.sav', $result['relative_path']);
+        $root = sys_get_temp_dir().'/zte-ftp-test-'.bin2hex(random_bytes(8));
+        mkdir($root, 0700);
+        config()->set('backup.storage_root', $root);
+        try {
+            $relative = substr($result['relative_path'], 0, -4).'-exec-'.$result['id'].'.sav';
+            mkdir(dirname($root.'/'.$relative), 0700, true);
+            file_put_contents($root.'/'.$relative, "ZTE saved configuration\n");
+            $artifact = app(EngineJobService::class)->complete($result['id'], $relative, $worker);
+            $this->assertSame('startrun.sav', $artifact->original_filename);
+            $this->assertSame('succeeded', BackupExecution::findOrFail($result['id'])->status);
+            $this->assertSame('valid', app(ArtifactStorage::class)->verify($artifact)['result']);
+        } finally {
+            exec('rm -rf '.escapeshellarg($root));
+        }
         $rejected = app(EngineJobService::class)->receiveFtp($zte->id, str_repeat('d', 32), 'unexpected.rsc', time(), $worker);
         $this->assertSame('invalid_file', $rejected['error_code']);
     }
