@@ -149,11 +149,19 @@ class IntegrationApiTest extends TestCase
         app(IntegrationApiSettings::class)->save(false, []);
         $this->actingAs(User::factory()->admin()->create());
         $settings = app(IntegrationApiSettings::class);
-        $this->get(route('settings.edit'))->assertOk()->assertSee('API de integração')->assertSee('Desativada');
+        $page = $this->get(route('settings.edit'))->assertOk()->assertSee('API de integração')->assertSee('Desativada');
+        $document = new \DOMDocument;
+        @$document->loadHTML($page->getContent());
+        $panel = (new \DOMXPath($document))->query('//details[@id="integration-api"]')->item(0);
+        $this->assertNotNull($panel);
+        $this->assertFalse($panel->hasAttribute('open'));
 
         $this->put(route('settings.integration-api.update'), [
             'enabled' => '1', 'integration_api_allowed_ips' => '192.0.2.10',
         ])->assertSessionHasErrors('integration_api_allowed_ips');
+        $page = $this->get(route('settings.edit'))->assertOk();
+        @$document->loadHTML($page->getContent());
+        $this->assertTrue((new \DOMXPath($document))->query('//details[@id="integration-api"]')->item(0)->hasAttribute('open'));
         $this->assertFalse($settings->enabled());
 
         $response = $this->post(route('settings.integration-api.tokens.issue'), [

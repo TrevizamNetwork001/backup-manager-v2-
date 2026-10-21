@@ -18,7 +18,7 @@
                 <label class="form-label" for="created_integration_token">Token</label>
                 <input class="form-control" id="created_integration_token" value="{{ $plainToken }}" readonly autocomplete="off" spellcheck="false" onclick="this.select()">
             </div>
-            <a class="btn btn--primary" href="{{ route('settings.edit') }}#integration-api">Voltar às configurações</a>
+            <a class="btn btn--primary" href="{{ route('settings.edit', ['panel' => 'integration-api']) }}#integration-api">Voltar às configurações</a>
         </div>
     </section>
 </div>

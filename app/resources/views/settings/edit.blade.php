@@ -100,16 +100,19 @@
         </div>
     </section>
 
-    <section class="card settings-card" id="integration-api" aria-labelledby="integration-api-title">
-        <div class="card__header">
+    <details class="card settings-card integration-api-panel" id="integration-api" @if($errors->hasAny(['integration_api_allowed_ips', 'integration_token', 'name', 'days']) || session('integration_api_open') || request('panel') === 'integration-api') open @endif>
+        <summary class="card__header">
             <div>
                 <h2 class="card__title" id="integration-api-title">API de integração</h2>
                 <p class="card__description">Acesso somente leitura para sistemas externos, com token e IPs permitidos.</p>
             </div>
-            <span class="badge badge--{{ $integrationApiEnabled ? 'success' : 'neutral' }}">
-                {{ $integrationApiEnabled ? 'Ativada' : 'Desativada' }}
-            </span>
-        </div>
+            <div class="integration-api-panel__status">
+                <span class="badge badge--{{ $integrationApiEnabled ? 'success' : 'neutral' }}">
+                    {{ $integrationApiEnabled ? 'Ativada' : 'Desativada' }}
+                </span>
+                <x-icon name="chevron-down" class="integration-api-panel__chevron" size="sm" />
+            </div>
+        </summary>
         <div class="card__body stack">
             @unless($integrationApiAvailable)
                 <p class="alert alert--warning" role="status">A configuração da API aguarda a atualização do banco.</p>
@@ -167,7 +170,7 @@
                 @endif
             @endunless
         </div>
-    </section>
+    </details>
 
     <section class="card settings-card" aria-labelledby="settings-shortcuts-title">
         <div class="card__header">

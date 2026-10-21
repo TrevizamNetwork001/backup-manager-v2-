@@ -99,6 +99,7 @@ class InstanceSettingsController extends Controller
     public function updateIntegrationApi(Request $request, IntegrationApiSettings $settings, AuditEvents $audit): RedirectResponse
     {
         $this->authorize('settings.manage');
+        $request->session()->flash('integration_api_open', true);
         abort_unless($settings->available(), 503);
         $validated = $request->validate([
             'enabled' => ['required', 'boolean'],
@@ -122,12 +123,14 @@ class InstanceSettingsController extends Controller
         }
 
         return redirect()->to(route('settings.edit').'#integration-api')
-            ->with('success', $enabled ? 'API de integração ativada.' : 'Configuração da API salva; acesso desativado.');
+            ->with('success', $enabled ? 'API de integração ativada.' : 'Configuração da API salva; acesso desativado.')
+            ->with('integration_api_open', true);
     }
 
     public function issueIntegrationToken(Request $request, IntegrationApiSettings $settings, AuditEvents $audit): Response
     {
         $this->authorize('settings.manage');
+        $request->session()->flash('integration_api_open', true);
         abort_unless($settings->available(), 503);
         if (! $request->isSecure()) {
             throw ValidationException::withMessages(['integration_token' => 'A emissão de tokens exige acesso por HTTPS.']);
@@ -158,7 +161,8 @@ class InstanceSettingsController extends Controller
         }
 
         return redirect()->to(route('settings.edit').'#integration-api')
-            ->with('success', 'Token revogado.');
+            ->with('success', 'Token revogado.')
+            ->with('integration_api_open', true);
     }
 
     public function previewRetention(Request $request, BackupRetention $retention): RedirectResponse

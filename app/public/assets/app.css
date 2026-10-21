@@ -487,6 +487,13 @@ textarea.form-control { resize: vertical; }
 @media (max-width: 600px) { .integration-token-list__item { align-items: flex-start; flex-direction: column; } }
 @media (max-width: 600px) { .settings-shortcuts { grid-template-columns: minmax(0, 1fr); } }
 .settings-card .card__body { padding-top: 0; }
+.integration-api-panel > summary { cursor: pointer; list-style: none; }
+.integration-api-panel > summary::-webkit-details-marker { display: none; }
+.integration-api-panel > summary:hover { background: var(--color-surface-soft); }
+.integration-api-panel > summary:focus-visible { outline: 2px solid var(--color-primary); outline-offset: -2px; }
+.integration-api-panel__status { display: flex; align-items: center; gap: var(--space-3); }
+.integration-api-panel__chevron { flex: none; color: var(--color-text-muted); transition: transform .18s ease; }
+.integration-api-panel[open] .integration-api-panel__chevron { transform: rotate(180deg); }
 .settings-current-time { margin: 0 0 var(--space-5); color: var(--color-text-secondary); font-size: var(--font-size-label); }
 .settings-current-time strong { color: var(--color-text); font-variant-numeric: tabular-nums; }
 .settings-current-time span { color: var(--color-text-muted); }
