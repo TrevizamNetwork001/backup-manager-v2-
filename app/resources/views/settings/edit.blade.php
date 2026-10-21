@@ -27,6 +27,12 @@
     @error('ftp_allowed_cidrs')
         <div class="alert alert--warning" role="alert">{{ $message }}</div>
     @enderror
+    @error('integration_api_allowed_ips')
+        <div class="alert alert--warning" role="alert">{{ $message }}</div>
+    @enderror
+    @error('integration_token')
+        <div class="alert alert--warning" role="alert">{{ $message }}</div>
+    @enderror
 
     <section class="card settings-card" aria-labelledby="timezone-title">
         <div class="card__header">
@@ -90,6 +96,75 @@
                     @endcan
                 </form>
                 <p class="form-help">Somente administradores podem alterar esta lista. Uma origem fora dela não consegue iniciar uma nova transferência FTP.</p>
+            @endunless
+        </div>
+    </section>
+
+    <section class="card settings-card" id="integration-api" aria-labelledby="integration-api-title">
+        <div class="card__header">
+            <div>
+                <h2 class="card__title" id="integration-api-title">API de integração</h2>
+                <p class="card__description">Acesso somente leitura para sistemas externos, com token e IPs permitidos.</p>
+            </div>
+            <span class="badge badge--{{ $integrationApiEnabled ? 'success' : 'neutral' }}">
+                {{ $integrationApiEnabled ? 'Ativada' : 'Desativada' }}
+            </span>
+        </div>
+        <div class="card__body stack">
+            @unless($integrationApiAvailable)
+                <p class="alert alert--warning" role="status">A configuração da API aguarda a atualização do banco.</p>
+            @else
+                <p>A API permanece fechada até que um administrador crie um token, informe a origem da integração e a ative. O acesso exige HTTPS. A Provider Ops Suite não é alterada por esta configuração.</p>
+                <form method="POST" action="{{ route('settings.integration-api.update') }}" class="settings-form">
+                    @csrf @method('PUT')
+                    <div class="form-field">
+                        <label class="form-label" for="integration_api_allowed_ips">IPs de origem permitidos</label>
+                        <textarea class="form-control" id="integration_api_allowed_ips" name="integration_api_allowed_ips" rows="4" maxlength="4096" placeholder="192.0.2.10" @cannot('settings.manage') readonly @endcannot>{{ old('integration_api_allowed_ips', implode("\n", $integrationApi['allowed_ips'])) }}</textarea>
+                        <small class="form-help">Um IPv4 ou bloco CIDR por linha. Informe o IP público que o servidor vê após o NAT. Lista vazia bloqueia todas as origens.</small>
+                    </div>
+                    @can('settings.manage')
+                        <label class="switch-row"><input type="hidden" name="enabled" value="0"><input type="checkbox" name="enabled" value="1" @checked(old('enabled', $integrationApi['enabled']))><span><strong>Ativar API de integração</strong><small>Libera apenas os cinco endpoints de leitura para tokens válidos e IPs permitidos.</small></span></label>
+                        <div class="settings-form__actions"><button class="btn btn--primary" type="submit">Salvar configuração da API</button></div>
+                    @endcan
+                </form>
+
+                <div>
+                    <h3>Tokens de integração</h3>
+                    <p class="form-help">{{ $integrationApi['active_tokens'] }} token(s) ativo(s). O valor completo aparece somente no momento da criação.</p>
+                </div>
+                @can('settings.manage')
+                    <form method="POST" action="{{ route('settings.integration-api.tokens.issue') }}" class="settings-form">
+                        @csrf
+                        <div class="form-field">
+                            <label class="form-label" for="integration_token_name">Nome da integração</label>
+                            <input class="form-control" id="integration_token_name" name="name" maxlength="100" value="{{ old('name') }}" placeholder="Ex.: Sistema de operações" required>
+                            @error('name') <span class="form-error">{{ $message }}</span> @enderror
+                        </div>
+                        <div class="form-field">
+                            <label class="form-label" for="integration_token_days">Validade em dias</label>
+                            <input class="form-control" id="integration_token_days" name="days" type="number" min="1" max="365" value="{{ old('days', 90) }}" required>
+                            @error('days') <span class="form-error">{{ $message }}</span> @enderror
+                        </div>
+                        <div class="settings-form__actions"><button class="btn btn--secondary" type="submit">Criar token de leitura</button></div>
+                    </form>
+                @endcan
+                @if($integrationTokens->isNotEmpty())
+                    <div class="integration-token-list">
+                        @foreach($integrationTokens as $token)
+                            <div class="integration-token-list__item">
+                                <div><strong>{{ $token->name }}</strong><p class="form-help">{{ $token->revoked_at ? 'Revogado' : ($token->expires_at->isPast() ? 'Expirado' : 'Ativo') }} · válido até {{ $token->expires_at->format('d/m/Y H:i') }} · ID {{ $token->id }}</p></div>
+                                @can('settings.manage')
+                                    @if(!$token->revoked_at)
+                                        <form method="POST" action="{{ route('settings.integration-api.tokens.revoke', $token) }}">
+                                            @csrf @method('DELETE')
+                                            <button class="btn btn--secondary" type="submit">Revogar</button>
+                                        </form>
+                                    @endif
+                                @endcan
+                            </div>
+                        @endforeach
+                    </div>
+                @endif
             @endunless
         </div>
     </section>

@@ -57,6 +57,9 @@ Route::middleware(['auth', 'active', 'initial-setup'])->group(function () {
     Route::get('settings', [InstanceSettingsController::class, 'edit'])->name('settings.edit');
     Route::put('settings', [InstanceSettingsController::class, 'update'])->name('settings.update');
     Route::put('settings/ftp-access', [InstanceSettingsController::class, 'updateFtpAccess'])->name('settings.ftp-access.update');
+    Route::put('settings/integration-api', [InstanceSettingsController::class, 'updateIntegrationApi'])->name('settings.integration-api.update');
+    Route::post('settings/integration-api/tokens', [InstanceSettingsController::class, 'issueIntegrationToken'])->middleware('throttle:6,1')->name('settings.integration-api.tokens.issue');
+    Route::delete('settings/integration-api/tokens/{integrationToken}', [InstanceSettingsController::class, 'revokeIntegrationToken'])->name('settings.integration-api.tokens.revoke');
     Route::post('settings/retention/preview', [InstanceSettingsController::class, 'previewRetention'])->name('settings.retention.preview');
     Route::patch('settings/retention', [InstanceSettingsController::class, 'updateRetention'])->name('settings.retention.update');
     Route::get('settings/notifications', [NotificationSettingsController::class, 'edit'])->name('settings.notifications.edit');

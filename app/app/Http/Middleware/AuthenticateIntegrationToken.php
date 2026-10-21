@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use App\Models\IntegrationToken;
+use App\Services\IntegrationApiSettings;
 use Closure;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -11,13 +12,15 @@ use Symfony\Component\HttpFoundation\Response;
 
 class AuthenticateIntegrationToken
 {
+    public function __construct(private readonly IntegrationApiSettings $settings) {}
+
     public function handle(Request $request, Closure $next): Response
     {
         if (! $request->isSecure()) {
             return $this->reject('https_required', 'HTTPS é obrigatório.', 403);
         }
 
-        $allowedIps = config('integration_api.allowed_ips', []);
+        $allowedIps = $this->settings->get()['allowed_ips'];
         if ($allowedIps === [] || ! IpUtils::checkIp($request->ip(), $allowedIps)) {
             return $this->reject('ip_not_allowed', 'Origem não autorizada.', 403);
         }

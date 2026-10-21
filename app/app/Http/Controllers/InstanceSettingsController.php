@@ -2,10 +2,12 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\IntegrationToken;
 use App\Services\AuditEvents;
 use App\Services\BackupRetention;
 use App\Services\FtpAccessSettings;
 use App\Services\InstanceTimezone;
+use App\Services\IntegrationApiSettings;
 use App\Services\RetentionSettings;
 use DateTimeZone;
 use Illuminate\Http\RedirectResponse;
@@ -13,10 +15,11 @@ use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
+use Symfony\Component\HttpFoundation\Response;
 
 class InstanceSettingsController extends Controller
 {
-    public function edit(Request $request, InstanceTimezone $timezone, RetentionSettings $retentionSettings, FtpAccessSettings $ftpAccess): View
+    public function edit(Request $request, InstanceTimezone $timezone, RetentionSettings $retentionSettings, FtpAccessSettings $ftpAccess, IntegrationApiSettings $integrationApi): View
     {
         $this->authorize('settings.view');
 
@@ -53,6 +56,12 @@ class InstanceSettingsController extends Controller
             'retentionPreview' => $request->session()->get('retention_preview'),
             'ftpAccessAvailable' => $ftpAccess->available(),
             'ftpAccess' => $ftpAccess->get(),
+            'integrationApiAvailable' => $integrationApi->available(),
+            'integrationApi' => $integrationApi->get(),
+            'integrationApiEnabled' => $integrationApi->enabled(),
+            'integrationTokens' => $integrationApi->available()
+                ? IntegrationToken::query()->select(['id', 'name', 'scope', 'expires_at', 'revoked_at', 'created_at'])
+                    ->orderByDesc('id')->limit(20)->get() : collect(),
         ]);
     }
 
@@ -85,6 +94,71 @@ class InstanceSettingsController extends Controller
 
         return redirect()->to(route('settings.edit').'#ftp-access')
             ->with('success', 'Origens FTP salvas. A aplicação no firewall será confirmada nesta tela.');
+    }
+
+    public function updateIntegrationApi(Request $request, IntegrationApiSettings $settings, AuditEvents $audit): RedirectResponse
+    {
+        $this->authorize('settings.manage');
+        abort_unless($settings->available(), 503);
+        $validated = $request->validate([
+            'enabled' => ['required', 'boolean'],
+            'integration_api_allowed_ips' => ['nullable', 'string', 'max:4096'],
+        ]);
+        $enabled = (bool) $validated['enabled'];
+        $allowedIps = $settings->normalizeIps($validated['integration_api_allowed_ips'] ?? '');
+        if ($enabled && (! $request->isSecure() || $allowedIps === [] || $settings->get()['active_tokens'] === 0)) {
+            throw ValidationException::withMessages([
+                'integration_api_allowed_ips' => 'Para ligar a API, acesse por HTTPS, informe IPs permitidos e crie um token ativo.',
+            ]);
+        }
+
+        $before = $settings->get();
+        if ($before['enabled'] !== $enabled || $before['allowed_ips'] !== $allowedIps) {
+            $settings->save($enabled, $allowedIps);
+            $audit->record('api.integration.settings_changed', 'application_settings', '1', 'API de integração',
+                'success', ['enabled_before' => $before['enabled'], 'enabled_after' => $enabled,
+                    'allowed_ips_before' => $before['allowed_ips'], 'allowed_ips_after' => $allowedIps],
+                $request->user()->id, $request->ip());
+        }
+
+        return redirect()->to(route('settings.edit').'#integration-api')
+            ->with('success', $enabled ? 'API de integração ativada.' : 'Configuração da API salva; acesso desativado.');
+    }
+
+    public function issueIntegrationToken(Request $request, IntegrationApiSettings $settings, AuditEvents $audit): Response
+    {
+        $this->authorize('settings.manage');
+        abort_unless($settings->available(), 503);
+        if (! $request->isSecure()) {
+            throw ValidationException::withMessages(['integration_token' => 'A emissão de tokens exige acesso por HTTPS.']);
+        }
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:100'],
+            'days' => ['required', 'integer', 'between:1,365'],
+        ]);
+        [$plain, $token] = IntegrationToken::issue(trim($validated['name']), (int) $validated['days']);
+        $audit->record('api.integration.token.issued', 'integration_token', (string) $token->id,
+            $token->name, 'success', ['scope' => $token->scope, 'expires_at' => $token->expires_at->toIso8601String()],
+            $request->user()->id, $request->ip());
+
+        return response()->view('settings.integration-token', ['plainToken' => $plain, 'token' => $token])
+            ->withHeaders(['Cache-Control' => 'private, no-store', 'Referrer-Policy' => 'no-referrer']);
+    }
+
+    public function revokeIntegrationToken(Request $request, IntegrationToken $integrationToken, IntegrationApiSettings $settings, AuditEvents $audit): RedirectResponse
+    {
+        $this->authorize('settings.manage');
+        abort_unless($settings->available(), 503);
+        $integrationToken->revoke();
+        $audit->record('api.integration.token.revoked', 'integration_token', (string) $integrationToken->id,
+            $integrationToken->name, 'success', [], $request->user()->id, $request->ip());
+        $current = $settings->get();
+        if ($current['enabled'] && $current['active_tokens'] === 0) {
+            $settings->save(false, $current['allowed_ips']);
+        }
+
+        return redirect()->to(route('settings.edit').'#integration-api')
+            ->with('success', 'Token revogado.');
     }
 
     public function previewRetention(Request $request, BackupRetention $retention): RedirectResponse

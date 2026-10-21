@@ -11,6 +11,7 @@ use App\Models\DeviceBackupPolicy;
 use App\Models\IntegrationToken;
 use App\Models\Site;
 use App\Models\User;
+use App\Services\IntegrationApiSettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -23,14 +24,13 @@ class IntegrationApiTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        config()->set('integration_api.enabled', true);
-        config()->set('integration_api.allowed_ips', ['127.0.0.1']);
+        app(IntegrationApiSettings::class)->save(true, ['127.0.0.1/32']);
         $this->withServerVariables(['HTTPS' => 'on', 'REMOTE_ADDR' => '127.0.0.1']);
     }
 
     public function test_api_is_disabled_by_default_and_web_login_still_works(): void
     {
-        config()->set('integration_api.enabled', false);
+        app(IntegrationApiSettings::class)->save(false, ['127.0.0.1/32']);
 
         $this->getJson('/api/v1/health')->assertNotFound();
         $this->get('/login')->assertOk();
@@ -142,5 +142,63 @@ class IntegrationApiTest extends TestCase
         $this->getJson('/api/v1/devices')->assertStatus(429);
         Artisan::call('integration:token-revoke', ['id' => $token->id]);
         $this->assertNotNull($token->fresh()->revoked_at);
+    }
+
+    public function test_admin_can_configure_api_from_settings_and_revoke_token(): void
+    {
+        app(IntegrationApiSettings::class)->save(false, []);
+        $this->actingAs(User::factory()->admin()->create());
+        $settings = app(IntegrationApiSettings::class);
+        $this->get(route('settings.edit'))->assertOk()->assertSee('API de integração')->assertSee('Desativada');
+
+        $this->put(route('settings.integration-api.update'), [
+            'enabled' => '1', 'integration_api_allowed_ips' => '192.0.2.10',
+        ])->assertSessionHasErrors('integration_api_allowed_ips');
+        $this->assertFalse($settings->enabled());
+
+        $response = $this->post(route('settings.integration-api.tokens.issue'), [
+            'name' => 'Sistema de operações', 'days' => 30,
+        ])->assertOk();
+        $this->assertStringContainsString('no-store', $response->headers->get('Cache-Control'));
+        preg_match('/bmiv1_[a-f0-9]{64}/', $response->getContent(), $matches);
+        $this->assertCount(1, $matches);
+        $plain = $matches[0];
+        $token = IntegrationToken::query()->firstOrFail();
+        $this->assertSame(hash('sha256', $plain), $token->token_hash);
+
+        $this->get(route('settings.edit'))->assertOk()->assertDontSee($plain);
+        $this->put(route('settings.integration-api.update'), [
+            'enabled' => '1', 'integration_api_allowed_ips' => "127.0.0.1\n192.0.2.10",
+        ])->assertRedirect();
+        $this->assertTrue($settings->enabled());
+        $this->assertSame(['127.0.0.1/32', '192.0.2.10/32'], $settings->get()['allowed_ips']);
+        $this->withToken($plain)->getJson('/api/v1/health')->assertOk();
+
+        $this->delete(route('settings.integration-api.tokens.revoke', $token))->assertRedirect();
+        $this->assertFalse($settings->enabled());
+        $this->getJson('/api/v1/health')->assertNotFound();
+        $this->assertDatabaseHas('audit_events', ['action' => 'api.integration.settings_changed']);
+    }
+
+    public function test_only_admin_can_manage_api_and_ip_list_is_validated(): void
+    {
+        app(IntegrationApiSettings::class)->save(false, []);
+        $this->actingAs(User::factory()->operator()->create());
+        $this->put(route('settings.integration-api.update'), ['enabled' => '1', 'integration_api_allowed_ips' => '192.0.2.10'])
+            ->assertForbidden();
+        $this->post(route('settings.integration-api.tokens.issue'), ['name' => 'Teste', 'days' => 30])
+            ->assertForbidden();
+
+        $this->actingAs(User::factory()->admin()->create());
+        $this->withServerVariables(['HTTPS' => 'off', 'SERVER_PORT' => 80, 'REMOTE_ADDR' => '127.0.0.1']);
+        $this->post('http://localhost/settings/integration-api/tokens', ['name' => 'Teste', 'days' => 30])
+            ->assertSessionHasErrors('integration_token');
+        $this->assertDatabaseCount('integration_tokens', 0);
+        $this->withServerVariables(['HTTPS' => 'on', 'SERVER_PORT' => 443, 'REMOTE_ADDR' => '127.0.0.1']);
+        foreach (['0.0.0.0/0', '2001:db8::1', 'invalid'] as $address) {
+            $this->put(route('settings.integration-api.update'), ['enabled' => '0', 'integration_api_allowed_ips' => $address])
+                ->assertSessionHasErrors('integration_api_allowed_ips');
+        }
+        $this->assertSame([], app(IntegrationApiSettings::class)->get()['allowed_ips']);
     }
 }
