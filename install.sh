@@ -58,7 +58,7 @@ if [[ "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)" != "$PROJECT" ]]; then
     echo "Instale o checkout em $PROJECT." >&2; exit 1
 fi
 if [[ "$PREFLIGHT" != true && ( ! -t 0 || ! -t 1 ) ]]; then echo 'Use um terminal interativo.' >&2; exit 1; fi
-for program in docker git python3 openssl nginx systemctl iptables; do
+for program in docker git python3 openssl nginx systemctl iptables logrotate; do
     if ! command -v "$program" >/dev/null 2>&1; then
         echo "Falta $program. Instale os requisitos do host antes de continuar." >&2; exit 1
     fi
@@ -201,6 +201,8 @@ SESSION_DRIVER=database
 CACHE_STORE=database
 QUEUE_CONNECTION=database
 LOG_CHANNEL=stack
+LOG_STACK=daily
+LOG_DAILY_DAYS=30
 LOG_LEVEL=warning
 EOF
     chown 65534:65534 app/.env
@@ -227,6 +229,7 @@ docker compose build app
 docker run --rm -e COMPOSER_ALLOW_SUPERUSER=1 -v "$PROJECT/app:/var/www/html" -w /var/www/html \
     --entrypoint composer backup-manager-v2-app install --no-dev --no-interaction --prefer-dist --optimize-autoloader
 chown -R 65534:33 app/storage app/bootstrap/cache
+install -m 0644 docker/php/logrotate.conf /etc/logrotate.d/backup-manager-php-fpm
 docker compose up -d --build postgres redis app engine scheduler ftp-admin nginx
 docker compose exec -T app php artisan migrate --force --no-interaction
 docker compose exec -T app php artisan system:recovery-check
@@ -237,6 +240,7 @@ systemctl enable --now backup-manager-ftp-acl.timer
 systemctl start backup-manager-ftp-acl.service
 docker compose up -d --build ftp
 
+install -m 0644 docker/nginx/host-audit-log.conf /etc/nginx/conf.d/backup-manager-audit-log.conf
 if [[ ! -e /etc/nginx/sites-available/backup-manager-v2.conf ]]; then
     cat > /etc/nginx/sites-available/backup-manager-v2.conf <<EOF
 server {
@@ -247,8 +251,10 @@ server {
 server {
     listen $HTTPS_PORT ssl;
     server_name $HOST;
+    access_log /var/log/nginx/backup-manager-v2-$HTTPS_PORT-access.log backup_manager_audit;
     ssl_certificate $TLS_CERT;
     ssl_certificate_key $TLS_KEY;
+    ssl_session_tickets off;
     ssl_protocols TLSv1.2 TLSv1.3;
     server_tokens off;
     add_header X-Content-Type-Options nosniff always;

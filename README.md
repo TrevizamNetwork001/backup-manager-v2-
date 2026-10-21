@@ -6,7 +6,7 @@ Instalação inicial para a equipe que administra os servidores. O painel pode s
 
 - Use Debian ou Ubuntu com acesso administrativo e um terminal interativo.
 - Instale Docker Engine com o plugin `docker compose` pelo guia oficial para [Debian](https://docs.docker.com/engine/install/debian/) ou [Ubuntu](https://docs.docker.com/engine/install/ubuntu/).
-- Instale os programas do host: `sudo apt-get install nginx python3 openssl git iptables`.
+- Instale os programas do host: `sudo apt-get install nginx python3 openssl git iptables logrotate`.
 - Separe um certificado TLS e a chave privada para o domínio ou IP escolhido. Se usar uma CA interna para um IP privado, instale essa CA nos computadores que abrirão o painel.
 - Defina a interface de entrada do FTP, o IPv4 de destino visto pelo servidor após NAT e pelo menos um CIDR de origem autorizado. Abra no firewall externo apenas as portas necessárias: HTTPS e, para as origens autorizadas, FTP TCP 21 e 30000–30009.
 
@@ -33,7 +33,7 @@ sudo bash install.sh \
   --ftp-allow-cidr 192.168.1.0/24
 ```
 
-Para um domínio, use `--url https://backup.exemplo.com`; para porta HTTPS alternativa, acrescente `:8443` à URL. A porta HTTP 80 redireciona para a URL HTTPS. O instalador configura os segredos, dependências, banco, containers, proxy Nginx, firewall de origens FTP e pede os dados do primeiro administrador. Ele não modifica instalações existentes sem `--resume` e nunca troca a `APP_KEY` ao retomar.
+Para um domínio, use `--url https://backup.exemplo.com`; para porta HTTPS alternativa, acrescente `:8443` à URL. A porta HTTP 80 redireciona para a URL HTTPS. O instalador cria os segredos, constrói as imagens, instala as dependências da aplicação, inicia banco e containers, configura o proxy Nginx, a rotação de logs e o firewall de origens FTP, e pede os dados do primeiro administrador. Docker, Nginx e os demais programas do host precisam estar instalados antes da execução. Ele não modifica instalações existentes sem `--resume` e nunca troca a `APP_KEY` ao retomar.
 
 Se uma etapa falhar, corrija a causa e execute o mesmo comando com `--resume`. Depois do primeiro acesso, ajuste a lista de origens em **Configurações → Origens permitidas no FTP**; o timer do host aplica as mudanças.
 
