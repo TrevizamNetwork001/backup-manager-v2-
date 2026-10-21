@@ -33,7 +33,7 @@
                 <tr><th>Ação</th><td>{{ $presenter->actionLabel($auditEvent->action) }} <code class="tech-value">{{ $auditEvent->action }}</code></td></tr>
                 <tr><th>Recurso</th><td>{{ $presenter->resourceTypeLabel($auditEvent->resource_type) }} <code class="tech-value">{{ $auditEvent->resource_type }}</code></td></tr>
                 <tr><th>ID do recurso</th><td>{{ $auditEvent->resource_id ?? '—' }}</td></tr>
-                <tr><th>Rótulo do recurso</th><td>{{ $auditEvent->resource_label ?? '—' }}</td></tr>
+                <tr><th>Rótulo do recurso</th><td><span class="audit-account">{{ $auditEvent->resource_label ?? '—' }}</span></td></tr>
                 <tr><th>Resultado</th><td><span class="badge badge--{{ $badge['variant'] }}">{{ $badge['label'] }}</span> <code class="tech-value">{{ $auditEvent->result }}</code></td></tr>
                 <tr><th>IP</th><td><span class="audit-ip">{{ $auditEvent->ip_address ?? '—' }}</span></td></tr>
                 @if($geo !== null)

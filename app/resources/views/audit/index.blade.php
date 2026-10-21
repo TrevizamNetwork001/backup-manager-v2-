@@ -31,7 +31,6 @@
             @unless($security['geo_available'])
                 <p class="form-help">Bases GeoIP indisponíveis. País e ASN serão exibidos como não identificados até a instalação das bases.</p>
             @endunless
-            <p class="form-help">Dados GeoLite2 criados por <a href="https://www.maxmind.com" target="_blank" rel="noopener noreferrer">MaxMind</a>. País e ASN são estimativas baseadas no IP.</p>
         </div>
     </section>
 
@@ -58,7 +57,7 @@
                     <thead><tr><th>Conta</th><th>Tentativas</th><th>IPs</th></tr></thead>
                     <tbody>
                         @forelse($security['top_accounts'] as $account)
-                            <tr><td data-label="Conta">{{ $account->resource_label ?: 'Não informado' }}</td><td data-label="Tentativas">{{ $account->attempts }}</td><td data-label="IPs">{{ $account->ips }}</td></tr>
+                            <tr><td data-label="Conta"><span class="audit-account">{{ $account->resource_label ?: 'Não informado' }}</span></td><td data-label="Tentativas">{{ $account->attempts }}</td><td data-label="IPs">{{ $account->ips }}</td></tr>
                         @empty
                             <tr><td colspan="3">Nenhuma conta visada.</td></tr>
                         @endforelse
@@ -81,7 +80,7 @@
                         <tr>
                             <td data-label="Data e hora">{{ app(\App\Services\InstanceTimezone::class)->format($authEvent->created_at, 'd/m/Y H:i') }}</td>
                             <td data-label="Evento"><span class="badge badge--{{ $authEvent->action === 'auth.login' ? 'success' : 'danger' }}">{{ match ($authEvent->action) { 'auth.login' => 'Login válido', 'auth.login_throttled' => 'Tentativa bloqueada', default => 'Tentativa inválida' } }}</span></td>
-                            <td data-label="Conta">{{ $authEvent->resource_label ?: 'Não informado' }}</td>
+                            <td data-label="Conta"><span class="audit-account">{{ $authEvent->resource_label ?: 'Não informado' }}</span></td>
                             <td data-label="IP de origem"><span class="tech-value audit-ip">{{ $authEvent->ip_address ?: '—' }}</span></td>
                             <td data-label="País">@include('audit._country', ['geo' => $security['geo'][$authEvent->ip_address ?? '']])</td>
                             <td data-label="ASN / Operadora">@include('audit._asn', ['geo' => $security['geo'][$authEvent->ip_address ?? '']])</td>
@@ -184,7 +183,7 @@
             </h2>
         </div>
     @else
-        <div class="table-shell" role="region" aria-label="Eventos de auditoria" tabindex="0">
+        <div class="table-shell audit-history-table" role="region" aria-label="Eventos de auditoria" tabindex="0">
             <table class="data-table">
                 <thead>
                     <tr>
@@ -207,7 +206,7 @@
                             <td data-label="Data/hora">{{ app(\App\Services\InstanceTimezone::class)->format($event->created_at, 'd/m/Y H:i') }}</td>
                             <td data-label="Usuário">{{ $presenter->actorLabel($event->actor) }}</td>
                             <td data-label="Ação">{{ $presenter->actionLabel($event->action) }}</td>
-                            <td data-label="Recurso">{{ $presenter->resourceTypeLabel($event->resource_type) }} @if($event->resource_label)· <code class="tech-value">{{ $event->resource_label }}</code>@endif</td>
+                            <td data-label="Recurso">{{ $presenter->resourceTypeLabel($event->resource_type) }} @if($event->resource_label)· <code class="tech-value audit-account">{{ $event->resource_label }}</code>@endif</td>
                             <td data-label="Resultado"><span class="badge badge--{{ $badge['variant'] }}">{{ $badge['label'] }}</span></td>
                             <td data-label="IP"><span class="audit-ip">{{ $event->ip_address ?? '—' }}</span></td>
                             <td data-label="Detalhes"><a class="btn btn--ghost btn--sm" href="{{ route('audit.show', $event) }}">Ver</a></td>

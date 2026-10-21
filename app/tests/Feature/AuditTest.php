@@ -76,7 +76,8 @@ class AuditTest extends TestCase
             ->assertSeeText('IPs com mais tentativas')
             ->assertSeeText('Contas mais visadas')
             ->assertSeeText('Tentativa inválida')
-            ->assertSeeText($admin->email);
+            ->assertSeeText($admin->email)
+            ->assertSee('class="audit-account">'.$admin->email, false);
         $this->assertSame(1, $response->viewData('security')['distinct_ips']);
     }
 
