@@ -2786,6 +2786,12 @@ body { background: radial-gradient(circle at 75% 12%, #0b1a35 0, #07111e 45%, #0
 .ftp-mikrotik-setup { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-3); padding: var(--space-4); border: 1px solid var(--color-border-soft); border-radius: var(--radius-md); background: var(--color-surface); }
 .ftp-mikrotik-setup h2 { margin: 0 0 var(--space-2); font-size: var(--font-size-card-title); }
 .ftp-mikrotik-setup p { margin: var(--space-1) 0 0; color: var(--color-text-muted); }
+.ftp-mikrotik-setup__schedule strong { color: var(--color-text); }
+.ftp-mikrotik-setup form { display: grid; gap: 8px; width: min(220px, 100%); }
+.ftp-mikrotik-setup form .form-label { margin: 0; }
+.ftp-mikrotik-setup form .form-control { width: 100%; }
+.ftp-mikrotik-setup form small { color: var(--color-text-muted); font-size: var(--font-size-meta); line-height: 1.4; }
+.ftp-mikrotik-setup form .btn { margin-top: 4px; }
 .ftp-detail-stat, .ftp-detail-receipts, .ftp-detail-accordion { min-width: 0; border: 1px solid var(--color-border-soft); border-radius: var(--radius-md); background: var(--color-surface); }
 .ftp-detail-stat { display: flex; align-items: center; gap: var(--space-3); min-height: 88px; padding: var(--space-4); }
 .ftp-detail-stat > div { min-width: 0; }

@@ -42,6 +42,13 @@ def config_marker(data):
     return '# backup-manager-v2-ftp config=' + hashlib.sha256(material.encode('utf-8')).hexdigest()[:16]
 
 
+def validate_schedule_time(data):
+    if not isinstance(data.get('schedule_time'), str) or not re.fullmatch(
+        r'(?:[01][0-9]|2[0-3]):[0-5][0-9]', data['schedule_time']
+    ):
+        raise ValueError('INVALID_SCHEDULE_TIME')
+
+
 def device_label(data):
     label = re.sub(r'[^A-Za-z0-9]+', '-', data['device_name']).strip('-').upper()[:40].rstrip('-')
     return label or f'MIKROTIK-{data["device_id"]}'
@@ -328,6 +335,8 @@ def main():
     client = None
     try:
         data = json.load(sys.stdin)
+        if data['action'] != 'inspect':
+            validate_schedule_time(data)
         client = connect(data)
         if data['action'] == 'install_test':
             result = install_and_test(client, data)

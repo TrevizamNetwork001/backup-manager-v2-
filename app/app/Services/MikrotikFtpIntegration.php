@@ -33,9 +33,9 @@ class MikrotikFtpIntegration
     }
 
     /** @return array{status: string, message: string} */
-    public function start(FtpAccount $account, ?int $actorId, ?string $ip): array
+    public function start(FtpAccount $account, string $scheduleTime, ?int $actorId, ?string $ip): array
     {
-        $state = DB::transaction(function () use ($account): string {
+        $state = DB::transaction(function () use ($account, $scheduleTime): string {
             $locked = FtpAccount::query()->lockForUpdate()->findOrFail($account->id);
             if ($locked->mikrotik_setup_status === 'completed') {
                 return 'completed';
@@ -50,7 +50,7 @@ class MikrotikFtpIntegration
             $locked->mikrotik_setup_completed_at = null;
             $locked->mikrotik_test_filename = null;
             $locked->mikrotik_setup_error = null;
-            $locked->mikrotik_schedule_time = '23:00';
+            $locked->mikrotik_schedule_time = $scheduleTime;
             $locked->save();
 
             return 'started';
@@ -109,7 +109,7 @@ class MikrotikFtpIntegration
                 ]);
                 $this->audit->record('mikrotik.ftp.integration_completed', 'ftp_account', (string) $account->id,
                     $account->username, 'success', ['device_id' => $account->device_id, 'execution_id' => $execution->id,
-                        'schedule_time' => '23:00'], $actorId, $ip);
+                        'schedule_time' => $account->mikrotik_schedule_time], $actorId, $ip);
 
                 return $this->reply('completed');
             } catch (\Throwable) {
@@ -210,7 +210,7 @@ class MikrotikFtpIntegration
             'running' => 'Instalando script por SSH.',
             'testing' => 'Script instalado. Aguardando o backup de teste no servidor.',
             'enabling' => 'Backup recebido. Ativando o agendamento diário.',
-            'completed' => 'Backup recebido e validado. Envio diário às 23:00 ativado no MikroTik.',
+            'completed' => 'Backup recebido e validado. Agendamento diário ativado no MikroTik.',
             'failed' => match ($code) {
                 'LEGACY_INTEGRATION_PRESENT' => 'Já existe uma rotina antiga no MikroTik. Verifique-a antes de integrar pela V2.',
                 'SSH_AUTH_FAILED' => 'A autenticação SSH falhou.',

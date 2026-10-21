@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch
 
-from mikrotik_ftp_integrate import install_and_test, quote, script_source, source_quote, test_source
+from mikrotik_ftp_integrate import install_and_test, quote, script_source, source_quote, test_source, validate_schedule_time
 
 
 class MikroTikFtpIntegrateTest(unittest.TestCase):
@@ -36,6 +36,13 @@ class MikroTikFtpIntegrateTest(unittest.TestCase):
         self.assertIn('mode=ftp upload=yes', source)
         self.assertNotIn('/system backup save', source)
         self.assertNotIn('.backup', source)
+
+    def test_schedule_time_accepts_local_clock_time_only(self):
+        self.data['schedule_time'] = '21:30'
+        validate_schedule_time(self.data)
+        for invalid in ('24:00', '21:60', '9:00', '21:30; /system reset-configuration'):
+            with self.subTest(invalid=invalid), self.assertRaisesRegex(ValueError, 'INVALID_SCHEDULE_TIME'):
+                validate_schedule_time({**self.data, 'schedule_time': invalid})
 
     def test_old_routeros_version_or_legacy_objects_block_installation(self):
         with patch('mikrotik_ftp_integrate.run', return_value='6.42.1'), \

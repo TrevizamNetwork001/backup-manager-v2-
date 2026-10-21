@@ -79,8 +79,11 @@ class FtpAdminController extends Controller
     {
         $this->authorize('ftp.manage');
         abort_unless($integration->isMikrotik($ftpAccount->load('device')), 404);
+        $validated = $request->validate([
+            'schedule_time' => ['required', 'date_format:H:i'],
+        ]);
 
-        return response()->json($integration->start($ftpAccount, $request->user()->id, $request->ip()))
+        return response()->json($integration->start($ftpAccount, $validated['schedule_time'], $request->user()->id, $request->ip()))
             ->header('Cache-Control', 'no-store, private');
     }
 

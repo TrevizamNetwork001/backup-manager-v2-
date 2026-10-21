@@ -71,20 +71,21 @@ class MikrotikFtpIntegrationTest extends TestCase
     {
         [$device, $policy, $association, $account] = $this->fixture();
         $bridge = Mockery::mock(MikrotikFtpBridge::class);
-        $bridge->shouldReceive('run')->once()->withArgs(fn ($payload) => $payload['action'] === 'install_test' && $payload['schedule_time'] === '23:00' &&
+        $bridge->shouldReceive('run')->once()->withArgs(fn ($payload) => $payload['action'] === 'install_test' && $payload['schedule_time'] === '21:30' &&
             $payload['ftp_secret'] === 'SyntheticFtpPass123!' && $payload['ssh_secret'] === 'SyntheticSshPass123!'
         )->andReturn(['success' => true, 'code' => 'waiting_receipt', 'filename' => 'bm-v2-test-1-abcdef123456.rsc']);
-        $bridge->shouldReceive('run')->once()->withArgs(fn ($payload) => $payload['action'] === 'enable')
+        $bridge->shouldReceive('run')->once()->withArgs(fn ($payload) => $payload['action'] === 'enable' && $payload['schedule_time'] === '21:30')
             ->andReturn(['success' => true, 'code' => 'enabled']);
         $this->app->instance(MikrotikFtpBridge::class, $bridge);
         $this->actingAs(User::factory()->admin()->create());
 
         $this->get(route('ftp.show', $account))->assertOk()
-            ->assertSee('Integrar FTP no MikroTik')->assertDontSee('SyntheticFtpPass123!');
-        $this->postJson(route('ftp.mikrotik.integrate', $account))->assertOk()->assertJsonPath('status', 'testing')
+            ->assertSee('Integrar FTP no MikroTik')->assertSee('name="schedule_time"', false)->assertDontSee('SyntheticFtpPass123!');
+        $this->postJson(route('ftp.mikrotik.integrate', $account), ['schedule_time' => '21:30'])->assertOk()->assertJsonPath('status', 'testing')
             ->assertDontSee('SyntheticFtpPass123!');
-        $this->postJson(route('ftp.mikrotik.integrate', $account))->assertOk()->assertJsonPath('status', 'in_progress');
+        $this->postJson(route('ftp.mikrotik.integrate', $account), ['schedule_time' => '21:30'])->assertOk()->assertJsonPath('status', 'in_progress');
         $this->assertNull($account->fresh()->mikrotik_setup_completed_at);
+        $this->assertSame('21:30', $account->fresh()->mikrotik_schedule_time);
 
         $execution = BackupExecution::create([
             'device_backup_policy_id' => $association->id, 'backup_policy_id' => $policy->id,
@@ -101,9 +102,24 @@ class MikrotikFtpIntegrationTest extends TestCase
 
         $this->postJson(route('ftp.mikrotik.status', $account))->assertOk()->assertJsonPath('status', 'completed');
         $this->get(route('ftp.show', $account))->assertOk()
-            ->assertSee('Envio diário às 23:00 ativado no MikroTik')->assertDontSee('Integrar FTP no MikroTik');
-        $this->postJson(route('ftp.mikrotik.integrate', $account))->assertOk()->assertJsonPath('status', 'completed');
+            ->assertSee('Agendamento diário ativado no MikroTik')
+            ->assertSee('Horário programado no MikroTik:')->assertSee('21:30')
+            ->assertDontSee('Integrar FTP no MikroTik');
+        $this->postJson(route('ftp.mikrotik.integrate', $account), ['schedule_time' => '21:30'])->assertOk()->assertJsonPath('status', 'completed');
         $this->assertNotNull($account->fresh()->mikrotik_setup_completed_at);
+    }
+
+    public function test_schedule_time_must_be_valid_before_starting_ssh_installation(): void
+    {
+        [, , , $account] = $this->fixture();
+        $this->actingAs(User::factory()->admin()->create());
+
+        $this->postJson(route('ftp.mikrotik.integrate', $account), ['schedule_time' => '25:00'])
+            ->assertUnprocessable()->assertJsonValidationErrors('schedule_time');
+        $this->postJson(route('ftp.mikrotik.integrate', $account), [])
+            ->assertUnprocessable()->assertJsonValidationErrors('schedule_time');
+        $this->assertNull($account->fresh()->mikrotik_setup_started_at);
+        $this->assertNull($account->fresh()->mikrotik_schedule_time);
     }
 
     public function test_failed_ssh_preflight_allows_retry_without_claiming_success(): void
@@ -114,7 +130,7 @@ class MikrotikFtpIntegrationTest extends TestCase
         $this->app->instance(MikrotikFtpBridge::class, $bridge);
         $this->actingAs(User::factory()->admin()->create());
 
-        $this->postJson(route('ftp.mikrotik.integrate', $account))->assertOk()->assertJsonPath('status', 'failed')
+        $this->postJson(route('ftp.mikrotik.integrate', $account), ['schedule_time' => '23:00'])->assertOk()->assertJsonPath('status', 'failed')
             ->assertDontSee('SyntheticFtpPass123!');
         $this->get(route('ftp.show', $account))->assertOk()->assertSee('Integrar FTP no MikroTik');
         $this->assertNull($account->fresh()->mikrotik_setup_completed_at);

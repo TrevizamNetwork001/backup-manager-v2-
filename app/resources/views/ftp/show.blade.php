@@ -36,12 +36,21 @@
 <section class="ftp-mikrotik-setup" aria-labelledby="ftp-mikrotik-title">
     <div>
         <h2 id="ftp-mikrotik-title">Integração FTP do MikroTik</h2>
-        <p>Instala a rotina por SSH e envia um backup de teste. Após a validação, ativa no próprio MikroTik o envio diário às 23:00. O painel recebe e valida os arquivos.</p>
+        <p>Instala a rotina por SSH e envia um backup de teste. Após a validação, ativa o envio diário no próprio MikroTik. O painel recebe e valida os arquivos.</p>
         <p id="ftp-mikrotik-status" role="status" aria-live="polite">{{ $mikrotikState['message'] }}</p>
+        @if(in_array($ftpAccount->mikrotik_setup_status, ['running', 'testing', 'enabling', 'completed']) && $ftpAccount->mikrotik_schedule_time)
+            <p class="ftp-mikrotik-setup__schedule">Horário programado no MikroTik: <strong>{{ $ftpAccount->mikrotik_schedule_time }}</strong> (horário local do equipamento).</p>
+        @endif
     </div>
     @can('ftp.manage')
         @if(!in_array($ftpAccount->mikrotik_setup_status, ['completed', 'running', 'testing', 'enabling']) && !$ftpAccount->deletion_mode)
-            <form id="ftp-mikrotik-form" method="POST" action="{{ route('ftp.mikrotik.integrate', $ftpAccount) }}">@csrf<button class="btn btn--primary" type="submit">Integrar FTP no MikroTik</button></form>
+            <form id="ftp-mikrotik-form" method="POST" action="{{ route('ftp.mikrotik.integrate', $ftpAccount) }}">
+                @csrf
+                <label class="form-label" for="ftp-mikrotik-schedule-time">Horário diário do envio</label>
+                <input class="form-control" id="ftp-mikrotik-schedule-time" name="schedule_time" type="time" value="{{ old('schedule_time', $ftpAccount->mikrotik_schedule_time ?: '23:00') }}" required>
+                <small>Usa o horário local configurado no MikroTik.</small>
+                <button class="btn btn--primary" type="submit">Integrar FTP no MikroTik</button>
+            </form>
         @endif
     @endcan
 </section>
@@ -102,11 +111,11 @@
     const status = document.getElementById('ftp-mikrotik-status');
     const headers = { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest',
         'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content };
-    const request = async url => {
-        const response = await fetch(url, { method: 'POST', credentials: 'same-origin', headers });
+    const request = async (url, formData = null) => {
+        const response = await fetch(url, { method: 'POST', credentials: 'same-origin', headers, body: formData });
         if (!response.ok) {
             const data = await response.json().catch(() => ({}));
-            throw new Error(data.errors?.integration?.[0] || data.message || 'Não foi possível completar a solicitação.');
+            throw new Error(data.errors?.schedule_time?.[0] || data.errors?.integration?.[0] || data.message || 'Não foi possível completar a solicitação.');
         }
         return response.json();
     };
@@ -125,7 +134,7 @@
         form.querySelector('button').disabled = true;
         status.textContent = 'Conectando ao MikroTik por SSH...';
         try {
-            const result = await request(form.action);
+            const result = await request(form.action, new FormData(form));
             status.textContent = result.message;
             if (result.status === 'completed' || result.status === 'failed') { location.reload(); return; }
             poll();
