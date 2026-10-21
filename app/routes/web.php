@@ -13,6 +13,7 @@ use App\Http\Controllers\DeviceController;
 use App\Http\Controllers\DeviceDocumentationController;
 use App\Http\Controllers\FtpAccountController;
 use App\Http\Controllers\FtpAdminController;
+use App\Http\Controllers\InitialSetupController;
 use App\Http\Controllers\InstanceSettingsController;
 use App\Http\Controllers\NotificationSettingsController;
 use App\Http\Controllers\OltFtpWizardController;
@@ -28,7 +29,9 @@ Route::middleware('guest')->group(function () {
     Route::post('/login', [AuthController::class, 'store'])->middleware('throttle:login')->name('login.store');
 });
 
-Route::middleware(['auth', 'active'])->group(function () {
+Route::middleware(['auth', 'active', 'initial-setup'])->group(function () {
+    Route::get('initial-setup', [InitialSetupController::class, 'edit'])->name('initial-setup.edit');
+    Route::post('initial-setup', [InitialSetupController::class, 'update'])->middleware('throttle:6,1')->name('initial-setup.update');
     Route::get('/', DashboardController::class)->name('dashboard');
     Route::post('session/keep-alive', SessionKeepAliveController::class)->name('session.keep-alive');
     Route::get('backup-health', [DeviceBackupHealthController::class, 'index'])->name('backup-health.index');

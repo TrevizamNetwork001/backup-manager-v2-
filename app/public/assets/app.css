@@ -2526,6 +2526,13 @@ body { background: radial-gradient(circle at 75% 12%, #0b1a35 0, #07111e 45%, #0
 .login-heading { margin: 0 0 54px; }
 .login-heading p { margin: 0 0 11px; color: #748eb2; font-size: 14px; font-weight: 600; letter-spacing: .23em; }
 .login-heading h2 { margin: 0; color: #f9faff; font-size: 42px; font-weight: 750; line-height: 1.08; letter-spacing: -.043em; white-space: nowrap; }
+.initial-setup-shell { width: min(565px, calc(100% - 32px)); margin: 0 auto; padding: 48px 0; }
+.initial-setup-shell .login-card { min-height: 0; margin: 0; }
+.initial-setup-shell .login-heading { margin-bottom: 32px; }
+.initial-setup-shell .login-heading h1 { margin: 0; color: #f9faff; font-size: clamp(28px, 5vw, 38px); line-height: 1.15; }
+.initial-setup-shell .login-heading div { white-space: normal; letter-spacing: 0; line-height: 1.5; }
+.initial-setup-logout { display: block; margin: 20px auto 0; border: 0; background: none; color: #a9c3e8; cursor: pointer; }
+.login-success { margin: 0 0 22px; color: #a4f5c8; line-height: 1.5; }
 .login-heading div { margin-top: 10px; color: #a9c3e8; font-size: 14px; font-weight: 600; letter-spacing: .39em; white-space: nowrap; }
 .login-field { margin: 0 0 24px; }
 .login-field label { display: block; margin-bottom: 10px; color: #f2f5fb; font-size: 16px; font-weight: 650; }

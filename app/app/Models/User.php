@@ -18,6 +18,7 @@ class User extends Authenticatable
         'is_admin',
         'role',
         'is_active',
+        'must_complete_setup',
     ];
 
     protected $hidden = [
@@ -32,6 +33,7 @@ class User extends Authenticatable
             'password' => 'hashed',
             'is_admin' => 'boolean',
             'is_active' => 'boolean',
+            'must_complete_setup' => 'boolean',
         ];
     }
 

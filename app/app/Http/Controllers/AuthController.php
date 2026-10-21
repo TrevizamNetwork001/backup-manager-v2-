@@ -38,6 +38,7 @@ class AuthController extends Controller
 
         if (! Auth::attempt($credentials, $request->boolean('remember'))) {
             $audit->record('auth.login_failed', 'user', null, $identifier, 'failed', [], null, $request->ip());
+
             return $genericFailure();
         }
 
@@ -47,11 +48,16 @@ class AuthController extends Controller
             $request->session()->regenerateToken();
 
             $audit->record('auth.login_failed', 'user', null, $identifier, 'failed', [], null, $request->ip());
+
             return $genericFailure();
         }
 
         $request->session()->regenerate();
         $audit->record('auth.login', 'user', (string) Auth::id(), Auth::user()->email, 'success', [], Auth::id(), $request->ip());
+
+        if (Auth::user()->must_complete_setup) {
+            return redirect()->route('initial-setup.edit');
+        }
 
         return redirect()->intended(route('dashboard'));
     }

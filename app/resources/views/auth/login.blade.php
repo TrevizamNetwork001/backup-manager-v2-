@@ -42,6 +42,7 @@
         </section>
         <section class="login-card" aria-labelledby="login-title">
             <header class="login-heading"><p>ACESSO AO SISTEMA</p><h2 id="login-title">Backup <span>Manager</span></h2><div>INFRASTRUCTURE BACKUP</div></header>
+            @if (session('success')) <p class="login-success" role="status">{{ session('success') }}</p> @endif
             <form method="POST" action="{{ route('login.store') }}">
                 @csrf
                 <div class="login-field">

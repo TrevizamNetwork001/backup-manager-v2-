@@ -17,6 +17,7 @@ class AuditPresenter
         'auth.login' => 'Acesso realizado',
         'auth.login_failed' => 'Tentativa de acesso inválida',
         'auth.logout' => 'Sessão encerrada',
+        'auth.initial_setup_completed' => 'Configuração do primeiro acesso',
         'report.exported' => 'Exportação de relatório',
         'ftp.account.create' => 'Criação de conta FTP',
         'ftp.account.delete' => 'Excluir conta FTP',

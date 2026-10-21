@@ -1,13 +1,13 @@
 # Backup Manager V2
 
-Instalação inicial para a equipe que administra os servidores. O painel pode ser acessado por domínio ou por IPv4. Em ambos os casos, a URL deve usar HTTPS e o certificado precisa cobrir o nome ou IP informado.
+Instalação inicial para a equipe que administra os servidores. O painel pode ser acessado por domínio ou por IPv4. A URL usa HTTPS; para acesso por IP, o instalador pode gerar um certificado local.
 
 ## 1. Preparar o servidor
 
-- Use Debian ou Ubuntu com acesso administrativo e um terminal interativo.
+- Use Debian ou Ubuntu com acesso administrativo.
 - Instale Docker Engine com o plugin `docker compose` pelo guia oficial para [Debian](https://docs.docker.com/engine/install/debian/) ou [Ubuntu](https://docs.docker.com/engine/install/ubuntu/).
 - Instale os programas do host: `sudo apt-get install nginx python3 openssl git iptables logrotate`.
-- Separe um certificado TLS e a chave privada para o domínio ou IP escolhido. Se usar uma CA interna para um IP privado, instale essa CA nos computadores que abrirão o painel.
+- Para domínio, separe um certificado TLS e a chave privada. Para IP, você pode fornecê-los ou deixar o instalador criar um certificado local. O navegador avisará que esse certificado local não tem autoridade confiável; confira o IP e a impressão digital antes de aceitá-lo, ou instale sua CA interna nos computadores que abrirão o painel.
 - Defina a interface de entrada do FTP, o IPv4 de destino visto pelo servidor após NAT e pelo menos um CIDR de origem autorizado. Abra no firewall externo apenas as portas necessárias: HTTPS e, para as origens autorizadas, FTP TCP 21 e 30000–30009.
 
 O instalador exige o checkout em `/opt/backup-manager-v2`. A equipe deve ter acesso ao repositório pelo GitHub:
@@ -21,19 +21,19 @@ O usuário que executa o clone precisa de uma chave com acesso de leitura ao rep
 
 ## 2. Instalar
 
-Exemplo com IP privado; substitua os valores pela rede e pelos arquivos reais:
+Exemplo com IP privado; substitua os valores pela rede real:
 
 ```bash
 sudo bash install.sh \
   --url https://192.168.1.10 \
-  --tls-cert /etc/ssl/backup-manager/fullchain.pem \
-  --tls-key /etc/ssl/backup-manager/privkey.pem \
   --ftp-interface eth0 \
   --ftp-destination 192.168.1.10 \
   --ftp-allow-cidr 192.168.1.0/24
 ```
 
-Para um domínio, use `--url https://backup.exemplo.com`; para porta HTTPS alternativa, acrescente `:8443` à URL. A porta HTTP 80 redireciona para a URL HTTPS. O instalador cria os segredos, constrói as imagens, instala as dependências da aplicação, inicia banco e containers, configura o proxy Nginx, a rotação de logs e o firewall de origens FTP, e pede os dados do primeiro administrador. Docker, Nginx e os demais programas do host precisam estar instalados antes da execução. Ele não modifica instalações existentes sem `--resume` e nunca troca a `APP_KEY` ao retomar.
+Para um domínio, use `--url https://backup.exemplo.com` com `--tls-cert /caminho/fullchain.pem --tls-key /caminho/privkey.pem`; para porta HTTPS alternativa, acrescente `:8443` à URL. A porta HTTP 80 redireciona para a URL HTTPS. O instalador cria os segredos, constrói as imagens, instala as dependências da aplicação, inicia banco e containers, configura o proxy Nginx, a rotação de logs e o firewall de origens FTP. Docker, Nginx e os demais programas do host precisam estar instalados antes da execução. Ele não modifica instalações existentes sem `--resume` e nunca troca a `APP_KEY` ao retomar.
+
+Na instalação nova, entre pelo navegador com usuário `backup_manager` e senha `backup_manager`. O sistema exige e-mail e senha nova (mínimo de 12 caracteres com maiúsculas, minúsculas, número e símbolo), encerra a sessão e pede login com esses dados. Não há código de ativação no terminal. Restrinja a porta HTTPS no firewall às suas origens até concluir essa troca. O certificado local fica em `/etc/backup-manager-v2/tls/`; `--resume` o reutiliza e não troca a chave.
 
 Se uma etapa falhar, corrija a causa e execute o mesmo comando com `--resume`. Depois do primeiro acesso, ajuste a lista de origens em **Configurações → Origens permitidas no FTP**; o timer do host aplica as mudanças.
 

@@ -16,14 +16,14 @@ FTP_CIDRS=()
 usage() {
     cat <<'HELP'
 Usage: sudo bash install.sh --url https://HOST[:PORT] \
-  --tls-cert /absolute/fullchain.pem --tls-key /absolute/privkey.pem \
   --ftp-interface INTERFACE --ftp-destination IPv4 \
-  --ftp-allow-cidr IPv4/CIDR [--ftp-allow-cidr IPv4/CIDR ...] [--resume] [--preflight]
+  --ftp-allow-cidr IPv4/CIDR [--ftp-allow-cidr IPv4/CIDR ...] \
+  [--tls-cert /absolute/fullchain.pem --tls-key /absolute/privkey.pem] [--resume] [--preflight]
 
 Requires a clean checkout at /opt/backup-manager-v2, Docker with Compose v2,
-Nginx, Python 3, OpenSSL, Git and an interactive terminal. HTTPS certificates
-must already cover HOST, whether HOST is a domain name or an IP address.
---resume keeps existing secrets and creates an administrator only if none exists.
+Nginx, Python 3, OpenSSL and Git. For IPv4 without a supplied TLS pair,
+generates a local certificate with the IP in SAN. DNS requires a supplied pair.
+--resume keeps existing secrets and creates initial access only if no users exist.
 --preflight validates requirements and parameters without changing the host.
 HELP
 }
@@ -57,7 +57,6 @@ fi
 if [[ "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)" != "$PROJECT" ]]; then
     echo "Instale o checkout em $PROJECT." >&2; exit 1
 fi
-if [[ "$PREFLIGHT" != true && ( ! -t 0 || ! -t 1 ) ]]; then echo 'Use um terminal interativo.' >&2; exit 1; fi
 for program in docker git python3 openssl nginx systemctl iptables logrotate; do
     if ! command -v "$program" >/dev/null 2>&1; then
         echo "Falta $program. Instale os requisitos do host antes de continuar." >&2; exit 1
@@ -80,14 +79,11 @@ elif [[ "$RESUME" == true ]]; then
     echo 'Nenhuma instalação anterior para retomar.' >&2; exit 1
 fi
 
-if [[ -z "$URL" || -z "$FTP_INTERFACE" || -z "$FTP_DESTINATION" || -z "$TLS_CERT" || -z "$TLS_KEY" || ${#FTP_CIDRS[@]} -eq 0 ]]; then
+if [[ -z "$URL" || -z "$FTP_INTERFACE" || -z "$FTP_DESTINATION" || ${#FTP_CIDRS[@]} -eq 0 ]]; then
     usage >&2; exit 2
 fi
-if [[ "$TLS_CERT" != /* || "$TLS_KEY" != /* || ! -r "$TLS_CERT" || ! -r "$TLS_KEY" ]]; then
-    echo 'Informe caminhos absolutos para certificado e chave TLS legíveis pelo root.' >&2; exit 1
-fi
-if [[ ! "$TLS_CERT" =~ ^/[A-Za-z0-9_./-]+$ || ! "$TLS_KEY" =~ ^/[A-Za-z0-9_./-]+$ ]]; then
-    echo 'Caminho TLS contém caracteres não aceitos pelo gerador Nginx.' >&2; exit 1
+if [[ -n "$TLS_CERT" && -z "$TLS_KEY" || -z "$TLS_CERT" && -n "$TLS_KEY" ]]; then
+    echo 'Informe certificado e chave TLS juntos.' >&2; exit 1
 fi
 
 # Validate all operator supplied network values before changing the host.
@@ -144,11 +140,40 @@ if [[ "$HOST" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
 else
     CERT_CHECK=(-checkhost "$HOST")
 fi
-if ! openssl x509 -in "$TLS_CERT" -noout "${CERT_CHECK[@]}" >/dev/null 2>&1; then
-    echo 'O certificado TLS não cobre o host informado na URL.' >&2; exit 1
+if [[ -z "$TLS_CERT" ]]; then
+    if [[ "${CERT_CHECK[0]}" != '-checkip' ]]; then
+        echo 'Para domínio, informe --tls-cert e --tls-key.' >&2; exit 1
+    fi
+    TLS_CERT=/etc/backup-manager-v2/tls/ip-cert.pem
+    TLS_KEY=/etc/backup-manager-v2/tls/ip-key.pem
+    GENERATE_TLS=true
+else
+    GENERATE_TLS=false
+fi
+if [[ "$TLS_CERT" != /* || "$TLS_KEY" != /* || ! "$TLS_CERT" =~ ^/[A-Za-z0-9_./-]+$ || ! "$TLS_KEY" =~ ^/[A-Za-z0-9_./-]+$ ]]; then
+    echo 'Caminhos TLS devem ser absolutos e usar caracteres simples.' >&2; exit 1
+fi
+if [[ "$GENERATE_TLS" == true ]]; then
+    if { [[ -e "$TLS_CERT" ]] && [[ ! -e "$TLS_KEY" ]]; } || { [[ ! -e "$TLS_CERT" ]] && [[ -e "$TLS_KEY" ]]; }; then
+        echo 'Certificado local incompleto; revise os arquivos antes de continuar.' >&2; exit 1
+    fi
+fi
+validate_tls() {
+    if [[ ! -r "$TLS_CERT" || ! -r "$TLS_KEY" ]] ||
+        ! openssl x509 -in "$TLS_CERT" -noout "${CERT_CHECK[@]}" 2>/dev/null | grep -q 'does match certificate' ||
+        ! openssl x509 -in "$TLS_CERT" -noout -checkend 0 >/dev/null 2>&1; then
+        echo 'Certificado TLS ausente, expirado ou sem cobertura para o host.' >&2; exit 1
+    fi
+    if ! cmp -s <(openssl x509 -in "$TLS_CERT" -pubkey -noout) <(openssl pkey -in "$TLS_KEY" -pubout 2>/dev/null); then
+        echo 'A chave TLS não corresponde ao certificado.' >&2; exit 1
+    fi
+}
+if [[ "$GENERATE_TLS" != true || -e "$TLS_CERT" ]]; then
+    validate_tls
 fi
 if [[ "$PREFLIGHT" == true ]]; then
     echo "Pré-verificação aprovada para $URL. Nenhuma alteração feita."
+    if [[ "$GENERATE_TLS" == true ]]; then echo 'Na instalação será criado um certificado local para o IP.'; fi
     exit 0
 fi
 cd "$PROJECT"
@@ -162,12 +187,31 @@ if [[ "$RESUME" == true ]]; then
     if [[ "$EXISTING_URL" != "$URL" ]]; then
         echo 'A URL informada difere da instalação existente.' >&2; exit 1
     fi
+    if [[ "$GENERATE_TLS" == true && ! -e "$TLS_CERT" && -e /etc/nginx/sites-available/backup-manager-v2.conf ]]; then
+        echo 'A instalação existente usa certificado próprio; informe --tls-cert e --tls-key ao retomar.' >&2; exit 1
+    fi
 fi
 
 if [[ "$RESUME" != true ]]; then
     if [[ -e /etc/nginx/sites-available/backup-manager-v2.conf || -e /etc/backup-manager-v2/ftp-acl.env ]]; then
         echo 'Configuração de host já existe; revise antes de instalar.' >&2; exit 1
     fi
+fi
+
+if [[ "$GENERATE_TLS" == true && ! -e "$TLS_CERT" ]]; then
+    install -d -m 700 /etc/backup-manager-v2/tls
+    openssl req -x509 -newkey rsa:3072 -noenc -sha256 -days 365 \
+        -subj "/CN=$HOST" -addext "subjectAltName=IP:$HOST" \
+        -addext 'basicConstraints=critical,CA:FALSE' \
+        -addext 'keyUsage=critical,digitalSignature,keyEncipherment' \
+        -addext 'extendedKeyUsage=serverAuth' \
+        -keyout "$TLS_KEY" -out "$TLS_CERT" >/dev/null 2>&1
+    chmod 600 "$TLS_KEY"
+    chmod 644 "$TLS_CERT"
+    validate_tls
+fi
+
+if [[ "$RESUME" != true ]]; then
     POSTGRES_SECRET=$(openssl rand -hex 32)
     REDIS_SECRET=$(openssl rand -hex 32)
     APP_SECRET="base64:$(openssl rand -base64 32)"
@@ -284,12 +328,11 @@ nginx -t
 systemctl enable --now nginx
 systemctl reload nginx
 
-ADMIN_COUNT=$(docker compose exec -T app php artisan tinker --execute 'echo \App\Models\User::where("role", "admin")->count();')
-if [[ ! "$ADMIN_COUNT" =~ ^[0-9]+$ ]]; then echo 'Não foi possível verificar o administrador.' >&2; exit 1; fi
-if ((ADMIN_COUNT == 0)); then
-    echo 'Crie o primeiro administrador:'
-    docker compose exec app php artisan app:create-admin
+USER_COUNT=$(docker compose exec -T app php artisan tinker --execute 'echo \App\Models\User::count();')
+if [[ ! "$USER_COUNT" =~ ^[0-9]+$ ]]; then echo 'Não foi possível verificar os usuários.' >&2; exit 1; fi
+if ((USER_COUNT == 0)); then
+    docker compose exec -T app php artisan app:create-admin --bootstrap
 fi
 
 docker compose exec -T app php artisan engine:health
-echo "Instalação pronta em $URL. Confirme certificado, acesso e bloqueio FTP a partir de outra origem."
+echo "Instalação pronta em $URL. Primeiro acesso: backup_manager / backup_manager. Cadastre seu e-mail e nova senha no navegador."
