@@ -267,6 +267,18 @@ class AuditTest extends TestCase
         $this->assertSame([$match], $ids);
     }
 
+    public function test_search_treats_sql_syntax_as_data(): void
+    {
+        $this->admin();
+        $this->insertEvent(['resource_label' => 'first_device']);
+        $this->insertEvent(['resource_label' => 'second_device']);
+
+        $response = $this->get(route('audit.index', ['q' => "' OR 1=1 --"]));
+
+        $response->assertOk();
+        $this->assertSame(0, $response->viewData('events')->total());
+    }
+
     // DETALHE
 
     public function test_show_renders_event_with_labels(): void

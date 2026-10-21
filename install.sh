@@ -335,6 +335,7 @@ LOG_CHANNEL=stack
 LOG_STACK=daily
 LOG_DAILY_DAYS=30
 LOG_LEVEL=warning
+SESSION_LIFETIME=30
 EOF
     chown 65534:65534 app/.env
     chmod 600 .env app/.env
@@ -363,6 +364,7 @@ chown -R 65534:33 app/storage app/bootstrap/cache
 install -m 0644 docker/php/logrotate.conf /etc/logrotate.d/backup-manager-php-fpm
 docker compose up -d --build postgres redis app engine scheduler ftp-admin nginx
 docker compose exec -T app php artisan migrate --force --no-interaction
+docker compose exec -u 65534:33 -T app php artisan view:cache --no-interaction
 docker compose exec -T app php artisan system:recovery-check
 
 install -m 0644 scripts/backup-manager-ftp-acl.service scripts/backup-manager-ftp-acl.timer /etc/systemd/system/
@@ -425,6 +427,12 @@ else
 fi
 
 docker compose exec -T app php artisan engine:health
+HTTP_STATUS=$(docker compose exec -T nginx curl --silent --output /dev/null --write-out '%{http_code}' \
+    --header "Host: $HOST:$HTTPS_PORT" http://127.0.0.1/login)
+if [[ "$HTTP_STATUS" != 200 ]]; then
+    echo "A página de login não respondeu corretamente no proxy interno (HTTP $HTTP_STATUS)." >&2
+    exit 1
+fi
 echo "Instalação pronta em $URL."
 if [[ "$BOOTSTRAP_CREATED" == true ]]; then
     echo 'Primeiro acesso: backup_manager / backup_manager. Cadastre seu e-mail e nova senha no navegador.'

@@ -23,12 +23,14 @@ class EnginePythonIntegrationTest extends TestCase
 
     private function enginePath(): string
     {
-        return base_path('../engine/health_snapshot.py');
+        $checkoutPath = base_path('../engine/health_snapshot.py');
+
+        return is_file($checkoutPath) ? $checkoutPath : '/engine/health_snapshot.py';
     }
 
     private function pythonBinary(): string
     {
-        return env('ENGINE_TEST_PYTHON_BIN', 'python3');
+        return env('ENGINE_TEST_PYTHON_BIN') ?: (is_executable('/opt/engine-venv/bin/python') ? '/opt/engine-venv/bin/python' : 'python3');
     }
 
     public function test_the_real_python_engine_produces_a_snapshot_laravel_can_parse(): void

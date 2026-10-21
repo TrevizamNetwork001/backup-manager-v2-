@@ -62,68 +62,111 @@
     const leaveButton = document.getElementById('session-timeout-leave');
     const logoutForm = document.getElementById('logout-form');
     const keepAliveUrl = '{{ route('session.keep-alive') }}';
+    const loginUrl = '{{ route('login') }}';
     const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
 
     let inactivityTimer = null;
     let countdownTimer = null;
     let warningShown = false;
+    let lastActivityAt = Date.now();
+    let lastServerContactAt = Date.now();
+    let lastKeepAliveAttemptAt = Date.now();
+    let keepAlivePending = false;
+    let loggingOut = false;
+
+    function expiryAt() {
+        return Math.min(lastActivityAt, lastServerContactAt) + lifetimeSeconds * 1000;
+    }
 
     function forceLogout() {
-        if (logoutForm) {
-            logoutForm.submit();
-        } else {
-            window.location.href = '{{ route('login') }}';
+        if (loggingOut) return;
+        loggingOut = true;
+        if (!logoutForm) {
+            window.location.replace(loginUrl);
+            return;
+        }
+        const redirectToLogin = () => window.location.replace(loginUrl);
+        const fallback = window.setTimeout(redirectToLogin, 5000);
+        fetch(logoutForm.action, {
+            method: 'POST',
+            headers: { 'X-CSRF-TOKEN': csrfToken, 'Accept': 'application/json' },
+            credentials: 'same-origin',
+        }).then(
+            () => { window.clearTimeout(fallback); redirectToLogin(); },
+            () => { window.clearTimeout(fallback); redirectToLogin(); },
+        );
+    }
+
+    function updateCountdown() {
+        const remaining = Math.max(0, Math.ceil((expiryAt() - Date.now()) / 1000));
+        countdownEl.textContent = remaining;
+        if (remaining === 0) {
+            window.clearInterval(countdownTimer);
+            forceLogout();
         }
     }
 
     function showWarning() {
+        if (warningShown) return;
         warningShown = true;
         overlay.hidden = false;
-        let remaining = warningSeconds;
-        countdownEl.textContent = remaining;
-        countdownTimer = window.setInterval(() => {
-            remaining -= 1;
-            countdownEl.textContent = Math.max(remaining, 0);
-            if (remaining <= 0) {
-                window.clearInterval(countdownTimer);
-                forceLogout();
-            }
-        }, 1000);
+        updateCountdown();
+        countdownTimer = window.setInterval(updateCountdown, 1000);
     }
 
     function scheduleWarning() {
         window.clearTimeout(inactivityTimer);
-        inactivityTimer = window.setTimeout(showWarning, (lifetimeSeconds - warningSeconds) * 1000);
-    }
-
-    function resetTimers() {
-        if (warningShown) return; // once the warning is up, only an explicit choice should dismiss it
-        scheduleWarning();
+        const warningAt = expiryAt() - warningSeconds * 1000;
+        inactivityTimer = window.setTimeout(showWarning, Math.max(0, warningAt - Date.now()));
     }
 
     async function keepAlive() {
+        if (keepAlivePending) return false;
+        keepAlivePending = true;
+        lastKeepAliveAttemptAt = Date.now();
         try {
-            await fetch(keepAliveUrl, {
+            const response = await fetch(keepAliveUrl, {
                 method: 'POST',
                 headers: { 'X-CSRF-TOKEN': csrfToken, 'Accept': 'application/json' },
+                credentials: 'same-origin',
             });
+            if (response.status !== 204) {
+                forceLogout();
+                return false;
+            }
+            lastServerContactAt = Date.now();
+            return true;
         } catch (e) {
-            // network hiccup on an inactivity ping is not worth surfacing to the user
+            return false;
+        } finally {
+            keepAlivePending = false;
+            if (!warningShown) scheduleWarning();
         }
     }
 
     stayButton.addEventListener('click', async () => {
+        if (!await keepAlive()) return;
         window.clearInterval(countdownTimer);
         overlay.hidden = true;
         warningShown = false;
-        await keepAlive();
+        lastActivityAt = Date.now();
         scheduleWarning();
     });
 
     leaveButton.addEventListener('click', forceLogout);
 
     ['mousemove', 'keydown', 'click', 'scroll', 'touchstart'].forEach(evt => {
-        document.addEventListener(evt, resetTimers, { passive: true });
+        document.addEventListener(evt, () => {
+            if (warningShown || Date.now() - lastActivityAt < 1000) return;
+            lastActivityAt = Date.now();
+            if (Date.now() - lastKeepAliveAttemptAt >= 5 * 60 * 1000) keepAlive();
+            scheduleWarning();
+        }, { passive: true });
+    });
+
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden) return;
+        if (Date.now() >= expiryAt() - warningSeconds * 1000) showWarning();
     });
 
     scheduleWarning();

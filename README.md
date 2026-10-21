@@ -35,6 +35,8 @@ Para um domínio, use `--url https://backup.exemplo.com` com `--tls-cert /caminh
 
 Na instalação nova, entre pelo navegador com usuário `backup_manager` e senha `backup_manager`. O sistema exige e-mail e senha nova (mínimo de 12 caracteres com maiúsculas, minúsculas, número e símbolo), encerra a sessão e pede login com esses dados. Não há código de ativação no terminal. Restrinja a porta HTTPS no firewall às suas origens até concluir essa troca. O certificado local fica em `/etc/backup-manager-v2/tls/`; `--resume` o reutiliza e não troca a chave.
 
+A sessão do painel expira após 30 minutos sem interação. Um aviso aparece no último minuto e permite continuar conectado; o navegador encerra a sessão ao terminar o prazo. O instalador compila as views com o usuário da aplicação e só anuncia a instalação pronta depois que o login responde no proxy interno.
+
 Se uma etapa falhar, corrija a causa e execute o mesmo comando com `--resume`. Depois do primeiro acesso, ajuste a lista de origens em **Configurações → Origens permitidas no FTP**; o timer do host aplica as mudanças.
 
 Para mostrar país, bandeira e ASN dos IPs na Auditoria, o instalador reutiliza as bases `GeoLite2-Country.mmdb` e `GeoLite2-ASN.mmdb` já presentes em `/usr/share/GeoIP`. Em um servidor novo, forneça os dois arquivos locais com `--geoip-country-db` e `--geoip-asn-db`, ou um ZIP privado com ambos na raiz usando `--geoip-archive /caminho/GeoIP.zip`. O instalador copia as bases para `/usr/share/GeoIP` e as monta somente para leitura no container. Sem elas, a instalação continua e a Auditoria indica país e ASN não identificados. Mantenha as bases atualizadas e fora do Git; um ZIP não muda as regras de redistribuição da [MaxMind](https://www.maxmind.com/en/geolite/eula).
