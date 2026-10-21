@@ -1,13 +1,13 @@
 # API de integração v1
 
-**Estado:** implementação local, desativada por padrão. Nenhuma migração foi aplicada na instância, nenhum token foi emitido e a API não foi publicada. A Provider Ops Suite não foi alterada.
+**Estado em 21/10/2026:** o código foi enviado ao GitHub no commit `389c657`, mas a API permanece desativada na instância (`INTEGRATION_API_ENABLED=false`, configuração padrão). A migração da tabela de tokens ainda está pendente, nenhum token foi emitido e os endpoints não foram liberados para uso. A Provider Ops Suite não foi alterada.
 
 ## Acesso e operação
 
 - Base: `/api/v1`. Todas as rotas aceitam apenas `GET` e respondem JSON. O login web e os jobs continuam independentes.
 - Envie `Authorization: Bearer <token>`. Cookies de sessão e token na URL não autenticam. O valor é gerado aleatoriamente, mostrado uma vez e guardado no banco apenas como SHA-256. O único escopo aceito é `read`; tokens expirados ou revogados são recusados.
 - A API exige HTTPS e um IP de origem presente em `INTEGRATION_API_ALLOWED_IPS` (IPv4/IPv6 ou CIDR), configurado em `app/.env`. A lista vazia nega todas as origens. A identificação do IP depende da configuração correta de proxies confiáveis; aplique a mesma restrição no proxy/firewall de borda.
-- `INTEGRATION_API_ENABLED=false` é o padrão e responde 404. Após validação e autorização específicas para publicação, aplique a migração, configure a lista de IPs e habilite a chave. Emita um token de leitura com `php artisan integration:token-issue "Provider Ops Suite" --days=90` e guarde a saída uma única vez em cofre. Revogue pelo ID com `php artisan integration:token-revoke <id>`. Esses comandos não foram executados na instância.
+- `INTEGRATION_API_ENABLED=false` é o padrão e responde 404. A ativação não existe no painel: é feita em `app/.env`, após migração, configuração da lista de IPs e emissão de um token de leitura. O comando de emissão é `php artisan integration:token-issue "Provider Ops Suite" --days=90`; guarde a saída uma única vez em cofre. Revogue pelo ID com `php artisan integration:token-revoke <id>`. Esses comandos não foram executados na instância.
 - O limite é 30 requisições por minuto por IP e 120 por minuto por hash do token apresentado. A aplicação audita leituras atendidas e recusas de autenticação, HTTPS, IP e escopo sem gravar o valor do token, cabeçalhos, parâmetros da URL ou conteúdo retornado. Bloqueios pelo limite de requisições ocorrem antes desse registro e devem ser observados no log de acesso do proxy.
 
 ## Contratos
@@ -28,6 +28,13 @@ Datas de execução e de saúde usam ISO 8601 com fuso. Campos de data podem ser
 
 Respostas de autenticação/autorização usam `{"error":{"code":"...","message":"..."}}`: 401 `unauthorized`; 403 `https_required`, `ip_not_allowed` ou `forbidden`; 404 quando a API está desligada; 429 ao exceder o limite. Respostas da API usam `Cache-Control: private, no-store` quando passam pelo middleware de auditoria. Os eventos `api.integration.read`, `api.integration.token.issued` e `api.integration.token.revoked` ficam em `audit_events`; a auditoria guarda apenas ID/nome do token, rota, status e IP.
 
-## Validação antes de publicar
+## Ativação futura
 
-Executar os testes de integração, autorização e relatórios; validar migração e revogação em ambiente isolado; confirmar HTTPS e IP real atrás do proxy; revisar o contrato com a Provider Ops Suite. Habilitação da chave, migração de produção, emissão de token e publicação exigem autorização posterior.
+O envio do código ao GitHub não ativa a API. Após autorização específica para abrir a integração na instância:
+
+1. Confirmar HTTPS, o IP real recebido pela aplicação atrás do proxy e o IP de origem da Provider Ops Suite; limitar o acesso também no proxy/firewall.
+2. Aplicar a migração pendente da tabela `integration_tokens` e verificar o resultado.
+3. Definir `INTEGRATION_API_ALLOWED_IPS` e `INTEGRATION_API_ENABLED=true` em `app/.env`; atualizar o cache de configuração da aplicação, se estiver em uso.
+4. Emitir um token `read`, armazená-lo no cofre da integração e testar autenticação, paginação, limites e revogação sem expor o valor em logs ou URL.
+
+Os 12 testes de integração, autorização e relatórios passaram com 233 verificações antes do commit `389c657`. A migração de produção, a emissão de token e a ativação continuam pendentes.
