@@ -13,6 +13,15 @@ class User extends Authenticatable
 
     public const AVATAR_PRESETS = ['azul', 'verde', 'violeta', 'laranja', 'rosa', 'grafite'];
 
+    public const AVATAR_PRESET_LABELS = [
+        'azul' => 'Golfinho',
+        'verde' => 'Tartaruga',
+        'violeta' => 'Astronauta',
+        'laranja' => 'Raposa',
+        'rosa' => 'Flor',
+        'grafite' => 'Robô',
+    ];
+
     protected $fillable = [
         'name',
         'email',

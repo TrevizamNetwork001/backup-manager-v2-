@@ -19,11 +19,11 @@
     <article class="card">
         <div class="card__body profile-page__body">
             <div class="profile-current">
-                <div class="profile-current__avatar @if($user->avatar_preset) user-avatar--{{ $user->avatar_preset }} @endif" aria-hidden="true">
+                <div class="profile-current__avatar @if($user->avatar_path) profile-current__avatar--photo @endif" aria-hidden="true">
                     @if($user->avatar_path)
                         <img src="{{ route('profile.avatar.show') }}" alt="">
                     @elseif($user->avatar_preset)
-                        <x-icon name="user" size="lg" />
+                        <img src="{{ asset('assets/avatars/'.$user->avatar_preset.'.png') }}" alt="">
                     @else
                         {{ mb_strtoupper(mb_substr($user->name, 0, 1)) }}
                     @endif
@@ -37,7 +37,7 @@
             <div class="profile-options">
                 <section class="profile-option" aria-labelledby="profile-photo-title">
                     <h3 id="profile-photo-title">Enviar uma foto</h3>
-                    <p>Use uma imagem JPG, PNG ou WebP de até 2 MB.</p>
+                    <p>Use uma imagem JPG, PNG ou WebP de até 2 MB. A foto será mostrada inteira.</p>
                     <form method="POST" action="{{ route('profile.avatar.upload') }}" enctype="multipart/form-data">
                         @csrf
                         <label class="form-label" for="profile-avatar-file">Escolher imagem</label>
@@ -57,8 +57,8 @@
                             @foreach(\App\Models\User::AVATAR_PRESETS as $preset)
                                 <label class="profile-preset">
                                     <input type="radio" name="avatar_preset" value="{{ $preset }}" @checked(old('avatar_preset', $user->avatar_preset) === $preset) required>
-                                    <span class="profile-preset__image user-avatar--{{ $preset }}" aria-hidden="true"><x-icon name="user" /></span>
-                                    <span>{{ ucfirst($preset) }}</span>
+                                    <span class="profile-preset__image" aria-hidden="true"><img src="{{ asset('assets/avatars/'.$preset.'.png') }}" alt=""></span>
+                                    <span>{{ \App\Models\User::AVATAR_PRESET_LABELS[$preset] }}</span>
                                 </label>
                             @endforeach
                         </div>

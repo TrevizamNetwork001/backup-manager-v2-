@@ -136,11 +136,11 @@
 
         <div class="sidebar-footer">
             <div class="user-block">
-                <a href="{{ route('profile.edit') }}" class="user-avatar @if(auth()->user()->avatar_preset) user-avatar--{{ auth()->user()->avatar_preset }} @endif" aria-label="Abrir meu perfil" title="Alterar avatar">
+                <a href="{{ route('profile.edit') }}" class="user-avatar @if(auth()->user()->avatar_path) user-avatar--photo @endif" aria-label="Abrir meu perfil" title="Alterar avatar">
                     @if(auth()->user()->avatar_path)
                         <img src="{{ route('profile.avatar.show') }}" alt="">
                     @elseif(auth()->user()->avatar_preset)
-                        <x-icon name="user" size="sm" />
+                        <img src="{{ asset('assets/avatars/'.auth()->user()->avatar_preset.'.png') }}" alt="">
                     @else
                         {{ mb_strtoupper(mb_substr(auth()->user()->name, 0, 1)) }}
                     @endif

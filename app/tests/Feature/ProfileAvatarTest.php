@@ -34,7 +34,8 @@ class ProfileAvatarTest extends TestCase
         $this->assertNotNull($path);
         Storage::disk('local')->assertExists($path);
         $this->get(route('profile.avatar.show'))->assertOk()->assertHeader('Cache-Control', 'no-store, private');
-        $this->get(route('profile.edit'))->assertOk()->assertSee(route('profile.avatar.show'));
+        $this->get(route('profile.edit'))->assertOk()->assertSee(route('profile.avatar.show'))
+            ->assertSee('profile-current__avatar--photo')->assertSee('A foto será mostrada inteira.');
         $this->actingAs(User::factory()->admin()->create());
         $this->get(route('profile.avatar.show'))->assertNotFound();
         $this->actingAs($user);
@@ -57,7 +58,8 @@ class ProfileAvatarTest extends TestCase
         $this->assertSame('verde', $user->fresh()->avatar_preset);
         $this->assertNull($user->fresh()->avatar_path);
         Storage::disk('local')->assertMissing($path);
-        $this->get(route('dashboard'))->assertOk()->assertSee('user-avatar--verde');
+        $this->get(route('dashboard'))->assertOk()->assertSee('assets/avatars/verde.png');
+        $this->get(route('profile.edit'))->assertOk()->assertSee('Tartaruga');
         $this->patch(route('profile.avatar.preset'), ['avatar_preset' => 'invalido'])
             ->assertSessionHasErrors('avatar_preset');
         $this->assertSame('verde', $user->fresh()->avatar_preset);
