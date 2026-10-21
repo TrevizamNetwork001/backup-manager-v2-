@@ -39,10 +39,10 @@
             <div class="card__header"><div><h2 class="card__title" id="audit-top-ips-title">IPs com mais tentativas</h2><p class="card__description">Últimas 24 horas</p></div></div>
             <div class="table-shell">
                 <table class="data-table audit-compact-table">
-                    <thead><tr><th>Endereço IP</th><th>País</th><th>ASN / Operadora</th><th>Tentativas</th><th>Última atividade</th></tr></thead>
+                    <thead><tr><th>Endereço IP</th><th>País</th><th>ASN</th><th>Tentativas</th><th>Última atividade</th></tr></thead>
                     <tbody>
                         @forelse($security['top_ips'] as $ip)
-                            <tr><td data-label="Endereço IP"><span class="tech-value audit-ip">{{ $ip->ip_address ?: 'Não informado' }}</span></td><td data-label="País">@include('audit._country', ['geo' => $security['geo'][$ip->ip_address ?? '']])</td><td data-label="ASN / Operadora">@include('audit._asn', ['geo' => $security['geo'][$ip->ip_address ?? '']])</td><td data-label="Tentativas">{{ $ip->attempts }}</td><td data-label="Última atividade">{{ app(\App\Services\InstanceTimezone::class)->format(\Carbon\CarbonImmutable::parse($ip->last_at, 'UTC'), 'd/m/Y H:i') }}</td></tr>
+                            <tr><td data-label="Endereço IP"><span class="tech-value audit-ip">{{ $ip->ip_address ?: 'Não informado' }}</span></td><td data-label="País">@include('audit._country', ['geo' => $security['geo'][$ip->ip_address ?? '']])</td><td data-label="ASN">@include('audit._asn', ['geo' => $security['geo'][$ip->ip_address ?? '']])</td><td data-label="Tentativas">{{ $ip->attempts }}</td><td data-label="Última atividade">{{ app(\App\Services\InstanceTimezone::class)->format(\Carbon\CarbonImmutable::parse($ip->last_at, 'UTC'), 'd/m/Y H:i') }}</td></tr>
                         @empty
                             <tr><td colspan="5">Nenhuma tentativa registrada.</td></tr>
                         @endforelse
@@ -74,7 +74,7 @@
         </div>
         <div class="table-shell">
             <table class="data-table audit-compact-table">
-                <thead><tr><th>Data e hora</th><th>Evento</th><th>Conta</th><th>IP de origem</th><th>País</th><th>ASN / Operadora</th></tr></thead>
+                <thead><tr><th>Data e hora</th><th>Evento</th><th>Conta</th><th>IP de origem</th><th>País</th><th>ASN</th></tr></thead>
                 <tbody>
                     @forelse($security['recent'] as $authEvent)
                         <tr>
@@ -83,7 +83,7 @@
                             <td data-label="Conta"><span class="audit-account">{{ $authEvent->resource_label ?: 'Não informado' }}</span></td>
                             <td data-label="IP de origem"><span class="tech-value audit-ip">{{ $authEvent->ip_address ?: '—' }}</span></td>
                             <td data-label="País">@include('audit._country', ['geo' => $security['geo'][$authEvent->ip_address ?? '']])</td>
-                            <td data-label="ASN / Operadora">@include('audit._asn', ['geo' => $security['geo'][$authEvent->ip_address ?? '']])</td>
+                            <td data-label="ASN">@include('audit._asn', ['geo' => $security['geo'][$authEvent->ip_address ?? '']])</td>
                         </tr>
                     @empty
                         <tr><td colspan="6">Nenhum evento de autenticação.</td></tr>

@@ -38,7 +38,7 @@
                 <tr><th>IP</th><td><span class="audit-ip">{{ $auditEvent->ip_address ?? '—' }}</span></td></tr>
                 @if($geo !== null)
                     <tr><th>País</th><td>@include('audit._country', ['geo' => $geo])</td></tr>
-                    <tr><th>ASN / Operadora</th><td>@include('audit._asn', ['geo' => $geo])</td></tr>
+                    <tr><th>ASN</th><td>@include('audit._asn', ['geo' => $geo])</td></tr>
                 @endif
             </tbody>
         </table>

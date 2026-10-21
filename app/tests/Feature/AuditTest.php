@@ -99,10 +99,12 @@ class AuditTest extends TestCase
         $this->get(route('audit.index'))->assertOk()
             ->assertSee('assets/flags/us.svg', false)
             ->assertSeeText('Estados Unidos')
-            ->assertSeeText('AS15169 · Google LLC');
+            ->assertSeeText('15169')
+            ->assertDontSeeText('Google LLC');
         $this->get(route('audit.show', $eventId))->assertOk()
             ->assertSee('assets/flags/us.svg', false)
-            ->assertSeeText('AS15169 · Google LLC');
+            ->assertSeeText('15169')
+            ->assertDontSeeText('Google LLC');
     }
 
     public function test_authentication_events_still_render_when_geoip_databases_are_missing(): void
