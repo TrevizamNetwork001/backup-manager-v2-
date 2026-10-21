@@ -22,7 +22,7 @@
     @endphp
 
     @if(session('success'))
-        <div class="alert alert--success" role="status">{{ session('success') }}</div>
+        <div class="alert alert--success toast-notice" role="status" data-auto-dismiss data-toast="true">{{ session('success') }}</div>
     @endif
     <article class="card">
 
