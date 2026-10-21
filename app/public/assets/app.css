@@ -1910,6 +1910,8 @@ a.pagination__button:focus-visible { outline: 2px solid var(--color-primary); ou
 .audit-page .audit-auth-table .data-table, .audit-page .audit-history-table .data-table { table-layout: auto; }
 .audit-page .audit-history-table .data-table { min-width: 1000px; }
 .audit-page .data-table th, .audit-page .data-table td { min-width: 0; overflow-wrap: anywhere; white-space: normal; }
+.audit-page .audit-history-table .data-table th:last-child, .audit-page .audit-history-table .data-table td:last-child { width: 88px; min-width: 88px; white-space: nowrap; }
+.audit-page .audit-history-table .data-table td:last-child .btn { white-space: nowrap; }
 .audit-page .tech-value { white-space: normal; overflow-wrap: anywhere; }
 .audit-ip { display: inline-block; max-width: 23ch; white-space: normal; overflow-wrap: anywhere; word-break: break-word; }
 .audit-account { display: inline-block; white-space: nowrap; }
