@@ -71,9 +71,16 @@
         $naOrNo = $isOlt ? 'na' : 'no';
         $daOrDo = $isOlt ? 'da' : 'do';
     @endphp
-    <article class="card">
-        <div class="card__header"><div><h2 class="card__title">Integração {{ $vendorLabel }} {{ $isOlt ? 'OLT' : 'Rede' }} / FTP</h2><p class="card__description">Estado: {{ $wizard['operational'] ? 'Operacional' : 'Configuração pendente' }}</p></div></div>
-        <div class="card__body"><button type="button" class="btn btn--secondary" id="open-olt-wizard">Abrir configuração guiada</button></div>
+    <article class="card device-ftp-overview">
+        <div class="card__body device-ftp-overview__body">
+            <div class="device-ftp-overview__content">
+                <span class="device-ftp-overview__eyebrow">Backup via FTP</span>
+                <h2 class="card__title">Integração {{ $vendorLabel }} {{ $isOlt ? 'OLT' : 'Rede' }}</h2>
+                <p class="card__description">Configure a conta, o servidor e valide o primeiro arquivo recebido.</p>
+                <span @class(['device-ftp-overview__status', 'is-operational' => $wizard['operational']])>{{ $wizard['operational'] ? 'Integração operacional' : 'Configuração pendente · etapa '.$wizard['current_step'].' de 6' }}</span>
+            </div>
+            <button type="button" class="btn btn--primary" id="open-olt-wizard">{{ $wizard['operational'] ? 'Ver integração' : 'Continuar configuração' }}</button>
+        </div>
     </article>
     <dialog id="olt-wizard" class="olt-wizard device-ftp-wizard" aria-labelledby="olt-wizard-title" data-state="{{ $wizard['state'] }}" data-current-step="{{ $wizard['current_step'] }}" data-execution-id="{{ $wizard['execution']?->id }}" data-execution-status="{{ $wizard['execution']?->status }}">
         @php
@@ -81,12 +88,14 @@
         @endphp
         <div class="olt-wizard-header">
             <div>
+                <span class="olt-wizard-eyebrow">INTEGRAÇÃO FTP · {{ $device->name }}</span>
                 <h2 id="olt-wizard-title">Configuração {{ $vendorLabel }} {{ $isOlt ? 'OLT' : 'Rede' }} / FTP</h2>
                 <p id="olt-wizard-count">Etapa {{ $wizardStep }} de 6</p>
             </div>
             <button type="button" id="close-olt-wizard" class="modal__close" aria-label="Fechar configuração"><x-icon name="close" /></button>
         </div>
         <div class="olt-wizard-body">
+        <div class="olt-wizard-roadmap-heading"><span>Progresso da integração</span><span>6 etapas</span></div>
         <div class="olt-wizard-progress" role="progressbar" aria-label="Progresso da configuração" aria-valuemin="1" aria-valuemax="6" aria-valuenow="{{ $wizardStep }}">
             <span id="olt-wizard-progress-fill" style="width: {{ $wizardStep / 6 * 100 }}%"></span>
         </div>
@@ -262,7 +271,7 @@ set save-configuration interval 30</code></pre>
         <section class="olt-wizard-panel" data-wizard-panel="6" aria-label="Integração validada" @if ($wizardStep !== 6) hidden @endif>
             @if ($wizard['operational'])
                 <h3>Integração validada</h3>
-                <div class="alert-success"><strong>Integração operacional.</strong> O arquivo foi recebido e validado.</div>
+                <div class="alert-success" role="status"><strong>Integração operacional.</strong> O arquivo foi recebido e validado.</div>
                 <p><strong>Última validação:</strong> {{ app(\App\Services\InstanceTimezone::class)->format($wizard['execution']->artifact->validated_at, 'd/m/Y H:i') }}. Teste #{{ $wizard['execution']->id }} concluído. <a href="{{ route('backup-executions.show', $wizard['execution']) }}">Ver execução</a></p>
                 <button type="button" id="finish-olt-wizard">Concluir</button>
             @endif
