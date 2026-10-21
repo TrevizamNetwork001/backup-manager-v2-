@@ -38,6 +38,10 @@ Route::middleware(['auth', 'active', 'initial-setup'])->group(function () {
     Route::get('ftp', [FtpAdminController::class, 'index'])->name('ftp.index');
     Route::post('ftp/accounts', [FtpAdminController::class, 'store'])->name('ftp.store');
     Route::get('ftp/accounts/{ftpAccount}', [FtpAdminController::class, 'show'])->name('ftp.show');
+    Route::post('ftp/accounts/{ftpAccount}/mikrotik/integrate', [FtpAdminController::class, 'integrateMikrotik'])
+        ->middleware('throttle:mikrotik-ftp-integrate')->name('ftp.mikrotik.integrate');
+    Route::post('ftp/accounts/{ftpAccount}/mikrotik/status', [FtpAdminController::class, 'mikrotikStatus'])
+        ->middleware('throttle:mikrotik-ftp-status')->name('ftp.mikrotik.status');
     Route::post('ftp/accounts/{ftpAccount}/prepare', [FtpAdminController::class, 'prepare'])->name('ftp.prepare');
     Route::post('ftp/accounts/{ftpAccount}/rotate', [FtpAdminController::class, 'rotate'])->name('ftp.rotate');
     Route::post('ftp/accounts/{ftpAccount}/secret/reveal', [FtpAdminController::class, 'revealSecret'])

@@ -61,5 +61,9 @@ class AppServiceProvider extends ServiceProvider
                     ->onlyInput('email');
             });
         });
+        RateLimiter::for('mikrotik-ftp-integrate', fn ($request) => Limit::perMinutes(10, 3)
+            ->by('integrate:'.($request->user()?->id ?? $request->ip()).':'.(data_get($request->route('ftpAccount'), 'id') ?? $request->route('ftpAccount'))));
+        RateLimiter::for('mikrotik-ftp-status', fn ($request) => Limit::perMinute(30)
+            ->by('status:'.($request->user()?->id ?? $request->ip()).':'.(data_get($request->route('ftpAccount'), 'id') ?? $request->route('ftpAccount'))));
     }
 }

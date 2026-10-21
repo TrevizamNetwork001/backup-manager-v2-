@@ -10,6 +10,7 @@ use App\Services\FtpAccountDeletionService;
 use App\Services\FtpAccountManager;
 use App\Services\FtpServerSettings;
 use App\Services\HuaweiFtpBackupPolicy;
+use App\Services\MikrotikFtpIntegration;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -41,7 +42,8 @@ class FtpAdminController extends Controller
         return response()->view('ftp.index', compact('accounts', 'devices', 'receipts', 'server', 'ftpCoreReady'));
     }
 
-    public function show(Request $request, FtpAccount $ftpAccount, FtpAccountDeletionService $deletion): Response
+    public function show(Request $request, FtpAccount $ftpAccount, FtpAccountDeletionService $deletion,
+        MikrotikFtpIntegration $mikrotik): Response
     {
         $this->authorize('ftp.view');
         $ftpAccount->load('device');
@@ -66,9 +68,29 @@ class FtpAdminController extends Controller
         }
         $impact = $deletion->preview($ftpAccount);
         $confirmationPhrases = $deletion->confirmationPhrases($ftpAccount);
+        $isMikrotik = $mikrotik->isMikrotik($ftpAccount);
+        $mikrotikState = $isMikrotik ? $mikrotik->summary($ftpAccount) : null;
 
         return response()->view('ftp.show', compact('ftpAccount', 'lastReceipt', 'history', 'impact', 'confirmationPhrases',
-            'isFtpBackup', 'policyReady', 'accountReady', 'pureDbReady', 'deletionPreview'));
+            'isFtpBackup', 'policyReady', 'accountReady', 'pureDbReady', 'deletionPreview', 'isMikrotik', 'mikrotikState'));
+    }
+
+    public function integrateMikrotik(Request $request, FtpAccount $ftpAccount, MikrotikFtpIntegration $integration): JsonResponse
+    {
+        $this->authorize('ftp.manage');
+        abort_unless($integration->isMikrotik($ftpAccount->load('device')), 404);
+
+        return response()->json($integration->start($ftpAccount, $request->user()->id, $request->ip()))
+            ->header('Cache-Control', 'no-store, private');
+    }
+
+    public function mikrotikStatus(Request $request, FtpAccount $ftpAccount, MikrotikFtpIntegration $integration): JsonResponse
+    {
+        $this->authorize('ftp.manage');
+        abort_unless($integration->isMikrotik($ftpAccount->load('device')), 404);
+
+        return response()->json($integration->status($ftpAccount, $request->user()->id, $request->ip()))
+            ->header('Cache-Control', 'no-store, private');
     }
 
     public function prepare(Request $request, FtpAccount $ftpAccount, HuaweiFtpBackupPolicy $policy, AuditEvents $audit): RedirectResponse

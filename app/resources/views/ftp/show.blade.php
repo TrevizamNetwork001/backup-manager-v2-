@@ -32,6 +32,20 @@
     <article class="ftp-detail-stat"><span class="ftp-detail-stat__icon"><x-icon name="server" /></span><div><p>Equipamento</p><strong>{{ $ftpAccount->device?->name ?? 'Nenhum' }}</strong><small>{{ $ftpAccount->device ? 'Equipamento vinculado a esta conta.' : 'Conta sem equipamento vinculado.' }}</small></div></article>
     <article class="ftp-detail-stat"><span class="ftp-detail-stat__icon is-receipt"><x-icon name="clock" /></span><div><p>Último recebimento</p><strong>{{ $lastReceipt ? app(\App\Services\InstanceTimezone::class)->format(\Illuminate\Support\Carbon::parse($lastReceipt->received_at), 'd/m/Y H:i') : 'Nunca recebeu' }}</strong></div></article>
 </div>
+@if($isMikrotik)
+<section class="ftp-mikrotik-setup" aria-labelledby="ftp-mikrotik-title">
+    <div>
+        <h2 id="ftp-mikrotik-title">Integração FTP do MikroTik</h2>
+        <p>Instala o script por SSH, envia um backup de teste e ativa o agendamento diário às 23:00 após a confirmação do servidor.</p>
+        <p id="ftp-mikrotik-status" role="status" aria-live="polite">{{ $mikrotikState['message'] }}</p>
+    </div>
+    @can('ftp.manage')
+        @if(!in_array($ftpAccount->mikrotik_setup_status, ['completed', 'running', 'testing', 'enabling']) && !$ftpAccount->deletion_mode)
+            <form id="ftp-mikrotik-form" method="POST" action="{{ route('ftp.mikrotik.integrate', $ftpAccount) }}">@csrf<button class="btn btn--primary" type="submit">Integrar FTP no MikroTik</button></form>
+        @endif
+    @endcan
+</section>
+@endif
 @if($ftpAccount->purpose === 'backup' && $ftpAccount->credential_changed_at && (!$lastReceipt || $lastReceipt->received_at <= $ftpAccount->credential_changed_at->toDateTimeString()))<p class="alert alert--warning">Credencial alterada; aguardando novo recebimento. Atualize a senha no equipamento.</p>@endif
 <section class="ftp-detail-receipts" aria-labelledby="ftp-receipts-title"><div class="ftp-detail-receipts__heading"><h2 id="ftp-receipts-title"><x-icon name="file" /> Recebimentos recentes</h2>@if($history->count() > 5)<button type="button" class="ftp-detail-history-toggle" aria-expanded="false" aria-controls="ftp-receipts-body" hidden>Ver todos <span aria-hidden="true">→</span></button>@endif</div>@if($history->isEmpty())<p class="ftp-detail-empty">Nenhum arquivo recebido.</p>@else<div class="table-shell" role="region" aria-label="Recebimentos recentes da conta FTP" tabindex="0"><table class="data-table ftp-detail-table"><thead><tr><th>Data e hora</th><th>Arquivo</th><th>Tamanho</th><th>Status</th><th>Destino / erro</th></tr></thead><tbody id="ftp-receipts-body">@foreach($history as $item)@php($receiptTone = match ($item->status) { 'stored' => 'success', 'quarantined' => 'warning', 'failed', 'error' => 'danger', default => 'neutral' })<tr><td data-label="Data e hora">{{ app(\App\Services\InstanceTimezone::class)->format(\Illuminate\Support\Carbon::parse($item->received_at), 'd/m/Y H:i:s') }}</td><td data-label="Arquivo">{{ $item->original_filename }}</td><td data-label="Tamanho">{{ $item->size_bytes }} bytes</td><td data-label="Status"><span class="ftp-receipt-status ftp-receipt-status--{{ $receiptTone }}">{{ \App\Support\OperationalLabels::FTP_STATUSES[$item->status] ?? $item->status }}</span></td><td data-label="Destino / erro"><span class="ftp-detail-destination" title="{{ $item->relative_path ?? $item->error_code ?? '—' }}">{{ $item->relative_path ?? $item->error_code ?? '—' }}</span></td></tr>@endforeach</tbody></table></div>@endif</section>
 <div class="ftp-detail-accordions">
@@ -81,6 +95,49 @@
     }
 })();
 </script>
+@if($isMikrotik)
+<script>
+(() => {
+    const form = document.getElementById('ftp-mikrotik-form');
+    const status = document.getElementById('ftp-mikrotik-status');
+    const headers = { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest',
+        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content };
+    const request = async url => {
+        const response = await fetch(url, { method: 'POST', credentials: 'same-origin', headers });
+        if (!response.ok) {
+            const data = await response.json().catch(() => ({}));
+            throw new Error(data.errors?.integration?.[0] || data.message || 'Não foi possível completar a solicitação.');
+        }
+        return response.json();
+    };
+    const poll = async () => {
+        try {
+            const result = await request(@json(route('ftp.mikrotik.status', $ftpAccount)));
+            status.textContent = result.message;
+            if (result.status === 'completed' || result.status === 'failed') { location.reload(); return; }
+            setTimeout(poll, 4000);
+        } catch (error) {
+            status.textContent = error.message || 'Não foi possível consultar o andamento. Atualize a página para tentar novamente.';
+        }
+    };
+    form?.addEventListener('submit', async event => {
+        event.preventDefault();
+        form.querySelector('button').disabled = true;
+        status.textContent = 'Conectando ao MikroTik por SSH...';
+        try {
+            const result = await request(form.action);
+            status.textContent = result.message;
+            if (result.status === 'completed' || result.status === 'failed') { location.reload(); return; }
+            poll();
+        } catch (error) {
+            status.textContent = error.message || 'Não foi possível iniciar. Atualize a página e tente novamente.';
+            form.querySelector('button').disabled = false;
+        }
+    });
+    @if(in_array($ftpAccount->mikrotik_setup_status, ['running', 'testing', 'enabling'])) poll(); @endif
+})();
+</script>
+@endif
 @can('ftp.delete')
 <dialog class="modal" id="ftp-delete-dialog" aria-labelledby="ftp-delete-title"><div class="modal__surface"><div class="modal__header"><h2 class="modal__title" id="ftp-delete-title">Excluir conta FTP</h2><button type="button" class="modal__close" data-close-delete aria-label="Fechar"><x-icon name="close" size="sm" /></button></div><form method="POST" action="{{ route('ftp.delete', $ftpAccount) }}">@csrf @method('DELETE')<div class="modal__body ftp-modal-body">
 @if($errors->has('mode') || $errors->has('confirmation'))<div class="alert alert--warning" role="alert" id="ftp-delete-error">@foreach($errors->get('mode') as $error)<p>{{ $error }}</p>@endforeach @foreach($errors->get('confirmation') as $error)<p>{{ $error }}</p>@endforeach</div>@endif

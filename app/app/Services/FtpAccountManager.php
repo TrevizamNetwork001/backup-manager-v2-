@@ -55,10 +55,18 @@ class FtpAccountManager
             if ($locked->deletion_mode) {
                 throw ValidationException::withMessages(['account' => 'Conta em exclusão.']);
             }
+            if (in_array($locked->mikrotik_setup_status, ['running', 'testing', 'enabling'], true)) {
+                throw ValidationException::withMessages(['account' => 'Aguarde a conclusão da integração MikroTik antes de alterar a senha.']);
+            }
             $locked->secret = $secret;
             $locked->provisioned_at = null;
             $locked->sync_error = null;
             $locked->credential_changed_at = now();
+            if ($locked->mikrotik_setup_status === 'completed') {
+                $locked->mikrotik_setup_status = 'failed';
+                $locked->mikrotik_setup_error = 'CREDENTIAL_ROTATED';
+                $locked->mikrotik_setup_completed_at = null;
+            }
             $locked->save();
             $this->audit($locked, $actorId, 'rotate');
         });
@@ -76,9 +84,17 @@ class FtpAccountManager
             if ($locked->is_active === $active) {
                 return;
             }
+            if (in_array($locked->mikrotik_setup_status, ['running', 'testing', 'enabling'], true)) {
+                throw ValidationException::withMessages(['account' => 'Aguarde a conclusão da integração MikroTik antes de alterar a conta.']);
+            }
             $locked->is_active = $active;
             $locked->provisioned_at = null;
             $locked->sync_error = null;
+            if (! $active && $locked->mikrotik_setup_status === 'completed') {
+                $locked->mikrotik_setup_status = 'failed';
+                $locked->mikrotik_setup_error = 'FTP_ACCOUNT_DISABLED';
+                $locked->mikrotik_setup_completed_at = null;
+            }
             $locked->save();
             $this->audit($locked, $actorId, $active ? 'enable' : 'disable');
         });
