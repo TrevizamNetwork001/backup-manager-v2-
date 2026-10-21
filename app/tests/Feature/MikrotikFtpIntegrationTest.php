@@ -101,7 +101,7 @@ class MikrotikFtpIntegrationTest extends TestCase
 
         $this->postJson(route('ftp.mikrotik.status', $account))->assertOk()->assertJsonPath('status', 'completed');
         $this->get(route('ftp.show', $account))->assertOk()
-            ->assertSee('Integração ativa às 23:00')->assertDontSee('Integrar FTP no MikroTik');
+            ->assertSee('Envio diário às 23:00 ativado no MikroTik')->assertDontSee('Integrar FTP no MikroTik');
         $this->postJson(route('ftp.mikrotik.integrate', $account))->assertOk()->assertJsonPath('status', 'completed');
         $this->assertNotNull($account->fresh()->mikrotik_setup_completed_at);
     }

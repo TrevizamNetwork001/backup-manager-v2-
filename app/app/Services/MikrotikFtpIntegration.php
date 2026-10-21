@@ -210,7 +210,7 @@ class MikrotikFtpIntegration
             'running' => 'Instalando script por SSH.',
             'testing' => 'Script instalado. Aguardando o backup de teste no servidor.',
             'enabling' => 'Backup recebido. Ativando o agendamento diário.',
-            'completed' => 'Backup recebido e validado. Integração ativa às 23:00.',
+            'completed' => 'Backup recebido e validado. Envio diário às 23:00 ativado no MikroTik.',
             'failed' => match ($code) {
                 'LEGACY_INTEGRATION_PRESENT' => 'Já existe uma rotina antiga no MikroTik. Verifique-a antes de integrar pela V2.',
                 'SSH_AUTH_FAILED' => 'A autenticação SSH falhou.',

@@ -36,7 +36,7 @@
 <section class="ftp-mikrotik-setup" aria-labelledby="ftp-mikrotik-title">
     <div>
         <h2 id="ftp-mikrotik-title">Integração FTP do MikroTik</h2>
-        <p>Instala o script por SSH, envia um backup de teste e ativa o agendamento diário às 23:00 após a confirmação do servidor.</p>
+        <p>Instala a rotina por SSH e envia um backup de teste. Após a validação, ativa no próprio MikroTik o envio diário às 23:00. O painel recebe e valida os arquivos.</p>
         <p id="ftp-mikrotik-status" role="status" aria-live="polite">{{ $mikrotikState['message'] }}</p>
     </div>
     @can('ftp.manage')
