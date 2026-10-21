@@ -9,6 +9,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
 use Illuminate\Validation\ValidationException;
@@ -185,6 +186,10 @@ class UserController extends Controller
 
             return true;
         });
+
+        if ($deleted && $user->avatar_path) {
+            Storage::disk('local')->delete($user->avatar_path);
+        }
 
         return redirect()->route('users.index')->with($deleted ? 'success' : 'warning',
             $deleted ? 'Usuário excluído com sucesso.' : 'Não é possível excluir o último administrador ativo.');

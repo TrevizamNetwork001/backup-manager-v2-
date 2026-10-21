@@ -136,9 +136,15 @@
 
         <div class="sidebar-footer">
             <div class="user-block">
-                <div class="user-avatar">
-                    {{ strtoupper(substr(auth()->user()->name, 0, 1)) }}
-                </div>
+                <a href="{{ route('profile.edit') }}" class="user-avatar @if(auth()->user()->avatar_preset) user-avatar--{{ auth()->user()->avatar_preset }} @endif" aria-label="Abrir meu perfil" title="Alterar avatar">
+                    @if(auth()->user()->avatar_path)
+                        <img src="{{ route('profile.avatar.show') }}" alt="">
+                    @elseif(auth()->user()->avatar_preset)
+                        <x-icon name="user" size="sm" />
+                    @else
+                        {{ mb_strtoupper(mb_substr(auth()->user()->name, 0, 1)) }}
+                    @endif
+                </a>
 
                 <div class="user-info">
                     <strong>{{ auth()->user()->name }}</strong>
