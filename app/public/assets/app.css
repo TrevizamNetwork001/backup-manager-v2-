@@ -819,27 +819,22 @@ textarea.form-control { resize: vertical; }
 .logout-button {
     display: inline-flex;
     align-items: center;
-    justify-content: center;
+    justify-content: flex-start;
     gap: 8px;
-    width: 100%;
-
-    padding: 9px 12px;
-
-    border: 1px solid var(--border);
-    border-radius: 8px;
-
+    width: auto;
+    padding: 4px 0;
+    border: 0;
     background: transparent;
     color: #9aa8ba;
-
     cursor: pointer;
 }
 
 .logout-button .icon { opacity: .78; stroke-width: 1.5; }
 
 .logout-button:hover {
-    background: var(--surface-2);
     color: white;
 }
+.logout-button:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; border-radius: 2px; }
 
 .main-content {
     grid-column: 2;
@@ -1986,7 +1981,7 @@ body { background: radial-gradient(circle at 75% 12%, #0b1a35 0, #07111e 45%, #0
 .user-avatar { width: 42px; height: 42px; background: #1d3e6b; color: #fff; }
 .user-info strong { font-size: 14px; }
 .user-info span { font-size: 12px; }
-.logout-button { min-height: 42px; color: #dce9fb; }
+.logout-button { min-height: 32px; color: #9db8da; font-size: 13px; }
 .topbar { min-height: 100px; padding: 22px 26px; background: transparent; border-color: var(--color-border-soft); }
 .topbar h1 { font-size: 31px; font-weight: 700; }
 .topbar p { color: var(--color-text-muted); font-size: 14px; }
