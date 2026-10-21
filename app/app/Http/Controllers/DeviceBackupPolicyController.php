@@ -37,7 +37,7 @@ class DeviceBackupPolicyController extends Controller
         }
         $device = ($backupPolicy->method === 'ftp_push' ? Device::with('ftpAccount') : Device::query())->findOrFail($validated['device_id']);
         if ($backupPolicy->method === 'ftp_push' &&
-            (! $device->isBackupFtpEligible() ||
+            (! $device->acceptsFtpPolicy($backupPolicy) ||
              ! $device->ftpAccount?->is_active || $backupPolicy->artifact_mode !== 'config')) {
             throw ValidationException::withMessages(['device_id' => 'FTP Push requer um equipamento compatível e conta FTP ativa.']);
         }

@@ -36,7 +36,7 @@ class MikrotikFtpTest extends TestCase
         return [$device, $policy, $account];
     }
 
-    public function test_mikrotik_can_use_ftp_policy_but_zte_remains_blocked(): void
+    public function test_mikrotik_and_zte_require_their_own_ftp_policies(): void
     {
         [$device, $policy, $account] = $this->fixture();
         $this->assertTrue($device->isBackupFtpEligible());
@@ -58,10 +58,24 @@ class MikrotikFtpTest extends TestCase
         $zteAccount->secret = 'SyntheticPassword123!';
         $zteAccount->provisioned_at = now();
         $zteAccount->save();
-        $this->assertFalse($zte->isBackupFtpEligible());
+        $this->assertTrue($zte->isBackupFtpEligible());
+        $this->assertFalse($zte->acceptsFtpPolicy($policy));
+        $ztePolicy = BackupPolicy::create(['name' => 'ZTE FTP', 'method' => 'ftp_push',
+            'artifact_mode' => 'config', 'schedule_type' => 'manual', 'retention_days' => 30, 'is_active' => true]);
+        $this->post(route('backup-policies.associations.store', $policy), [
+            'device_id' => $zte->id, 'is_active' => 1,
+        ])->assertSessionHasErrors('device_id');
         $worker = str_repeat('a', 32);
-        $result = app(EngineJobService::class)->receiveFtp($zte->id, str_repeat('b', 32), 'backup.rsc', time(), $worker);
-        $this->assertSame('unsupported_device', $result['error_code']);
+        $result = app(EngineJobService::class)->receiveFtp($zte->id, str_repeat('b', 32), 'startrun.sav', time(), $worker);
+        $this->assertSame('missing_backup_policy', $result['error_code']);
+        $this->post(route('backup-policies.associations.store', $ztePolicy), [
+            'device_id' => $zte->id, 'is_active' => 1,
+        ])->assertSessionHasNoErrors();
+        $result = app(EngineJobService::class)->receiveFtp($zte->id, str_repeat('c', 32), 'startrun.sav', time(), $worker);
+        $this->assertSame('running', $result['status']);
+        $this->assertStringEndsWith('.sav', $result['relative_path']);
+        $rejected = app(EngineJobService::class)->receiveFtp($zte->id, str_repeat('d', 32), 'unexpected.rsc', time(), $worker);
+        $this->assertSame('invalid_file', $rejected['error_code']);
     }
 
     public function test_rsc_upload_becomes_a_backup_and_binary_upload_is_rejected(): void

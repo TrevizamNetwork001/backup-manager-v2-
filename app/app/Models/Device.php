@@ -88,7 +88,20 @@ class Device extends Model
     public function isBackupFtpEligible(): bool
     {
         return $this->isHuaweiFtpEligible()
-            || ($this->platform === 'network' && mb_strtolower(trim($this->vendor)) === 'mikrotik');
+            || ($this->platform === 'network' && mb_strtolower(trim($this->vendor)) === 'mikrotik')
+            || ($this->platform === 'olt' && mb_strtolower(trim($this->vendor)) === 'zte');
+    }
+
+    public function acceptsFtpPolicy(BackupPolicy $policy): bool
+    {
+        if (! $this->isBackupFtpEligible() || $policy->method !== 'ftp_push' ||
+            $policy->artifact_mode !== 'config' || $policy->schedule_type !== 'manual') {
+            return false;
+        }
+
+        $isZteOlt = $this->platform === 'olt' && mb_strtolower(trim($this->vendor)) === 'zte';
+
+        return $isZteOlt ? $policy->name === 'ZTE FTP' : $policy->name !== 'ZTE FTP';
     }
 
     /**

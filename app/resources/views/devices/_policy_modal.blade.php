@@ -3,6 +3,7 @@
     @php($activePolicyCount = $visibleAssociations->filter(fn ($association) => $association->is_active && $association->backupPolicy?->is_active)->count())
     @php($hasActivePolicy = $activePolicyCount > 0)
     @php($mikrotikFtpPolicy = $policies->first(fn ($policy) => $policy->name === 'MikroTik FTP' && $policy->method === 'ftp_push'))
+    @php($zteFtpPolicy = $policies->first(fn ($policy) => $policy->name === 'ZTE FTP' && $device->acceptsFtpPolicy($policy)))
     <div class="modal__surface">
         <div class="modal__header">
             <div>
@@ -81,6 +82,15 @@
                     @endcan
                 </section>
             @endif
+            @if($device->is_active && $zteFtpPolicy && ! $device->ftpAccount?->is_active)
+                <section class="device-policy-dialog__section" aria-label="Preparar ZTE FTP">
+                    <h3 class="device-policy-dialog__section-title">ZTE FTP</h3>
+                    <p class="device-policy-dialog__note">Crie e ative a conta FTP desta OLT. Depois, volte aqui para associar a política ZTE FTP.</p>
+                    @can('ftp.manage')
+                        <a class="btn btn--secondary btn--sm" href="{{ $device->ftpAccount ? route('ftp.show', $device->ftpAccount) : route('ftp.index', ['create' => 1, 'device_id' => $device->id]) }}">{{ $device->ftpAccount ? 'Abrir conta FTP' : 'Criar conta FTP' }}</a>
+                    @endcan
+                </section>
+            @endif
             @if($device->is_active && $availablePolicies->isNotEmpty())
                 <details class="device-policy-dialog__add" data-device-policy-add @if(! $hasActivePolicy || (old('policy_device_id') == $device->id && old('backup_policy_id'))) open @endif>
                     <summary>{{ $hasActivePolicy ? 'Adicionar outra política' : 'Associar política' }}</summary>
@@ -109,7 +119,7 @@
                     </form>
                     </section>
                 </details>
-            @elseif(! $hasActivePolicy)
+            @elseif(! $hasActivePolicy && ! $zteFtpPolicy)
                 <section class="device-policy-dialog__section" aria-label="Associar política">
                     <h3 class="device-policy-dialog__section-title">Associar política</h3>
                     <p class="muted-text">{{ $device->is_active ? 'Nenhuma política compatível disponível. Confira as políticas ativas e o acesso SSH ou FTP deste equipamento.' : 'Ative o equipamento para associar uma política.' }}</p>

@@ -5,9 +5,11 @@ namespace Tests\Feature;
 use App\Models\BackupPolicy;
 use App\Models\Device;
 use App\Models\DeviceBackupPolicy;
+use App\Models\FtpAccount;
 use App\Models\Site;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 class DeviceTest extends TestCase
@@ -67,6 +69,32 @@ class DeviceTest extends TestCase
 
         $ftp = $this->html($this->get(route('ftp.index', ['create' => 1, 'device_id' => $device->id]))->assertOk()->getContent());
         $this->assertSame((string) $device->id, $ftp->evaluate('string(//select[@id="device_id"]/option[@selected]/@value)'));
+    }
+
+    public function test_zte_olt_shows_ftp_account_step_before_policy_association(): void
+    {
+        $site = Site::create(['name' => 'POP Teste', 'is_active' => true]);
+        $device = Device::create(['site_id' => $site->id, 'name' => 'OLT-LIBANESA',
+            'management_ip' => '192.0.2.30', 'vendor' => 'ZTE', 'platform' => 'olt', 'is_active' => true]);
+        $policy = BackupPolicy::create(['name' => 'ZTE FTP', 'method' => 'ftp_push',
+            'artifact_mode' => 'config', 'schedule_type' => 'manual', 'is_active' => true]);
+        $this->actingAs(User::factory()->admin()->create());
+
+        $html = $this->html($this->get(route('devices.index'))->assertOk()->getContent());
+        $dialog = '//dialog[@id="device-policy-'.$device->id.'"]';
+        $this->assertSame('ZTE FTP', trim($html->evaluate('string('.$dialog.'//section[@aria-label="Preparar ZTE FTP"]/h3)')));
+        $this->assertSame(route('ftp.index', ['create' => 1, 'device_id' => $device->id]),
+            $html->evaluate('string('.$dialog.'//a[normalize-space()="Criar conta FTP"]/@href)'));
+
+        $account = new FtpAccount(['device_id' => $device->id, 'account_uuid' => (string) Str::uuid(),
+            'home_layout' => 'account', 'purpose' => 'backup', 'username' => 'zteexample', 'is_active' => true]);
+        $account->secret = 'SyntheticPassword123!';
+        $account->provisioned_at = now();
+        $account->save();
+
+        $html = $this->html($this->get(route('devices.index'))->assertOk()->getContent());
+        $this->assertSame((string) $policy->id,
+            $html->evaluate('string('.$dialog.'//select[@name="backup_policy_id"]/option[contains(text(), "ZTE FTP")]/@value)'));
     }
 
     public function test_authenticated_user_can_create_device(): void

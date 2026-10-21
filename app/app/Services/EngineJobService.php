@@ -98,8 +98,14 @@ class EngineJobService
             if (mb_strtolower(trim($device->vendor)) === 'mikrotik' && ! preg_match('/\.rsc\z/i', $filename)) {
                 return ['status' => 'rejected', 'error_code' => 'invalid_file', 'ftp_account_id' => $account->id];
             }
+            if (mb_strtolower(trim($device->vendor)) === 'zte' && ! preg_match('/\.(?:sav|cfg|dat)\z/i', $filename)) {
+                return ['status' => 'rejected', 'error_code' => 'invalid_file', 'ftp_account_id' => $account->id];
+            }
             $policyService = app(HuaweiFtpBackupPolicy::class);
             $association = $policyService->active($device);
+            if ($association && ! $device->acceptsFtpPolicy($association->backupPolicy)) {
+                $association = null;
+            }
             if (! $association) {
                 $hasFtpPolicy = $device->deviceBackupPolicies()->whereHas('backupPolicy',
                     fn ($query) => $query->where('method', 'ftp_push'))->exists();
@@ -246,6 +252,10 @@ class EngineJobService
             ? 'tar.gz' : (in_array($vendor, ['huawei', 'vsol'], true) ? 'cfg' : 'rsc');
         if ($job->origin === 'ftp_received' && preg_match('/\.zip\z/i', (string) $job->received_filename)) {
             $extension = 'zip';
+        }
+        if ($vendor === 'zte' && $job->origin === 'ftp_received' &&
+            preg_match('/\.(sav|cfg|dat)\z/i', (string) $job->received_filename, $matches)) {
+            $extension = strtolower($matches[1]);
         }
         $device = $job->device;
         $site = $device->site;
