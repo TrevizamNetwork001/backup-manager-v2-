@@ -40,7 +40,7 @@ class UserController extends Controller
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'string', 'email', 'max:255', 'unique:users,email'],
             'role' => ['required', Rule::in(Rbac::ROLES)],
-            'password' => ['required', 'confirmed', Password::min(8)->letters()->numbers(), 'regex:/[\p{P}\p{S}]/u', 'max:72'],
+            'password' => ['required', Password::min(8)->letters()->numbers(), 'regex:/[\p{P}\p{S}]/u', 'max:72'],
             'is_active' => ['required', 'boolean'],
         ], ['password.regex' => 'A senha precisa incluir um caractere especial.']);
 

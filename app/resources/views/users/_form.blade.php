@@ -53,11 +53,6 @@
         @error('password')<span class="form-error" id="user-password-error">{{ $message }}</span>@enderror
     </div>
 
-    <div class="form-field">
-        <label class="form-label" for="password_confirmation">Confirmar senha *</label>
-        <input class="form-control" id="password_confirmation" name="password_confirmation" type="password" minlength="8" maxlength="72" autocomplete="new-password" required>
-    </div>
-
     <div class="form-field user-create-span">
         <input type="hidden" name="is_active" value="0">
         <label class="switch-row user-create-switch">

@@ -8,8 +8,9 @@ Esta revisão complementa [a investigação de segurança](INVESTIGACAO_SEGURANC
 | --- | --- |
 | Sessões de usuários | Desativar uma conta ou redefinir sua senha não encerrava as sessões existentes. Agora essas operações apagam as sessões no banco e revogam o token de lembrar acesso. A redefinição também remove tokens antigos de recuperação de senha. |
 | Usuários, ações | Os textos Editar, Ativar/Desativar e Excluir foram trocados por botões de ícone com nome acessível e dica ao passar o cursor. Editar usa um lápis sobre uma folha; o componente contém uma única definição de cada ícone. |
-| Usuários, cadastro | O campo de senha exibe, durante a digitação, os requisitos de 8 caracteres, letra, número e caractere especial. O servidor exige os mesmos requisitos e confirmação. A redefinição administrativa mantém mínimo de 10 caracteres e também exige letra, número e caractere especial. |
+| Usuários, cadastro | O cadastro tem um único campo de senha e exibe, durante a digitação, os requisitos de 8 caracteres, letra, número e caractere especial. O servidor exige os mesmos requisitos. A redefinição administrativa mantém mínimo de 10 caracteres e também exige letra, número e caractere especial. |
 | Usuários, textos | “Papel” foi substituído por “Perfil de acesso” nas telas de criação, listagem e edição. |
+| Usuários, alinhamento | Os campos Perfil de acesso e Senha no modal de cadastro passaram a alinhar rótulo e controle pelo topo; a lista de requisitos da senha pode crescer sem esticar o campo ao lado. |
 | Testes de equipamentos | Três expectativas antigas foram atualizadas para os nomes de políticas efetivamente mostrados na lista de equipamentos. |
 
 ## Proteções confirmadas

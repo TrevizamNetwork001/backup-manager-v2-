@@ -42,8 +42,7 @@ class UserManagementTest extends TestCase
 
         $response = $this->post(route('users.store'), [
             'name' => 'Novo Operador', 'email' => 'novo.operador@example.com',
-            'role' => Rbac::ROLE_OPERATOR, 'password' => 'ValidPassword123!',
-            'password_confirmation' => 'ValidPassword123!', 'is_active' => '1',
+            'role' => Rbac::ROLE_OPERATOR, 'password' => 'ValidPassword123!', 'is_active' => '1',
         ]);
 
         $response->assertRedirect(route('users.index'));
@@ -67,8 +66,7 @@ class UserManagementTest extends TestCase
 
         $this->post(route('users.store'), [
             'name' => 'Conta Teste', 'email' => 'conta.teste@example.com',
-            'role' => Rbac::ROLE_VIEWER, 'password' => 'Abc123!x',
-            'password_confirmation' => 'Abc123!x', 'is_active' => '1',
+            'role' => Rbac::ROLE_VIEWER, 'password' => 'Abc123!x', 'is_active' => '1',
         ])->assertRedirect(route('users.index'));
 
         $this->assertDatabaseHas('users', ['email' => 'conta.teste@example.com']);
