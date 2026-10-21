@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\AuditEvent;
 use App\Models\User;
+use App\Services\GeoIpLookup;
 use App\Support\ReportPeriod;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
@@ -13,7 +14,7 @@ use Illuminate\View\View;
 
 class AuditController extends Controller
 {
-    public function index(Request $request): View
+    public function index(Request $request, GeoIpLookup $geoIp): View
     {
         $this->authorize('audit.view');
 
@@ -50,7 +51,7 @@ class AuditController extends Controller
         $users = User::query()->orderBy('name')->get(['id', 'name']);
 
         $since24h = CarbonImmutable::now('UTC')->subDay();
-        $failedAuth = AuditEvent::query()->where('action', 'auth.login_failed');
+        $failedAuth = AuditEvent::query()->whereIn('action', ['auth.login_failed', 'auth.login_throttled']);
         $security = [
             'failed_10m' => (clone $failedAuth)->where('created_at', '>=', CarbonImmutable::now('UTC')->subMinutes(10))->count(),
             'failed_24h' => (clone $failedAuth)->where('created_at', '>=', $since24h)->count(),
@@ -62,19 +63,29 @@ class AuditController extends Controller
             'top_accounts' => (clone $failedAuth)->where('created_at', '>=', $since24h)
                 ->select('resource_label')->selectRaw('COUNT(*) as attempts, COUNT(DISTINCT ip_address) as ips, MAX(created_at) as last_at')
                 ->groupBy('resource_label')->orderByDesc('attempts')->limit(5)->get(),
-            'recent' => AuditEvent::query()->whereIn('action', ['auth.login', 'auth.login_failed'])
+            'recent' => AuditEvent::query()->whereIn('action', ['auth.login', 'auth.login_failed', 'auth.login_throttled'])
                 ->orderByDesc('id')->limit(20)->get(),
         ];
+        $security['geo_available'] = $geoIp->available();
+        $security['geo'] = ['' => $geoIp->lookup(null)];
+        $securityIps = $security['top_ips']->pluck('ip_address')
+            ->merge($security['recent']->pluck('ip_address'))->filter()->unique();
+        foreach ($securityIps as $ip) {
+            $security['geo'][$ip] = $geoIp->lookup($ip);
+        }
 
         return view('audit.index', compact('events', 'filters', 'actions', 'resourceTypes', 'results', 'users', 'security'));
     }
 
-    public function show(AuditEvent $auditEvent): View
+    public function show(AuditEvent $auditEvent, GeoIpLookup $geoIp): View
     {
         $this->authorize('audit.view');
         $auditEvent->load('actor:id,name,email');
 
-        return view('audit.show', compact('auditEvent'));
+        $geo = in_array($auditEvent->action, ['auth.login', 'auth.login_failed', 'auth.login_throttled'], true)
+            ? $geoIp->lookup($auditEvent->ip_address) : null;
+
+        return view('audit.show', compact('auditEvent', 'geo'));
     }
 
     private function applySearch($query, string $term)
@@ -97,5 +108,4 @@ class AuditController extends Controller
             }
         });
     }
-
 }

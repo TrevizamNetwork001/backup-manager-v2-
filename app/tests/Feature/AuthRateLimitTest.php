@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\RateLimiter;
 use Tests\TestCase;
 
@@ -31,6 +32,7 @@ class AuthRateLimitTest extends TestCase
         $response = $this->post(route('login.store'), ['email' => $user->email, 'password' => 'wrong-password']);
         $response->assertSessionHasErrors('email');
         $this->assertStringContainsString('Muitas tentativas', session('errors')->first('email'));
+        $this->assertSame(1, DB::table('audit_events')->where('action', 'auth.login_throttled')->count());
     }
 
     public function test_throttle_key_combines_email_and_ip_not_ip_alone(): void

@@ -43,6 +43,8 @@ app/storage/framework/views/*
 Thumbs.db
 *.swp
 *.tmp
+*.mmdb
+GeoIP*.zip
 
 # Python engine
 __pycache__/

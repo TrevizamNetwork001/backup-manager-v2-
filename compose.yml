@@ -38,6 +38,7 @@ services:
     volumes:
       - ./app:/var/www/html:ro
       - ./engine:/engine:ro
+      - /usr/share/GeoIP:/data/geoip:ro
       - ./app/storage:/var/www/html/storage
       - ./app/bootstrap/cache:/var/www/html/bootstrap/cache
       - ./docker/php/storage-pool.conf:/usr/local/etc/php-fpm.d/zz-storage.conf:ro

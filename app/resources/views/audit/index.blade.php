@@ -28,6 +28,10 @@
                 <div><strong>{{ $security['failed_24h'] }}</strong><span>Falhas nas últimas 24h</span></div>
                 <div><strong>{{ $security['distinct_ips'] }}</strong><span>Endereços IP distintos</span></div>
             </div>
+            @unless($security['geo_available'])
+                <p class="form-help">Bases GeoIP indisponíveis. País e ASN serão exibidos como não identificados até a instalação das bases.</p>
+            @endunless
+            <p class="form-help">Dados GeoLite2 criados por <a href="https://www.maxmind.com" target="_blank" rel="noopener noreferrer">MaxMind</a>. País e ASN são estimativas baseadas no IP.</p>
         </div>
     </section>
 
@@ -36,12 +40,12 @@
             <div class="card__header"><div><h2 class="card__title" id="audit-top-ips-title">IPs com mais tentativas</h2><p class="card__description">Últimas 24 horas</p></div></div>
             <div class="table-shell">
                 <table class="data-table audit-compact-table">
-                    <thead><tr><th>Endereço IP</th><th>Tentativas</th><th>Última atividade</th></tr></thead>
+                    <thead><tr><th>Endereço IP</th><th>País</th><th>ASN / Operadora</th><th>Tentativas</th><th>Última atividade</th></tr></thead>
                     <tbody>
                         @forelse($security['top_ips'] as $ip)
-                            <tr><td data-label="Endereço IP"><span class="tech-value">{{ $ip->ip_address ?: 'Não informado' }}</span></td><td data-label="Tentativas">{{ $ip->attempts }}</td><td data-label="Última atividade">{{ app(\App\Services\InstanceTimezone::class)->format(\Carbon\CarbonImmutable::parse($ip->last_at, 'UTC'), 'd/m/Y H:i') }}</td></tr>
+                            <tr><td data-label="Endereço IP"><span class="tech-value audit-ip">{{ $ip->ip_address ?: 'Não informado' }}</span></td><td data-label="País">@include('audit._country', ['geo' => $security['geo'][$ip->ip_address ?? '']])</td><td data-label="ASN / Operadora">@include('audit._asn', ['geo' => $security['geo'][$ip->ip_address ?? '']])</td><td data-label="Tentativas">{{ $ip->attempts }}</td><td data-label="Última atividade">{{ app(\App\Services\InstanceTimezone::class)->format(\Carbon\CarbonImmutable::parse($ip->last_at, 'UTC'), 'd/m/Y H:i') }}</td></tr>
                         @empty
-                            <tr><td colspan="3">Nenhuma tentativa registrada.</td></tr>
+                            <tr><td colspan="5">Nenhuma tentativa registrada.</td></tr>
                         @endforelse
                     </tbody>
                 </table>
@@ -64,24 +68,26 @@
         </section>
     </div>
 
-    <section class="card" aria-labelledby="audit-auth-title">
+    <section class="card audit-auth-table" aria-labelledby="audit-auth-title">
         <div class="card__header">
             <div><h2 class="card__title" id="audit-auth-title">Eventos recentes de autenticação</h2><p class="card__description">As 20 ocorrências mais recentes de acesso.</p></div>
             <a class="btn btn--ghost btn--sm" href="#audit-history">Ver histórico completo</a>
         </div>
         <div class="table-shell">
             <table class="data-table audit-compact-table">
-                <thead><tr><th>Data e hora</th><th>Evento</th><th>Conta</th><th>IP de origem</th></tr></thead>
+                <thead><tr><th>Data e hora</th><th>Evento</th><th>Conta</th><th>IP de origem</th><th>País</th><th>ASN / Operadora</th></tr></thead>
                 <tbody>
                     @forelse($security['recent'] as $authEvent)
                         <tr>
                             <td data-label="Data e hora">{{ app(\App\Services\InstanceTimezone::class)->format($authEvent->created_at, 'd/m/Y H:i') }}</td>
-                            <td data-label="Evento"><span class="badge badge--{{ $authEvent->action === 'auth.login' ? 'success' : 'danger' }}">{{ $authEvent->action === 'auth.login' ? 'Login válido' : 'Tentativa inválida' }}</span></td>
+                            <td data-label="Evento"><span class="badge badge--{{ $authEvent->action === 'auth.login' ? 'success' : 'danger' }}">{{ match ($authEvent->action) { 'auth.login' => 'Login válido', 'auth.login_throttled' => 'Tentativa bloqueada', default => 'Tentativa inválida' } }}</span></td>
                             <td data-label="Conta">{{ $authEvent->resource_label ?: 'Não informado' }}</td>
-                            <td data-label="IP de origem"><span class="tech-value">{{ $authEvent->ip_address ?: '—' }}</span></td>
+                            <td data-label="IP de origem"><span class="tech-value audit-ip">{{ $authEvent->ip_address ?: '—' }}</span></td>
+                            <td data-label="País">@include('audit._country', ['geo' => $security['geo'][$authEvent->ip_address ?? '']])</td>
+                            <td data-label="ASN / Operadora">@include('audit._asn', ['geo' => $security['geo'][$authEvent->ip_address ?? '']])</td>
                         </tr>
                     @empty
-                        <tr><td colspan="4">Nenhum evento de autenticação.</td></tr>
+                        <tr><td colspan="6">Nenhum evento de autenticação.</td></tr>
                     @endforelse
                 </tbody>
             </table>
@@ -203,7 +209,7 @@
                             <td data-label="Ação">{{ $presenter->actionLabel($event->action) }}</td>
                             <td data-label="Recurso">{{ $presenter->resourceTypeLabel($event->resource_type) }} @if($event->resource_label)· <code class="tech-value">{{ $event->resource_label }}</code>@endif</td>
                             <td data-label="Resultado"><span class="badge badge--{{ $badge['variant'] }}">{{ $badge['label'] }}</span></td>
-                            <td data-label="IP">{{ $event->ip_address ?? '—' }}</td>
+                            <td data-label="IP"><span class="audit-ip">{{ $event->ip_address ?? '—' }}</span></td>
                             <td data-label="Detalhes"><a class="btn btn--ghost btn--sm" href="{{ route('audit.show', $event) }}">Ver</a></td>
                         </tr>
                     @endforeach

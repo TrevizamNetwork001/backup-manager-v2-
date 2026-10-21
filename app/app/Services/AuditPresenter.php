@@ -16,6 +16,7 @@ class AuditPresenter
     private const ACTION_LABELS = [
         'auth.login' => 'Acesso realizado',
         'auth.login_failed' => 'Tentativa de acesso inválida',
+        'auth.login_throttled' => 'Tentativa bloqueada por limite',
         'auth.logout' => 'Sessão encerrada',
         'auth.initial_setup_completed' => 'Configuração do primeiro acesso',
         'report.exported' => 'Exportação de relatório',

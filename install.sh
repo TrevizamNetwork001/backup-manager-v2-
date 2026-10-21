@@ -9,6 +9,9 @@ FTP_INTERFACE=''
 FTP_DESTINATION=''
 TLS_CERT=''
 TLS_KEY=''
+GEOIP_COUNTRY_DB=''
+GEOIP_ASN_DB=''
+GEOIP_ARCHIVE=''
 RESUME=false
 PREFLIGHT=false
 FTP_CIDRS=()
@@ -18,19 +21,26 @@ usage() {
 Usage: sudo bash install.sh --url https://HOST[:PORT] \
   --ftp-interface INTERFACE --ftp-destination IPv4 \
   --ftp-allow-cidr IPv4/CIDR [--ftp-allow-cidr IPv4/CIDR ...] \
-  [--tls-cert /absolute/fullchain.pem --tls-key /absolute/privkey.pem] [--resume] [--preflight]
+  [--tls-cert /absolute/fullchain.pem --tls-key /absolute/privkey.pem] \
+  [--geoip-country-db /absolute/GeoLite2-Country.mmdb --geoip-asn-db /absolute/GeoLite2-ASN.mmdb] \
+  [--geoip-archive /absolute/GeoIP.zip] \
+  [--resume] [--preflight]
 
 Requires a clean checkout at /opt/backup-manager-v2, Docker with Compose v2,
 Nginx, Python 3, OpenSSL and Git. For IPv4 without a supplied TLS pair,
 generates a local certificate with the IP in SAN. DNS requires a supplied pair.
 --resume keeps existing secrets and creates initial access only if no users exist.
 --preflight validates requirements and parameters without changing the host.
+GeoIP: existing files in /usr/share/GeoIP are reused; optional file paths copy
+your own Country and ASN databases there for local-only IP lookup in Audit.
+Alternatively, --geoip-archive accepts a private ZIP containing exactly
+GeoLite2-Country.mmdb and GeoLite2-ASN.mmdb at its root.
 HELP
 }
 
 while (($#)); do
     case "$1" in
-        --url|--tls-cert|--tls-key|--ftp-interface|--ftp-destination|--ftp-allow-cidr)
+        --url|--tls-cert|--tls-key|--ftp-interface|--ftp-destination|--ftp-allow-cidr|--geoip-country-db|--geoip-asn-db|--geoip-archive)
             if (($# < 2)); then usage >&2; exit 2; fi
             case "$1" in
                 --url) URL=$2 ;;
@@ -39,6 +49,9 @@ while (($#)); do
                 --ftp-interface) FTP_INTERFACE=$2 ;;
                 --ftp-destination) FTP_DESTINATION=$2 ;;
                 --ftp-allow-cidr) FTP_CIDRS+=("$2") ;;
+                --geoip-country-db) GEOIP_COUNTRY_DB=$2 ;;
+                --geoip-asn-db) GEOIP_ASN_DB=$2 ;;
+                --geoip-archive) GEOIP_ARCHIVE=$2 ;;
             esac
             shift 2 ;;
         --resume) RESUME=true; shift ;;
@@ -84,6 +97,42 @@ if [[ -z "$URL" || -z "$FTP_INTERFACE" || -z "$FTP_DESTINATION" || ${#FTP_CIDRS[
 fi
 if [[ -n "$TLS_CERT" && -z "$TLS_KEY" || -z "$TLS_CERT" && -n "$TLS_KEY" ]]; then
     echo 'Informe certificado e chave TLS juntos.' >&2; exit 1
+fi
+if [[ -n "$GEOIP_COUNTRY_DB" && -z "$GEOIP_ASN_DB" || -z "$GEOIP_COUNTRY_DB" && -n "$GEOIP_ASN_DB" ]]; then
+    echo 'Informe os dois arquivos GeoIP juntos: Country e ASN.' >&2; exit 1
+fi
+if [[ -n "$GEOIP_ARCHIVE" && -n "$GEOIP_COUNTRY_DB" ]]; then
+    echo 'Use --geoip-archive ou os dois arquivos .mmdb, não ambos.' >&2; exit 1
+fi
+for geoip_file in "$GEOIP_COUNTRY_DB" "$GEOIP_ASN_DB"; do
+    if [[ -n "$geoip_file" ]] && { [[ "$geoip_file" != /* || ! -f "$geoip_file" || -L "$geoip_file" || ! -r "$geoip_file" ]] || (( $(stat -c %s "$geoip_file") > 512 * 1024 * 1024 )); }; then
+        echo 'Arquivo GeoIP inválido: use um arquivo regular, legível, absoluto e com até 512 MB.' >&2; exit 1
+    fi
+done
+if [[ -n "$GEOIP_ARCHIVE" ]]; then
+    if [[ "$GEOIP_ARCHIVE" != /* || ! -f "$GEOIP_ARCHIVE" || -L "$GEOIP_ARCHIVE" || ! -r "$GEOIP_ARCHIVE" ]] ||
+        (( $(stat -c %s "$GEOIP_ARCHIVE") > 512 * 1024 * 1024 )); then
+        echo 'ZIP GeoIP inválido: use arquivo regular, legível, absoluto e com até 512 MB.' >&2; exit 1
+    fi
+    python3 - "$GEOIP_ARCHIVE" <<'PY'
+import stat
+import sys
+import zipfile
+
+expected = {'GeoLite2-Country.mmdb', 'GeoLite2-ASN.mmdb'}
+try:
+    with zipfile.ZipFile(sys.argv[1]) as archive:
+        names = archive.namelist()
+        if len(names) != 2 or set(names) != expected:
+            raise ValueError('O ZIP deve conter somente as duas bases .mmdb na raiz.')
+        for name in names:
+            info = archive.getinfo(name)
+            mode = info.external_attr >> 16
+            if stat.S_ISLNK(mode) or info.file_size < 1024 or info.file_size > 512 * 1024 * 1024:
+                raise ValueError('Entrada GeoIP inválida no ZIP.')
+except (OSError, ValueError, zipfile.BadZipFile) as error:
+    raise SystemExit(f'ZIP GeoIP inválido: {error}')
+PY
 fi
 
 # Validate all operator supplied network values before changing the host.
@@ -174,6 +223,11 @@ fi
 if [[ "$PREFLIGHT" == true ]]; then
     echo "Pré-verificação aprovada para $URL. Nenhuma alteração feita."
     if [[ "$GENERATE_TLS" == true ]]; then echo 'Na instalação será criado um certificado local para o IP.'; fi
+    if [[ -n "$GEOIP_COUNTRY_DB" || -n "$GEOIP_ARCHIVE" ]]; then
+        echo 'Na instalação, as bases GeoIP informadas serão copiadas para /usr/share/GeoIP.'
+    elif [[ ! -f /usr/share/GeoIP/GeoLite2-Country.mmdb || ! -f /usr/share/GeoIP/GeoLite2-ASN.mmdb ]]; then
+        echo 'Bases GeoIP ausentes: país e ASN ficarão não identificados até receber os arquivos.'
+    fi
     exit 0
 fi
 cd "$PROJECT"
@@ -196,6 +250,39 @@ if [[ "$RESUME" != true ]]; then
     if [[ -e /etc/nginx/sites-available/backup-manager-v2.conf || -e /etc/backup-manager-v2/ftp-acl.env ]]; then
         echo 'Configuração de host já existe; revise antes de instalar.' >&2; exit 1
     fi
+fi
+
+install -d -m 0755 /usr/share/GeoIP
+if [[ -n "$GEOIP_ARCHIVE" ]]; then
+    GEOIP_TEMP=$(mktemp -d)
+    trap 'rm -rf -- "${GEOIP_TEMP:?}"' EXIT
+    python3 - "$GEOIP_ARCHIVE" "$GEOIP_TEMP" <<'PY'
+import os
+import shutil
+import sys
+import zipfile
+
+with zipfile.ZipFile(sys.argv[1]) as archive:
+    for name in ('GeoLite2-Country.mmdb', 'GeoLite2-ASN.mmdb'):
+        with archive.open(name) as source, open(os.path.join(sys.argv[2], name), 'wb') as target:
+            shutil.copyfileobj(source, target)
+PY
+    install -m 0644 "$GEOIP_TEMP/GeoLite2-Country.mmdb" /usr/share/GeoIP/GeoLite2-Country.mmdb
+    install -m 0644 "$GEOIP_TEMP/GeoLite2-ASN.mmdb" /usr/share/GeoIP/GeoLite2-ASN.mmdb
+    rm -rf -- "$GEOIP_TEMP"
+    trap - EXIT
+elif [[ -n "$GEOIP_COUNTRY_DB" ]]; then
+    if [[ "$GEOIP_COUNTRY_DB" != /usr/share/GeoIP/GeoLite2-Country.mmdb ]]; then
+        install -m 0644 "$GEOIP_COUNTRY_DB" /usr/share/GeoIP/GeoLite2-Country.mmdb
+    fi
+    if [[ "$GEOIP_ASN_DB" != /usr/share/GeoIP/GeoLite2-ASN.mmdb ]]; then
+        install -m 0644 "$GEOIP_ASN_DB" /usr/share/GeoIP/GeoLite2-ASN.mmdb
+    fi
+fi
+if [[ -f /usr/share/GeoIP/GeoLite2-Country.mmdb && -f /usr/share/GeoIP/GeoLite2-ASN.mmdb ]]; then
+    echo 'Bases GeoIP locais prontas: país e ASN.'
+else
+    echo 'Bases GeoIP ausentes; a Auditoria exibirá país e ASN como não identificados.'
 fi
 
 if [[ "$GENERATE_TLS" == true && ! -e "$TLS_CERT" ]]; then

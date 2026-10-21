@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use App\Models\User;
+use App\Services\AuditEvents;
 use App\Services\InstanceTimezone;
 use App\Support\Rbac;
 use Illuminate\Cache\RateLimiting\Limit;
@@ -56,7 +57,10 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('login', function ($request) {
             $key = strtolower((string) $request->input('email')).'|'.$request->ip();
 
-            return Limit::perMinute(5)->by($key)->response(function () {
+            return Limit::perMinute(5)->by($key)->response(function () use ($request) {
+                app(AuditEvents::class)->record('auth.login_throttled', 'user', null,
+                    mb_substr(trim((string) $request->input('email')), 0, 255), 'denied', [], null, $request->ip());
+
                 return back()->withErrors(['email' => 'Muitas tentativas. Aguarde um minuto antes de tentar novamente.'])
                     ->onlyInput('email');
             });

@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Device;
 use App\Models\Site;
 use App\Models\User;
+use App\Services\GeoIpLookup;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -77,6 +78,57 @@ class AuditTest extends TestCase
             ->assertSeeText('Tentativa inválida')
             ->assertSeeText($admin->email);
         $this->assertSame(1, $response->viewData('security')['distinct_ips']);
+    }
+
+    public function test_authentication_events_show_country_flag_and_asn_without_exposing_database_paths(): void
+    {
+        $this->admin();
+        $eventId = $this->insertEvent([
+            'action' => 'auth.login_failed', 'resource_type' => 'user',
+            'ip_address' => '8.8.8.8', 'result' => 'failed',
+        ]);
+
+        $lookup = $this->mock(GeoIpLookup::class);
+        $lookup->shouldReceive('available')->once()->andReturn(true);
+        $lookup->shouldReceive('lookup')->andReturn([
+            'country_code' => 'us', 'country_name' => 'Estados Unidos',
+            'asn' => 15169, 'organization' => 'Google LLC',
+        ]);
+
+        $this->get(route('audit.index'))->assertOk()
+            ->assertSee('assets/flags/us.svg', false)
+            ->assertSeeText('Estados Unidos')
+            ->assertSeeText('AS15169 · Google LLC');
+        $this->get(route('audit.show', $eventId))->assertOk()
+            ->assertSee('assets/flags/us.svg', false)
+            ->assertSeeText('AS15169 · Google LLC');
+    }
+
+    public function test_authentication_events_still_render_when_geoip_databases_are_missing(): void
+    {
+        $this->admin();
+        config()->set('geoip.country_database', '/missing/country.mmdb');
+        config()->set('geoip.asn_database', '/missing/asn.mmdb');
+        $this->insertEvent(['action' => 'auth.login_failed', 'resource_type' => 'user', 'ip_address' => '8.8.8.8']);
+
+        $this->get(route('audit.index'))->assertOk()
+            ->assertSeeText('Bases GeoIP indisponíveis')
+            ->assertSeeText('Não identificado');
+    }
+
+    public function test_ipv6_address_is_available_in_full_with_wrapping_class(): void
+    {
+        $this->admin();
+        $address = '2804:631c:8705:2200:598b:6f9a:7d:fa89';
+        $eventId = $this->insertEvent([
+            'action' => 'auth.login_failed', 'resource_type' => 'user',
+            'ip_address' => $address, 'result' => 'failed',
+        ]);
+
+        $this->get(route('audit.index'))->assertOk()
+            ->assertSee('class="tech-value audit-ip">'.$address, false);
+        $this->get(route('audit.show', $eventId))->assertOk()
+            ->assertSee('class="audit-ip">'.$address, false);
     }
 
     public function test_operator_can_view_audit_index(): void
