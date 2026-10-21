@@ -148,7 +148,7 @@
 
             <form method="POST" action="{{ route('logout') }}" id="logout-form">
                 @csrf
-                <button type="submit" class="logout-button"><x-icon name="logout-door" size="sm" /> Sair</button>
+                <button type="submit" class="logout-button"><x-icon name="logout-door" /> Sair</button>
             </form>
         </div>
     </aside>

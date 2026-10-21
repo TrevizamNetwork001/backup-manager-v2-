@@ -60,10 +60,9 @@
             <path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z" />
             @break
         @case('logout-door')
-            <path d="M3 3h12v18H3V3Zm6 9h.01M15 12h6m-3-3 3 3-3 3" />
-            @break
-        @case('logout-door')
-            <path d="M3 3h12v18H3V3Zm6 9h.01M15 12h6m-3-3 3 3-3 3" />
+            <path d="M3 21h18M5 21V4a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v17" />
+            <path d="m9 6 7-3v18l-7-2V6Z" />
+            <circle cx="11.5" cy="12.5" r=".75" fill="currentColor" stroke="none" />
             @break
         @case('site')
             <circle cx="12" cy="12" r="8" /><circle cx="12" cy="12" r="3" />

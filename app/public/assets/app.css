@@ -829,7 +829,7 @@ textarea.form-control { resize: vertical; }
     cursor: pointer;
 }
 
-.logout-button .icon { opacity: .78; stroke-width: 1.5; }
+.logout-button .icon { width: 18px; height: 18px; opacity: .78; stroke-width: 1.5; }
 
 .logout-button:hover {
     color: white;
