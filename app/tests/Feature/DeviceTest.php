@@ -50,6 +50,25 @@ class DeviceTest extends TestCase
         $this->assertStringNotContainsString('Coleta via SSH', $html->evaluate('string('.$cell.')'));
     }
 
+    public function test_mikrotik_without_ftp_account_shows_policy_prerequisite_and_prefilled_account_link(): void
+    {
+        $site = Site::create(['name' => 'POP Teste', 'is_active' => true]);
+        $device = Device::create(['site_id' => $site->id, 'name' => 'MK-POP-VARAN',
+            'management_ip' => '192.0.2.20', 'vendor' => 'MikroTik', 'platform' => 'network', 'is_active' => true]);
+        BackupPolicy::create(['name' => 'MikroTik FTP', 'method' => 'ftp_push',
+            'artifact_mode' => 'config', 'schedule_type' => 'manual', 'is_active' => true]);
+        $this->actingAs(User::factory()->admin()->create());
+
+        $html = $this->html($this->get(route('devices.index'))->assertOk()->getContent());
+        $dialog = '//dialog[@id="device-policy-'.$device->id.'"]';
+        $this->assertSame('MikroTik FTP', trim($html->evaluate('string('.$dialog.'//section[@aria-label="Preparar MikroTik FTP"]/h3)')));
+        $this->assertSame(route('ftp.index', ['create' => 1, 'device_id' => $device->id]),
+            $html->evaluate('string('.$dialog.'//a[normalize-space()="Criar conta FTP"]/@href)'));
+
+        $ftp = $this->html($this->get(route('ftp.index', ['create' => 1, 'device_id' => $device->id]))->assertOk()->getContent());
+        $this->assertSame((string) $device->id, $ftp->evaluate('string(//select[@id="device_id"]/option[@selected]/@value)'));
+    }
+
     public function test_authenticated_user_can_create_device(): void
     {
         $user = User::factory()->create();

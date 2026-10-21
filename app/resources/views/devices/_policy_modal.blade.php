@@ -2,6 +2,7 @@
     @php($visibleAssociations = $device->deviceBackupPolicies->filter(fn ($association) => $association->archived_at === null))
     @php($activePolicyCount = $visibleAssociations->filter(fn ($association) => $association->is_active && $association->backupPolicy?->is_active)->count())
     @php($hasActivePolicy = $activePolicyCount > 0)
+    @php($mikrotikFtpPolicy = $policies->first(fn ($policy) => $policy->name === 'MikroTik FTP' && $policy->method === 'ftp_push'))
     <div class="modal__surface">
         <div class="modal__header">
             <div>
@@ -71,6 +72,15 @@
                     <p class="device-policy-dialog__note">Ao remover um vínculo com histórico, ele sai desta lista e as execuções antigas são preservadas.</p>
                 @endif
             </section>
+            @if($device->is_active && $device->platform === 'network' && mb_strtolower(trim($device->vendor)) === 'mikrotik' && $mikrotikFtpPolicy && ! $device->ftpAccount?->is_active)
+                <section class="device-policy-dialog__section" aria-label="Preparar MikroTik FTP">
+                    <h3 class="device-policy-dialog__section-title">MikroTik FTP</h3>
+                    <p class="device-policy-dialog__note">Para associar esta política, crie e ative a conta FTP do equipamento.</p>
+                    @can('ftp.manage')
+                        <a class="btn btn--secondary btn--sm" href="{{ $device->ftpAccount ? route('ftp.show', $device->ftpAccount) : route('ftp.index', ['create' => 1, 'device_id' => $device->id]) }}">{{ $device->ftpAccount ? 'Abrir conta FTP' : 'Criar conta FTP' }}</a>
+                    @endcan
+                </section>
+            @endif
             @if($device->is_active && $availablePolicies->isNotEmpty())
                 <details class="device-policy-dialog__add" data-device-policy-add @if(! $hasActivePolicy || (old('policy_device_id') == $device->id && old('backup_policy_id'))) open @endif>
                     <summary>{{ $hasActivePolicy ? 'Adicionar outra política' : 'Associar política' }}</summary>

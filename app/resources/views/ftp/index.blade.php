@@ -54,11 +54,11 @@
         <div class="form-field"><label class="form-label" for="purpose">Finalidade</label><div class="ftp-select-wrap"><select class="form-control" id="purpose" name="purpose"><option value="backup" @selected(old('purpose', 'backup') === 'backup')>Backup</option><option value="file_server" @selected(old('purpose') === 'file_server')>Servidor de arquivos</option></select><x-icon name="chevron-down" /></div></div>
         <div class="form-field"><span class="form-label">Vinculação ao equipamento</span><div class="ftp-link-state"><span class="ftp-link-state__switch" id="ftp-link-indicator" aria-hidden="true"></span><span id="ftp-link-description">Obrigatória para contas de backup</span></div></div>
     </div>
-    <div class="form-field" id="ftp-device-field"><label class="form-label" for="device_id">Equipamento</label><div class="ftp-select-wrap"><select class="form-control" id="device_id" name="device_id"><option value="">Selecione um equipamento</option>@foreach ($devices as $device)<option value="{{ $device->id }}" @selected(old('device_id') == $device->id)>{{ $device->name }} · {{ $device->management_ip }}</option>@endforeach</select><x-icon name="chevron-down" /></div></div>
+    <div class="form-field" id="ftp-device-field"><label class="form-label" for="device_id">Equipamento</label><div class="ftp-select-wrap"><select class="form-control" id="device_id" name="device_id"><option value="">Selecione um equipamento</option>@foreach ($devices as $device)<option value="{{ $device->id }}" @selected(old('device_id', request('device_id')) == $device->id)>{{ $device->name }} · {{ $device->management_ip }}</option>@endforeach</select><x-icon name="chevron-down" /></div></div>
     <div class="form-field"><label class="form-label" for="username">Usuário FTP</label><input class="form-control" id="username" name="username" value="{{ old('username') }}" minlength="3" maxlength="32" pattern="[a-z][a-z0-9_-]*" autocomplete="off" required></div>
     <div class="form-field"><label class="form-label" for="password">Senha</label><div class="ftp-password-control"><input class="form-control" id="password" name="password" type="password" minlength="12" maxlength="40" autocomplete="new-password" aria-describedby="ftp-password-strength-label ftp-password-strength-tip" required><button type="button" class="ftp-show-password" data-toggle-password="password" aria-label="Mostrar senha"><x-icon name="eye" /></button><button class="btn btn--secondary" type="button" data-generate-password>Gerar</button></div><div class="ftp-password-strength" id="ftp-password-strength" data-strength="empty"><div class="ftp-password-strength__track" role="progressbar" aria-label="Força da senha" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span data-password-strength-fill></span></div><strong id="ftp-password-strength-label" data-password-strength-label>Sem senha</strong><small id="ftp-password-strength-tip" data-password-strength-tip>Use ao menos 12 caracteres; uma frase longa e exclusiva é uma boa opção.</small></div></div>
     <div class="form-field"><label class="form-label" for="password_confirmation">Confirmar senha</label><div class="ftp-password-control"><input class="form-control" id="password_confirmation" name="password_confirmation" type="password" minlength="12" maxlength="40" autocomplete="new-password" required><button type="button" class="ftp-show-password" data-toggle-password="password_confirmation" aria-label="Mostrar confirmação de senha"><x-icon name="eye" /></button></div></div>
-    <p class="ftp-modal-note"><x-icon name="info" /> Backup FTP está disponível para OLTs compatíveis e equipamentos Huawei de rede. Em roteadores e switches, o envio é automático conforme o intervalo configurado no equipamento; não é iniciado manualmente pelo Backup Manager. O servidor usa um perfil global. O path remoto visível para o cliente é /.</p>
+    <p class="ftp-modal-note"><x-icon name="info" /> Backup FTP está disponível para MikroTik, equipamentos Huawei de rede e OLTs compatíveis. Em roteadores e switches, o envio segue o agendamento configurado no equipamento. O servidor usa um perfil global. O path remoto visível para o cliente é /.</p>
 </div><div class="modal__footer ftp-modal-footer"><button type="button" class="btn btn--ghost" data-close-dialog>Cancelar</button><button type="submit" class="btn btn--primary">Criar conta</button></div></form></div></dialog>
 <script>
 (() => {
@@ -92,7 +92,17 @@
  dialog.addEventListener('click', event => { if (event.target === dialog) dialog.close(); });
  form.querySelector('[data-generate-password]').addEventListener('click', () => { const pools = ['ABCDEFGHJKLMNPQRSTUVWXYZ', 'abcdefghjkmnpqrstuvwxyz', '23456789', '!@#$%^*-_=+']; const all = pools.join(''); const length = 16; const randomBytes = (count) => { const b = new Uint8Array(count); crypto.getRandomValues(b); return b; }; const chars = Array.from(randomBytes(length), (b) => all[b % all.length]); const picks = randomBytes(pools.length); pools.forEach((pool, i) => { chars[i] = pool[picks[i] % pool.length]; }); const shuffleBytes = randomBytes(length); for (let i = chars.length - 1; i > 0; i--) { const j = shuffleBytes[i] % (i + 1); [chars[i], chars[j]] = [chars[j], chars[i]]; } const value = chars.join(''); form.elements.password.value = value; form.elements.password_confirmation.value = value; password.dispatchEvent(new Event('input', {bubbles: true})); });
  form.querySelectorAll('[data-toggle-password]').forEach(button => button.addEventListener('click', () => { const input = form.elements[button.dataset.togglePassword]; input.type = input.type === 'password' ? 'text' : 'password'; button.setAttribute('aria-label', input.type === 'password' ? 'Mostrar senha' : 'Ocultar senha'); }));
- @if ($errors->any()) dialog.showModal(); @endif
+ @if ($errors->any())
+ dialog.showModal();
+ @else
+ const params = new URLSearchParams(location.search), requestedDevice = params.get('device_id');
+ if (params.get('create') === '1' && requestedDevice && [...device.options].some(option => option.value === requestedDevice)) {
+  purpose.value = 'backup';
+  sync();
+  device.value = requestedDevice;
+  dialog.showModal();
+ }
+ @endif
 })();
 </script>
 @endcan
