@@ -51,14 +51,6 @@
         ? round(min(100, max(0, $hostResources['memory_used_bytes'] / $hostResources['memory_total_bytes'] * 100))) : null;
     $cpuPercent = isset($hostResources['cpu_percent']) ? min(100, max(0, (int) $hostResources['cpu_percent'])) : null;
     $storagePercent = isset($storage['used_percent']) ? min(100, max(0, $storage['used_percent'])) : null;
-    $problemDevices = $checksByName['devices']['metadata']['problem_devices'] ?? [];
-    $withoutHistory = collect($problemDevices)->filter(fn ($device) => in_array($device['reason'], ['manual_never_backed_up', 'scheduled_never_succeeded'], true));
-    $deviceReasons = [
-        'consecutive_failures' => 'Falhas consecutivas', 'backup_stale' => 'Backup desatualizado',
-        'latest_backup_failed' => 'Última tentativa falhou',
-        'backup_delayed' => 'Backup atrasado', 'scheduled_never_succeeded' => 'Backup agendado nunca concluído',
-        'manual_never_backed_up' => 'Nunca fez backup (manual)',
-    ];
 @endphp
 <div class="system-health-page health-reference">
     <section class="health-overview health-panel health-state--{{ $overall->value }}" aria-label="Status geral">
@@ -134,38 +126,21 @@
                 @endforeach
             </ul>
         </section>
-        <div class="health-right-column">
-            <section class="health-panel health-alerts" aria-labelledby="health-alerts-title">
-                <div class="health-panel__heading"><span class="health-icon health-icon--warning"><x-icon name="bell" /></span><div><h2 id="health-alerts-title">Alertas e atenção</h2><p>Apenas componentes com problemas ou sem dados recentes.</p></div></div>
-                <div class="health-counts health-alerts__counts">
-                    @foreach(['critical' => 'críticas', 'warning' => 'em atenção', 'unknown' => 'desconhecidas'] as $status => $label)
-                        <span class="health-dot health-dot--{{ $status }}">{{ $statusCounts[$status] ?? 0 }} {{ $label }}</span>
-                    @endforeach
-                </div>
-                <ul>
-                    @forelse($alerts as $check)
-                        <li><a href="#health-check-{{ $check['check'] }}" data-health-target="health-check-{{ $check['check'] }}"><x-icon :name="$icons[$check['check']] ?? 'info'" /><span>{{ $labels[$check['check']] ?? $check['check'] }}</span><span class="badge badge--{{ $statusOf($check['status'])->badgeVariant() }}">{{ $checkLabel($check) }}</span><p>{{ $checkMessage($check) }}</p><x-icon name="chevron-right" size="sm" /></a></li>
-                    @empty
-                        <li class="health-empty"><x-icon name="check-circle" />Nenhum componente em alerta nesta verificação.</li>
-                    @endforelse
-                </ul>
-            </section>
-            <section class="health-panel health-no-history" aria-labelledby="health-no-history-title">
-                <div class="health-panel__heading"><span class="health-icon"><x-icon name="hard-drive" /></span><div><h2 id="health-no-history-title">Equipamentos sem histórico</h2><p>Equipamentos que ainda não possuem backup concluído.</p></div><a class="btn btn--secondary btn--sm" href="{{ route('backup-health.index') }}">Ver todos</a></div>
-                <div class="table-shell">
-                    <table class="data-table"><thead><tr><th scope="col">Equipamento</th><th scope="col">Motivo</th></tr></thead><tbody>
-                        @forelse($withoutHistory->take(4) as $device)
-                            <tr><td data-label="Equipamento"><a href="{{ route('backup-executions.index', ['device_id' => $device['device_id']]) }}">{{ $device['name'] }}</a></td><td data-label="Motivo">{{ $deviceReasons[$device['reason']] }}</td></tr>
-                        @empty
-                            <tr><td colspan="2" class="health-empty">Nenhum equipamento sem backup concluído nesta amostra.</td></tr>
-                        @endforelse
-                    </tbody></table>
-                </div>
-                @if(($checksByName['devices']['metadata']['problem_devices_total'] ?? 0) > count($problemDevices) || $withoutHistory->count() > 4)
-                    <p class="health-sample-note">Amostra do diagnóstico. Consulte todos os equipamentos em Status dos backups.</p>
-                @endif
-            </section>
-        </div>
+        <section class="health-panel health-alerts" aria-labelledby="health-alerts-title">
+            <div class="health-panel__heading"><span class="health-icon health-icon--warning"><x-icon name="bell" /></span><div><h2 id="health-alerts-title">Alertas e atenção</h2><p>Apenas componentes com problemas ou sem dados recentes.</p></div></div>
+            <div class="health-counts health-alerts__counts">
+                @foreach(['critical' => 'críticas', 'warning' => 'em atenção', 'unknown' => 'desconhecidas'] as $status => $label)
+                    <span class="health-dot health-dot--{{ $status }}">{{ $statusCounts[$status] ?? 0 }} {{ $label }}</span>
+                @endforeach
+            </div>
+            <ul>
+                @forelse($alerts as $check)
+                    <li><a href="#health-check-{{ $check['check'] }}" data-health-target="health-check-{{ $check['check'] }}"><x-icon :name="$icons[$check['check']] ?? 'info'" /><span>{{ $labels[$check['check']] ?? $check['check'] }}</span><span class="badge badge--{{ $statusOf($check['status'])->badgeVariant() }}">{{ $checkLabel($check) }}</span><p>{{ $checkMessage($check) }}</p><x-icon name="chevron-right" size="sm" /></a></li>
+                @empty
+                    <li class="health-empty"><x-icon name="check-circle" />Nenhum componente em alerta nesta verificação.</li>
+                @endforelse
+            </ul>
+        </section>
     </div>
 
     <details class="health-panel health-diagnostic" id="health-diagnostic">
@@ -243,13 +218,6 @@
             </div>
         </div>
     @endif
-
-    <details class="card">
-        <summary class="card__header" style="cursor: pointer;"><span class="card__title">Relatório técnico completo</span></summary>
-        <div class="card__body">
-            <pre style="white-space: pre-wrap; word-break: break-word;">{{ json_encode($report, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) }}</pre>
-        </div>
-    </details>
 
         </div>
     </details>

@@ -1,4 +1,5 @@
-FROM php:8.4-cli
+ARG PHP_BASE_IMAGE=php:8.4.27-cli-trixie
+FROM ${PHP_BASE_IMAGE}
 
 RUN apt-get update && apt-get install -y --no-install-recommends pure-ftpd python3 libpq-dev libonig-dev \
     && docker-php-ext-install pdo_pgsql mbstring \

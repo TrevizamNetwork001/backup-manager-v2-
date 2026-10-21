@@ -48,3 +48,7 @@ sudo bash scripts/system-backup.sh
 ```
 
 Confirme login, certificado HTTPS e conexão FTP a partir de uma origem autorizada e de uma não autorizada. Guarde a `APP_KEY` de `app/.env` em um cofre fora do servidor; faça cópia externa do dump de `database/backups/` e do volume de artefatos. O dump do banco sozinho não permite recuperação completa. Consulte [recuperação](docs/DISASTER_RECOVERY.md) e [atualização](docs/UPGRADE.md).
+
+## Atualizar
+
+Após publicar e revisar uma release com tag `vMAJOR.MINOR.PATCH`, busque a tag no servidor e execute `sudo bash update.sh --tag vMAJOR.MINOR.PATCH --preflight`. Para aplicar, repita sem `--preflight`. O procedimento, as exigências de custódia e os limites do retorno automático estão em [atualização](docs/UPGRADE.md).

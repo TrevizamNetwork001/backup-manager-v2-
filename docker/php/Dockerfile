@@ -1,4 +1,5 @@
-FROM php:8.4-fpm
+ARG PHP_BASE_IMAGE=php:8.4.27-fpm-trixie
+FROM ${PHP_BASE_IMAGE}
 
 RUN apt-get update && apt-get install -y \
     git \

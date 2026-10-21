@@ -93,13 +93,13 @@
                 @endcan
             </form>
             @can('settings.manage')
-                <form method="POST" action="{{ route('settings.notifications.test') }}" class="settings-form">
-                    @csrf
-                    <button class="btn btn--secondary" type="submit">Enviar mensagem de teste</button>
-                </form>
-                <div class="settings-form__actions">
+                <div class="notification-test-actions">
+                    <form method="POST" action="{{ route('settings.notifications.test') }}">
+                        @csrf
+                        <button class="btn btn--secondary" type="submit">Enviar mensagem de teste</button>
+                    </form>
                     @foreach(['daily' => 'Prévia do resumo diário', 'weekly' => 'Prévia do resumo semanal'] as $kind => $label)
-                        <form method="POST" action="{{ route('settings.notifications.summary-test', $kind) }}" style="display:inline">@csrf<button class="btn btn--secondary" type="submit">{{ $label }}</button></form>
+                        <form method="POST" action="{{ route('settings.notifications.summary-test', $kind) }}">@csrf<button class="btn btn--secondary" type="submit">{{ $label }}</button></form>
                     @endforeach
                 </div>
             @endcan

@@ -11,6 +11,7 @@ storage/incoming/
 storage/quarantine/
 storage/tmp/
 storage/a10-sftp/
+storage/incident-evidence/
 
 # Backups de configuração locais
 compose.yml.bak

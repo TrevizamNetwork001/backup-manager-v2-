@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\User;
+use App\Services\CpuUsage;
 use App\Services\EngineHealth;
 use App\Services\HostResources;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -83,7 +84,7 @@ class SystemHealthTest extends TestCase
             ->assertSee('Capacidade indisponível');
     }
 
-    public function test_history_panel_separates_never_completed_backups_from_other_device_problems(): void
+    public function test_removed_summary_panels_do_not_hide_device_diagnostics(): void
     {
         $report = app(EngineHealth::class)->report();
         foreach ($report['checks'] as &$check) {
@@ -100,17 +101,16 @@ class SystemHealthTest extends TestCase
         $this->mock(HostResources::class)->shouldReceive('snapshot')->once()->andReturn([
             'cpu_count' => 4, 'load_1m' => 1.57, 'memory_used_bytes' => 25, 'memory_total_bytes' => 100,
         ]);
-        $this->mock(\App\Services\CpuUsage::class)->shouldReceive('percent')->once()->andReturn(37);
+        $this->mock(CpuUsage::class)->shouldReceive('percent')->once()->andReturn(37);
 
         $response = $this->actingAs(User::factory()->admin()->create())->get(route('system-health.index'))->assertOk();
         $html = $response->getContent();
-        $panel = substr($html, strpos($html, '<section class="health-panel health-no-history"'));
-        $panel = substr($panel, 0, strpos($panel, '</section>'));
-        $this->assertStringContainsString('Manual sem backup', $panel);
-        $this->assertStringContainsString('Agendado sem sucesso', $panel);
-        $this->assertStringNotContainsString('Falhas repetidas', $panel);
+        $this->assertStringNotContainsString('Equipamentos sem histórico', $html);
+        $this->assertStringNotContainsString('Relatório técnico completo', $html);
         $response->assertSee('aria-label="Uso da CPU" aria-valuenow="37"', false)
             ->assertSee('aria-label="Uso da memória" aria-valuenow="25"', false)
+            ->assertSee('Manual sem backup')
+            ->assertSee('Agendado sem sucesso')
             ->assertSee('Falhas repetidas');
     }
 

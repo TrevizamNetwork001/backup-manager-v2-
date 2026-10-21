@@ -1,8 +1,40 @@
 # Upgrade — Backup Manager V2
 
-Procedimento para atualizar uma instância já em produção para um commit mais
-recente. Não existe (nem está planejado) um auto-updater — este é um processo
-manual, deliberadamente simples.
+Procedimento manual para atualizar uma instância instalada pelo `install.sh`.
+O operador escolhe uma release e executa o script no host. O painel não recebe
+acesso ao Docker nem executa a atualização.
+
+## Atualização por release
+
+A release precisa existir como tag local `vMAJOR.MINOR.PATCH`, apontar para um
+commit descendente do instalado e conter `VERSION` com o mesmo número, sem o
+prefixo `v`. Busque e revise a tag da origem antes de executar. O script não
+busca tags nem publica releases por conta própria.
+
+```bash
+cd /opt/backup-manager-v2
+git fetch origin tag v2.0.0
+git show --stat v2.0.0
+sudo bash update.sh --tag v2.0.0 --preflight
+sudo bash update.sh --tag v2.0.0
+```
+
+Substitua `v2.0.0` pela release publicada e aprovada. A pré-verificação lê o
+checkout e a configuração, sem alterar a instância. A execução exige checkout
+limpo e terminal interativo. Primeiro cria um dump com manifesto; só troca o
+código após o operador confirmar que a APP_KEY e os artefatos estão protegidos
+fora do servidor. Em seguida, reconstrói imagens, instala dependências do PHP,
+recria os containers necessários, aplica migrations e verifica recuperação e
+saúde do motor. Em caso de falha, tenta restaurar o commit, as dependências e
+os containers anteriores. **Migrations já aplicadas não são revertidas
+automaticamente**; se o schema novo for incompatível com o código antigo, o
+operador precisa analisar e restaurar de acordo com o procedimento de
+[recuperação](DISASTER_RECOVERY.md). O dump não contém APP_KEY nem artefatos.
+
+`VERSION` está em `2.0.0-dev` enquanto não houver release validada. Criar a tag
+final e publicar a release são passos separados, após homologação.
+
+## Procedimento por commit (legado)
 
 ## Antes de atualizar
 
