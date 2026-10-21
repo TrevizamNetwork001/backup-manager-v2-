@@ -817,6 +817,10 @@ textarea.form-control { resize: vertical; }
 }
 
 .logout-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
     width: 100%;
 
     padding: 9px 12px;
@@ -829,6 +833,8 @@ textarea.form-control { resize: vertical; }
 
     cursor: pointer;
 }
+
+.logout-button .icon { opacity: .78; stroke-width: 1.5; }
 
 .logout-button:hover {
     background: var(--surface-2);

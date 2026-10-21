@@ -59,6 +59,12 @@
         @case('home')
             <path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z" />
             @break
+        @case('logout-door')
+            <path d="M3 3h12v18H3V3Zm6 9h.01M15 12h6m-3-3 3 3-3 3" />
+            @break
+        @case('logout-door')
+            <path d="M3 3h12v18H3V3Zm6 9h.01M15 12h6m-3-3 3 3-3 3" />
+            @break
         @case('site')
             <circle cx="12" cy="12" r="8" /><circle cx="12" cy="12" r="3" />
             @break
