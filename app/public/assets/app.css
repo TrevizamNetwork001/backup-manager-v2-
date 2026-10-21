@@ -1901,14 +1901,14 @@ a.pagination__button:focus-visible { outline: 2px solid var(--color-primary); ou
 .audit-security__rankings .card { min-width: 0; }
 .audit-security__rankings .card { grid-column: 1 / -1; }
 .audit-security__rankings .card:first-child .data-table { min-width: 720px; }
-.audit-auth-table .data-table { min-width: 1100px; table-layout: auto; }
+.audit-auth-table .data-table { min-width: 1000px; table-layout: auto; }
 .audit-page .table-shell { overflow-x: visible; }
 .audit-security__rankings .table-shell, .audit-auth-table .table-shell, .audit-page .audit-history-table { overflow-x: auto; }
 .audit-security__rankings .table-shell, .audit-auth-table .table-shell, .audit-page .audit-history-table { scrollbar-width: none; }
 .audit-security__rankings .table-shell::-webkit-scrollbar, .audit-auth-table .table-shell::-webkit-scrollbar, .audit-page .audit-history-table::-webkit-scrollbar { display: none; }
 .audit-page .data-table { width: 100%; table-layout: fixed; }
 .audit-page .audit-auth-table .data-table, .audit-page .audit-history-table .data-table { table-layout: auto; }
-.audit-page .audit-history-table .data-table { min-width: 1100px; }
+.audit-page .audit-history-table .data-table { min-width: 1000px; }
 .audit-page .data-table th, .audit-page .data-table td { min-width: 0; overflow-wrap: anywhere; white-space: normal; }
 .audit-page .tech-value { white-space: normal; overflow-wrap: anywhere; }
 .audit-ip { display: inline-block; max-width: 23ch; white-space: normal; overflow-wrap: anywhere; word-break: break-word; }
@@ -1917,7 +1917,7 @@ a.pagination__button:focus-visible { outline: 2px solid var(--color-primary); ou
 .audit-geo-country { display: inline-flex; align-items: center; gap: var(--space-2); }
 .audit-geo-country img { display: block; flex: none; width: 23px; height: 16px; border-radius: 2px; border: 1px solid var(--color-border-soft); object-fit: cover; }
 .audit-geo-asn { color: var(--color-text-secondary); }
-@media (max-width: 1500px) {
+@media (max-width: 1300px) {
     .audit-security__rankings { grid-template-columns: minmax(0, 1fr); }
     .audit-security__rankings .card:first-child .data-table, .audit-auth-table .data-table, .audit-page .audit-history-table .data-table { min-width: 0; }
     .audit-page .data-table, .audit-page .data-table tbody { display: block; }
