@@ -6,7 +6,7 @@ import sys
 from contexts import ProbeContext
 from driver_base import PROBE
 from errors import BackupError
-from drivers.huawei_olt_ssh_probe import probe_authentication as probe_huawei_olt_authentication
+from drivers.huawei_olt_ssh_probe import probe_authentication as probe_olt_authentication
 from registry_setup import registry
 
 
@@ -24,9 +24,9 @@ def main():
             ssh_host_key_fingerprint=data.get('ssh_host_key_fingerprint'),
             metadata={'__secret': data['secret'], '__observe': observe},
         )
-        if data['vendor'].strip().casefold() == 'huawei' and data['platform'].strip().casefold() == 'olt':
-            # OLT backups remain FTP push; this checks SSH access only.
-            result = probe_huawei_olt_authentication(context)
+        if data['vendor'].strip().casefold() in {'huawei', 'zte'} and data['platform'].strip().casefold() == 'olt':
+            # These OLTs send backups by FTP; SSH only checks access.
+            result = probe_olt_authentication(context)
         else:
             vendor = data['vendor'].strip().casefold()
             method = 'a10_system' if vendor == 'a10 networks' and data['platform'].strip().casefold() == 'network' else 'ssh_pull'

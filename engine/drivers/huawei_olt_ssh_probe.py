@@ -1,4 +1,4 @@
-"""SSH authentication check for Huawei OLTs whose backups arrive by FTP."""
+"""SSH authentication check for OLTs whose backups arrive by FTP."""
 
 import errno
 from ipaddress import ip_address
@@ -31,10 +31,19 @@ def probe_authentication(context):
         context.ssh_host_key_algorithm, context.ssh_host_key_fingerprint, observe))
     code = None
     try:
+        options = {}
+        if context.vendor.strip().casefold() == 'zte':
+            # C350 advertises group16 but stalls during that key exchange.
+            # Keep only its supported SHA-256 KEX; never fall back to group1/SHA-1.
+            options['disabled_algorithms'] = {'kex': [
+                'diffie-hellman-group16-sha512',
+                'diffie-hellman-group14-sha1',
+                'diffie-hellman-group1-sha1',
+            ]}
         client.connect(context.host, port=port, username=context.username,
                        password=context.metadata.get('__secret'), timeout=10,
                        auth_timeout=10, banner_timeout=10,
-                       look_for_keys=False, allow_agent=False)
+                       look_for_keys=False, allow_agent=False, **options)
     except paramiko.AuthenticationException:
         code = 'SSH_AUTH_FAILED'
     except (socket.timeout, TimeoutError):
