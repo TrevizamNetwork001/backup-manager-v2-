@@ -795,8 +795,7 @@ textarea.form-control { resize: vertical; }
     min-width: 0;
 }
 
-.user-info strong,
-.user-info span {
+.user-info strong {
     display: block;
 
     overflow: hidden;
@@ -807,13 +806,6 @@ textarea.form-control { resize: vertical; }
 
 .user-info strong {
     font-size: 12px;
-}
-
-.user-info span {
-    margin-top: 2px;
-
-    color: var(--muted);
-    font-size: 10px;
 }
 
 .logout-button {
@@ -1980,7 +1972,6 @@ body { background: radial-gradient(circle at 75% 12%, #0b1a35 0, #07111e 45%, #0
 .sidebar-footer { margin-inline: -14px; padding: 18px 24px 0; }
 .user-avatar { width: 42px; height: 42px; background: #1d3e6b; color: #fff; }
 .user-info strong { font-size: 14px; }
-.user-info span { font-size: 12px; }
 .logout-button { min-height: 32px; color: #9db8da; font-size: 13px; }
 .topbar { min-height: 100px; padding: 22px 26px; background: transparent; border-color: var(--color-border-soft); }
 .topbar h1 { font-size: 31px; font-weight: 700; }

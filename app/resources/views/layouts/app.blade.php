@@ -142,7 +142,6 @@
 
                 <div class="user-info">
                     <strong>{{ auth()->user()->name }}</strong>
-                    <span>{{ \App\Support\Rbac::roleLabel(auth()->user()->role) }}</span>
                 </div>
             </div>
 
