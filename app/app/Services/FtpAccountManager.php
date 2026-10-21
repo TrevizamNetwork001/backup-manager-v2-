@@ -108,12 +108,20 @@ class FtpAccountManager
     private function credentials(array $input, ?Device $device): array
     {
         $input['purpose'] = $input['purpose'] ?? 'backup';
+        if (is_string($input['username'] ?? null)) {
+            $input['username'] = strtolower(trim($input['username']));
+        }
         $values = validator($input, [
             'purpose' => ['required', Rule::in(['backup', 'file_server'])],
             'mode' => ['prohibited'],
             'password_mode' => ['prohibited'],
             'username' => ['required', 'string', 'min:3', 'max:32', 'regex:/\A[a-z][a-z0-9_-]*\z/D', Rule::unique('ftp_accounts', 'username')],
             'password' => ['required', 'string', 'min:12', 'max:40', 'regex:/\A[\x21-\x7e]+\z/D', 'confirmed'],
+        ], [
+            'username.regex' => 'O usuário FTP deve começar com uma letra e conter apenas letras sem acento, números, _ ou -.',
+            'username.unique' => 'Este usuário FTP já está em uso. Escolha outro nome.',
+            'username.min' => 'O usuário FTP deve ter pelo menos 3 caracteres.',
+            'username.max' => 'O usuário FTP deve ter no máximo 32 caracteres.',
         ])->validate();
         if ($values['purpose'] === 'backup' && ! $device) {
             throw ValidationException::withMessages(['device_id' => 'Equipamento obrigatório para conta de backup.']);

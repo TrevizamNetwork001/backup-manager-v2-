@@ -64,6 +64,22 @@ class FtpAdminTest extends TestCase
         $this->assertSame('ValidPassword123!', $device->ftpAccount->secret);
     }
 
+    public function test_ftp_username_accepts_uppercase_and_reports_invalid_characters_in_portuguese(): void
+    {
+        $this->admin();
+        $device = $this->device();
+        $password = 'ValidPassword123!';
+
+        $this->post(route('ftp.store'), ['device_id' => $device->id, 'username' => 'MK-POP-VARAN',
+            'password' => $password, 'password_confirmation' => $password])->assertOk();
+        $this->assertSame('mk-pop-varan', $device->ftpAccount->username);
+
+        $otherDevice = $this->device('OLT 2');
+        $this->post(route('ftp.store'), ['device_id' => $otherDevice->id, 'username' => 'MK POP VARAN',
+            'password' => $password, 'password_confirmation' => $password])
+            ->assertSessionHasErrors(['username' => 'O usuário FTP deve começar com uma letra e conter apenas letras sem acento, números, _ ou -.']);
+    }
+
     public function test_current_ftp_password_is_revealed_only_to_managers_on_request(): void
     {
         $device = $this->device();
