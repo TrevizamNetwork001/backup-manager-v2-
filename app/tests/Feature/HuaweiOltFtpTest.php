@@ -237,17 +237,21 @@ class HuaweiOltFtpTest extends TestCase
         $this->assertSame('invalid_backup_policy', $call()['error_code']);
     }
 
-    public function test_backup_account_on_mikrotik_is_not_processed_as_huawei(): void
+    public function test_backup_account_on_mikrotik_accepts_only_text_export(): void
     {
         [$device, $policy] = $this->fixture();
         DeviceBackupPolicy::create(['device_id' => $device->id, 'backup_policy_id' => $policy->id,
             'credential_id' => null, 'is_active' => true]);
         $device->update(['vendor' => 'MikroTik', 'platform' => 'network']);
-        $result = app(EngineJobService::class)->receiveFtp($device->id, bin2hex(random_bytes(16)),
+        $engine = app(EngineJobService::class);
+        $binary = $engine->receiveFtp($device->id, bin2hex(random_bytes(16)),
+            'backup.backup', time(), bin2hex(random_bytes(16)));
+        $this->assertSame('invalid_file', $binary['error_code']);
+        $result = $engine->receiveFtp($device->id, bin2hex(random_bytes(16)),
             'backup.rsc', time(), bin2hex(random_bytes(16)));
-        $this->assertSame('unsupported_device', $result['error_code']);
+        $this->assertSame('running', $result['status']);
         $this->assertSame($device->ftpAccount->id, $result['ftp_account_id']);
-        $this->assertDatabaseCount('backup_executions', 0);
+        $this->assertDatabaseCount('backup_executions', 1);
     }
 
     public function test_preparation_reactivates_oldest_compatible_link_without_duplicates(): void
@@ -916,7 +920,7 @@ class HuaweiOltFtpTest extends TestCase
         $this->get(route('backup-policies.create'))->assertOk()
             ->assertSee('Modelo pré-definido')
             ->assertSee('Configuração via FTP · envio pelo equipamento · 90 dias')
-            ->assertSee('Para receber backup FTP todos os dias, configure o envio automático em cada equipamento Huawei. O Backup Manager recebe os arquivos; esta política não agenda o envio. O teste da OLT continua manual.');
+            ->assertSee('Configure o envio no próprio equipamento. O Backup Manager recebe os arquivos; esta política não agenda o envio. MikroTik aceita export textual .rsc; ZTE ainda aguarda homologação. O teste da OLT continua manual.');
         $this->post(route('backup-policies.store'), $payload)->assertSessionHasNoErrors();
         $policy = BackupPolicy::firstOrFail();
         $this->assertSame('manual', $policy->schedule_type);

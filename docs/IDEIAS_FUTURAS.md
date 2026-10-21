@@ -36,6 +36,8 @@ Usuários, saúde do sistema, políticas, FTP e auditoria já têm telas na V2; 
 
 ## MikroTik: backup iniciado pelo roteador via FTP Push
 
+**Atualização de 21/10/2026:** a V2 passou a receber export textual `.rsc` do MikroTik por FTP em testes sintéticos; o envio real ainda precisa ser validado. O restante desta seção registra o planejamento anterior, incluindo `.backup` binário e gestão automática de scripts, que seguem pendentes. Consulte [o fluxo atual](FTP_SSH_METHOD_SWITCH.md).
+
 **Estado:** ideia pendente; não implementada na v2. Para backup de configuração MikroTik hoje, a v2 oferece `ssh_pull` com `/export terse`. Huawei OLT usa FTP manual/spontâneo conforme o fluxo OLT, e roteadores/switches Huawei VRP recebem FTP espontâneo. Esses fluxos não habilitam FTP para MikroTik.
 
 O sistema antigo contém um fluxo MikroTik FTP Push em `backup_manager/mikrotik_ftp_scripts.py`, com templates para RouterOS 6 e 7 em `mikrotik_routeros_v6.py` e `mikrotik_routeros_v7.py`. Ele cria `.rsc` e/ou `.backup`, instala script e agendamento no roteador, envia os arquivos por `/tool fetch mode=ftp upload=yes` e limpa as cópias locais após o envio. Esses arquivos são referência de comportamento, não um recurso pronto para copiar diretamente para a arquitetura da v2.

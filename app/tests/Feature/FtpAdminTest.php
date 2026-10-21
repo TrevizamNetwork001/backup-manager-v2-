@@ -94,7 +94,7 @@ class FtpAdminTest extends TestCase
         $this->assertStringNotContainsString('CurrentFtpPass123!', $event->metadata);
     }
 
-    public function test_provisioned_router_account_does_not_claim_backup_support(): void
+    public function test_provisioned_router_account_is_not_ready_without_a_policy(): void
     {
         $this->admin();
         $device = $this->device();
@@ -105,7 +105,7 @@ class FtpAdminTest extends TestCase
         DB::table('ftp_accounts')->where('id', $account->id)->update(['provisioned_at' => now(), 'sync_error' => null]);
 
         $this->get(route('ftp.show', $account))->assertOk()
-            ->assertSee('Backup FTP deste tipo de equipamento não está implementado.')
+            ->assertSee('Política ftp_push</dt><dd>Ausente', false)
             ->assertDontSee('Conta apta para receber backups.');
         $this->assertDatabaseCount('backup_executions', 0);
         $this->assertDatabaseCount('backup_artifacts', 0);

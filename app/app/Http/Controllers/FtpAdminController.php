@@ -46,9 +46,9 @@ class FtpAdminController extends Controller
         $this->authorize('ftp.view');
         $ftpAccount->load('device');
         $huaweiPolicy = app(HuaweiFtpBackupPolicy::class);
-        $isHuaweiBackup = ($ftpAccount->purpose ?? 'backup') === 'backup' && (bool) $ftpAccount->device?->isHuaweiFtpEligible();
-        $policyReady = $isHuaweiBackup && $huaweiPolicy->active($ftpAccount->device) !== null;
-        $accountReady = $isHuaweiBackup && $ftpAccount->is_active && ! $ftpAccount->deletion_mode && $ftpAccount->device->is_active;
+        $isFtpBackup = ($ftpAccount->purpose ?? 'backup') === 'backup' && (bool) $ftpAccount->device?->isBackupFtpEligible();
+        $policyReady = $isFtpBackup && $huaweiPolicy->active($ftpAccount->device) !== null;
+        $accountReady = $isFtpBackup && $ftpAccount->is_active && ! $ftpAccount->deletion_mode && $ftpAccount->device->is_active;
         $pureDbReady = $accountReady && $ftpAccount->provisioned_at !== null && $ftpAccount->sync_error === null;
         $history = Schema::hasTable('ftp_received_files')
             ? DB::table('ftp_received_files')->where('ftp_account_id', $ftpAccount->id)
@@ -68,7 +68,7 @@ class FtpAdminController extends Controller
         $confirmationPhrases = $deletion->confirmationPhrases($ftpAccount);
 
         return response()->view('ftp.show', compact('ftpAccount', 'lastReceipt', 'history', 'impact', 'confirmationPhrases',
-            'isHuaweiBackup', 'policyReady', 'accountReady', 'pureDbReady', 'deletionPreview'));
+            'isFtpBackup', 'policyReady', 'accountReady', 'pureDbReady', 'deletionPreview'));
     }
 
     public function prepare(Request $request, FtpAccount $ftpAccount, HuaweiFtpBackupPolicy $policy, AuditEvents $audit): RedirectResponse

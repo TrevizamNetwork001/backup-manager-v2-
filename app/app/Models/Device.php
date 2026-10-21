@@ -85,6 +85,12 @@ class Device extends Model
             || ($vendor === 'vsol' && $this->platform === 'olt' && ! $this->isVsolV1600Gt());
     }
 
+    public function isBackupFtpEligible(): bool
+    {
+        return $this->isHuaweiFtpEligible()
+            || ($this->platform === 'network' && mb_strtolower(trim($this->vendor)) === 'mikrotik');
+    }
+
     /**
      * Huawei routers/switches (VRP `set save-configuration backup-to-server`)
      * only push a file when the configuration changed and was saved; silence

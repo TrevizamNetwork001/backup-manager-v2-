@@ -92,8 +92,11 @@ class EngineJobService
                 return ['status' => 'rejected', 'error_code' => 'invalid_account', 'ftp_account_id' => $account?->id];
             }
             $device = Device::query()->find($deviceId);
-            if (! $device || ! $device->is_active || ! $device->isHuaweiFtpEligible()) {
+            if (! $device || ! $device->is_active || ! $device->isBackupFtpEligible()) {
                 return ['status' => 'rejected', 'error_code' => 'unsupported_device', 'ftp_account_id' => $account->id];
+            }
+            if (mb_strtolower(trim($device->vendor)) === 'mikrotik' && ! preg_match('/\.rsc\z/i', $filename)) {
+                return ['status' => 'rejected', 'error_code' => 'invalid_file', 'ftp_account_id' => $account->id];
             }
             $policyService = app(HuaweiFtpBackupPolicy::class);
             $association = $policyService->active($device);
@@ -217,7 +220,7 @@ class EngineJobService
                     ? $hasFtp && in_array($job->origin, ['manual', 'ftp_received'], true) &&
                         ($job->origin === 'ftp_received' || $job->device->platform === 'olt') &&
                         $job->backupPolicy->schedule_type === 'manual' && $job->credential_id === null &&
-                        $job->device->isHuaweiFtpEligible() && (bool) $job->device->ftpAccount?->is_active
+                        $job->device->isBackupFtpEligible() && (bool) $job->device->ftpAccount?->is_active
                     : $job->credential?->is_active && $job->credential?->device_id === $job->device_id && $job->credential?->type === 'ssh')),
         ];
     }
@@ -518,7 +521,7 @@ class EngineJobService
                 ($payload['platform'] === 'network' && in_array($vendor, ['mikrotik', 'huawei'], true))
                 || ($payload['platform'] === 'olt' && $vendor === 'vsol')
             )
-                || $payload['method'] === 'ftp_push' && $payload['ftp_account_available'] && $job->device->isHuaweiFtpEligible()
+                || $payload['method'] === 'ftp_push' && $payload['ftp_account_available'] && $job->device->isBackupFtpEligible()
                 || $a10System;
             if (! $payload['eligible'] || ! $supported || $payload['artifact_mode'] !== ($a10System ? 'binary' : 'config')) {
                 throw ValidationException::withMessages(['status' => 'Job não é elegível para conclusão.']);
@@ -541,6 +544,11 @@ class EngineJobService
             }
             if ($contents === false || strlen($contents) !== $size) {
                 throw ValidationException::withMessages(['artifact' => 'Leitura incompleta.']);
+            }
+            if ($payload['method'] === 'ftp_push' && $vendor === 'mikrotik' &&
+                (str_contains($contents, "\0") || ! mb_check_encoding($contents, 'UTF-8') ||
+                    ! preg_match('/^\/[a-z][a-z0-9 -]*\r?$/im', $contents))) {
+                throw ValidationException::withMessages(['artifact' => 'Export RouterOS inválido.']);
             }
             if ($payload['method'] === 'ssh_pull' && (str_contains($contents, "\0") || preg_match('/^\s*(?:error:|%\s*(?:error|unrecognized|unknown)|authentication failed|unrecognized command|unknown command|incomplete command|<!doctype html\b|<html\b)/mi', $contents) ||
                 preg_match('/(?:-{3,}\s*more\s*-{3,}|\bmore\s*:\s*|press\s+(?:any key|space))/i', $contents))) {

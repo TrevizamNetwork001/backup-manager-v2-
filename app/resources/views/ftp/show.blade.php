@@ -12,13 +12,13 @@
 @php
     $server = app(\App\Services\FtpServerSettings::class)->get();
     $selectedDeletionMode = session()->hasOldInput('mode') ? old('mode') : ($errors->has('mode') ? null : 'account');
-    $readyToReceive = $isHuaweiBackup
+    $readyToReceive = $isFtpBackup
         ? $accountReady && $pureDbReady && $policyReady
         : ($ftpAccount->purpose ?? 'backup') === 'file_server' && $ftpAccount->is_active && !$ftpAccount->deletion_mode
             && $ftpAccount->provisioned_at !== null && !$ftpAccount->sync_error;
 @endphp
 <div class="ftp-page ftp-detail-page">
-@if (($ftpAccount->purpose ?? 'backup') === 'backup' && !$isHuaweiBackup)
+@if (($ftpAccount->purpose ?? 'backup') === 'backup' && !$isFtpBackup)
     <div class="alert alert--warning" role="alert">Backup FTP deste tipo de equipamento não está implementado. O cadastro da conta não habilita a geração de execuções ou artifacts de backup.</div>
 @endif
 @if ($errors->any()) <div class="alert alert--warning" role="alert">{{ $errors->first() }}</div> @endif
@@ -38,13 +38,13 @@
 <details class="ftp-detail-accordion" id="ftp-account-details"><summary><x-icon name="user" /><strong>Detalhes da conta</strong><span>Usuário, finalidade, status e informações gerais.</span><x-icon name="chevron-down" class="ftp-detail-chevron" /></summary><div class="ftp-detail-accordion__body"><section class="ftp-detail-section"><h2>Identificação</h2><dl class="ftp-detail-list"><div><dt>Usuário</dt><dd><code>{{ $ftpAccount->username }}</code></dd></div><div><dt>Finalidade</dt><dd>{{ ($ftpAccount->purpose ?? 'backup') === 'backup' ? 'Backup' : 'Servidor de arquivos' }}</dd></div><div><dt>Equipamento</dt><dd>{{ $ftpAccount->device?->name ?? 'Nenhum' }}</dd></div><div><dt>Status</dt><dd>{{ $ftpAccount->is_active ? 'Ativa' : 'Desativada' }}</dd></div></dl></section>
 </div></details>
 <details class="ftp-detail-accordion" id="ftp-account-configuration"><summary><x-icon name="settings" /><strong>Configuração FTP</strong><span>Servidor, porta, path remoto e permissões.</span><x-icon name="chevron-down" class="ftp-detail-chevron" /></summary><div class="ftp-detail-accordion__body"><section class="ftp-detail-section"><h2>Acesso</h2><dl class="ftp-detail-list"><div><dt>Servidor</dt><dd class="tech-value">{{ $server['host'] ?: 'Não configurado' }}</dd></div><div><dt>Porta</dt><dd>21/TCP</dd></div><div><dt>Path remoto</dt><dd>/</dd></div><div><dt>Permissão</dt><dd>Perfil global do Pure-FTPd, sem ajuste por conta</dd></div></dl></section>
-@if($isHuaweiBackup)
+@if($isFtpBackup)
 <section class="ftp-detail-section">
     <h2>Integração de backup FTP</h2>
     <dl class="ftp-detail-list"><div><dt>Conta FTP</dt><dd>{{ $accountReady ? 'OK' : 'Pendente' }}</dd></div><div><dt>PureDB</dt><dd>{{ $pureDbReady ? 'OK' : 'Pendente' }}</dd></div><div><dt>Política ftp_push</dt><dd>{{ $policyReady ? 'OK' : 'Ausente' }}</dd></div><div><dt>Pronto para receber backup</dt><dd>{{ $accountReady && $pureDbReady && $policyReady ? 'SIM' : 'NÃO' }}</dd></div></dl>
     @if($ftpAccount->sync_error)<p class="alert alert--warning" role="alert">{{ $ftpAccount->sync_error }}</p>@endif
     @can('ftp.manage')
-    @if(!$policyReady && !$ftpAccount->deletion_mode)
+    @if(!$policyReady && !$ftpAccount->deletion_mode && $ftpAccount->device?->isHuaweiFtpEligible())
         <form method="POST" action="{{ route('ftp.prepare', $ftpAccount) }}" id="ftp-prepare-form">
             @csrf
             <button type="submit" class="btn btn--secondary">Preparar backup FTP</button>

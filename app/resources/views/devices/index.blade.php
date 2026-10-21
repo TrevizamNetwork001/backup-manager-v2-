@@ -212,7 +212,7 @@
                 && ! $device->deviceBackupPolicies->contains(fn ($association) => $association->is_active && $association->backupPolicy?->is_active && $association->backupPolicy->method === $policy->method)
                 && ($policy->method === 'ssh_pull'
                     ? ($device->platform !== 'olt' || mb_strtolower(trim($device->vendor)) === 'vsol') && $sshCredentialsByDevice->has($device->id)
-                    : ($policy->method === 'ftp_push' && $policy->schedule_type === 'manual' && $device->isHuaweiFtpEligible() && $device->ftpAccount?->is_active)
+                    : ($policy->method === 'ftp_push' && $policy->schedule_type === 'manual' && $device->isBackupFtpEligible() && $device->ftpAccount?->is_active)
                         || ($policy->method === 'a10_system' && config('backup.a10_enabled') && $policy->artifact_mode === 'binary'
                             && $device->platform === 'network' && mb_strtolower(trim($device->vendor)) === 'a10 networks'
                             && $sshCredentialsByDevice->has($device->id)))),

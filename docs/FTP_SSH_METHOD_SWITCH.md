@@ -13,7 +13,11 @@ Atualizado em 2026-10-02. Este documento descreve o contrato atual do Backup Man
 | Huawei OLT por FTP | O operador inicia no console da OLT | O wizard cria uma execução manual antes do upload; o engine aguarda o nome `bm-exec-<ID>.cfg` | Executar o comando exato mostrado pelo wizard enquanto a execução aguarda |
 | VSOL OLT por SSH | Backup Manager | Execução manual ou agendada; o engine coleta `show running-config` | Método validado para a OLT-SANCA/V1600GT |
 | VSOL OLT por FTP | O operador inicia no console da OLT | Fluxo manual do wizard, se o modelo realmente suportar `ftp://` | Depende de homologação por modelo; não usar na V1600GT |
-| MikroTik por FTP | — | Não implementado na V2 | Usar SSH pull ou planejar integração própria |
+| MikroTik por FTP (`.rsc`) | MikroTik RouterOS 6 ou 7 | O scanner cria `ftp_received` após upload na conta do equipamento; valida export textual e registra artefato | Manter conta FTP e política `ftp_push/config/manual` ativas; configurar o envio no RouterOS e validar um backup real |
+
+**Estado em 21/10/2026:** a recepção de export textual `.rsc` do MikroTik foi implementada e passou em testes sintéticos para conteúdos RouterOS 6 e 7. O script e o agendamento do RouterOS ainda precisam ser configurados e validados no equipamento. Arquivo binário `.backup` é recusado. A política compartilhada **ZTE e MikroTik FTP** não habilita ZTE: ainda não há modelo ZTE cadastrado nem formato de envio homologado. Um upload ZTE continua bloqueado.
+
+Os scripts do sistema antigo (`mikrotik_ftp_scripts.py`, `mikrotik_routeros_v6.py` e `mikrotik_routeros_v7.py`) serviram de referência. RouterOS 6 gera o export com `/export compact file=...`; RouterOS 7 usa `/export file=...`. Ambos enviam o `.rsc` com `/tool fetch mode=ftp upload=yes`. Na V2, o agendamento é responsabilidade do RouterOS, e a conta FTP identifica o equipamento; não se copia o banco nem o script do sistema antigo para a instância nova. Confira o host e a credencial na tela da conta FTP, faça um envio controlado e valide execução, artefato e hash antes de ativar a rotina periódica. Não compartilhe a senha FTP em logs, tickets ou chat.
 
 Para roteadores e switches Huawei, FTP não possui o botão “enviar agora” no Backup Manager. A linha VRP `set save-configuration backup-to-server` define somente o **destino**; `set save-configuration interval` configura separadamente a **periodicidade**. A tela não deve oferecer uma execução manual com nome arbitrário para esse caso.
 
