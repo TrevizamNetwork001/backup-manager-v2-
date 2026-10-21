@@ -40,9 +40,9 @@ class UserController extends Controller
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'string', 'email', 'max:255', 'unique:users,email'],
             'role' => ['required', Rule::in(Rbac::ROLES)],
-            'password' => ['required', 'confirmed', Password::min(10), 'max:72'],
+            'password' => ['required', 'confirmed', Password::min(8)->letters()->numbers(), 'regex:/[\p{P}\p{S}]/u', 'max:72'],
             'is_active' => ['required', 'boolean'],
-        ]);
+        ], ['password.regex' => 'A senha precisa incluir um caractere especial.']);
 
         $user = User::create([
             'name' => $validated['name'],
@@ -132,7 +132,13 @@ class UserController extends Controller
             $this->assertNotLastActiveAdminDisable($user, $validated['is_active']);
             $oldStatus = $user->is_active ? 'active' : 'disabled';
             $user->is_active = $validated['is_active'];
+            if (! $validated['is_active']) {
+                $user->setRememberToken(null);
+            }
             $user->save();
+            if (! $validated['is_active']) {
+                DB::table('sessions')->where('user_id', $user->id)->delete();
+            }
 
             return $oldStatus;
         });
@@ -223,11 +229,17 @@ class UserController extends Controller
         $this->authorize('users.manage');
 
         $validated = $request->validate([
-            'password' => ['required', 'confirmed', Password::min(10), 'max:72'],
-        ]);
+            'password' => ['required', 'confirmed', Password::min(10)->letters()->numbers(), 'regex:/[\p{P}\p{S}]/u', 'max:72'],
+        ], ['password.regex' => 'A senha precisa incluir um caractere especial.']);
 
-        $user->password = $validated['password'];
-        $user->save();
+        DB::transaction(function () use ($user, $validated) {
+            $user = User::query()->lockForUpdate()->findOrFail($user->id);
+            $user->password = $validated['password'];
+            $user->setRememberToken(null);
+            $user->save();
+            DB::table('sessions')->where('user_id', $user->id)->delete();
+            DB::table('password_reset_tokens')->where('email', $user->email)->delete();
+        });
 
         $audit->record('user.password_reset', 'user', (string) $user->id, $user->name, 'success', [
             'target_user_id' => $user->id,

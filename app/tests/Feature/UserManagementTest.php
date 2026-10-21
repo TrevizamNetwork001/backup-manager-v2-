@@ -30,7 +30,10 @@ class UserManagementTest extends TestCase
         $this->admin();
         User::factory()->viewer()->create(['name' => 'Fulano']);
 
-        $this->get(route('users.index'))->assertOk()->assertSeeText('Fulano');
+        $this->get(route('users.index'))->assertOk()->assertSeeText('Fulano')
+            ->assertSee('aria-label="Editar usuário Fulano"', false)
+            ->assertSee('aria-label="Desativar usuário Fulano"', false)
+            ->assertSee('aria-label="Excluir usuário Fulano"', false);
     }
 
     public function test_admin_can_create_user(): void
@@ -48,6 +51,27 @@ class UserManagementTest extends TestCase
         $this->assertSame(Rbac::ROLE_OPERATOR, $user->role);
         $this->assertTrue($user->is_active);
         $this->assertTrue(Hash::check('ValidPassword123!', $user->password));
+    }
+
+    public function test_new_user_password_requires_eight_characters_letters_numbers_and_special_character(): void
+    {
+        $this->admin();
+
+        foreach (['Ab1!xyz', '1234567!', 'Abcdefg!', 'Abc12345'] as $password) {
+            $this->post(route('users.store'), [
+                'name' => 'Conta Teste', 'email' => 'conta.teste@example.com',
+                'role' => Rbac::ROLE_VIEWER, 'password' => $password,
+                'password_confirmation' => $password, 'is_active' => '1',
+            ])->assertSessionHasErrors('password');
+        }
+
+        $this->post(route('users.store'), [
+            'name' => 'Conta Teste', 'email' => 'conta.teste@example.com',
+            'role' => Rbac::ROLE_VIEWER, 'password' => 'Abc123!x',
+            'password_confirmation' => 'Abc123!x', 'is_active' => '1',
+        ])->assertRedirect(route('users.index'));
+
+        $this->assertDatabaseHas('users', ['email' => 'conta.teste@example.com']);
     }
 
     public function test_admin_can_edit_user_name_and_email(): void
@@ -77,10 +101,16 @@ class UserManagementTest extends TestCase
     public function test_admin_can_disable_and_enable_user(): void
     {
         $this->admin();
-        $user = User::factory()->viewer()->create();
+        $user = User::factory()->viewer()->create(['remember_token' => 'old-remember-token']);
+        DB::table('sessions')->insert([
+            'id' => 'disabled-user-session', 'user_id' => $user->id, 'payload' => '', 'last_activity' => time(),
+        ]);
 
         $this->patch(route('users.status', $user), ['is_active' => '0'])->assertRedirect(route('users.index'));
         $this->assertFalse($user->fresh()->is_active);
+        $this->assertNull($user->fresh()->remember_token);
+        $this->assertDatabaseMissing('sessions', ['id' => 'disabled-user-session']);
+        $this->get(route('users.index'))->assertSee('aria-label="Ativar usuário '.$user->name.'"', false);
 
         $this->patch(route('users.status', $user), ['is_active' => '1'])->assertRedirect(route('users.index'));
         $this->assertTrue($user->fresh()->is_active);
@@ -89,13 +119,18 @@ class UserManagementTest extends TestCase
     public function test_admin_can_reset_user_password(): void
     {
         $this->admin();
-        $user = User::factory()->viewer()->create();
+        $user = User::factory()->viewer()->create(['remember_token' => 'old-remember-token']);
+        DB::table('sessions')->insert([
+            'id' => 'reset-user-session', 'user_id' => $user->id, 'payload' => '', 'last_activity' => time(),
+        ]);
 
         $this->post(route('users.reset-password', $user), [
             'password' => 'BrandNewPassword123!', 'password_confirmation' => 'BrandNewPassword123!',
         ])->assertRedirect(route('users.edit', $user));
 
         $this->assertTrue(Hash::check('BrandNewPassword123!', $user->fresh()->password));
+        $this->assertNull($user->fresh()->remember_token);
+        $this->assertDatabaseMissing('sessions', ['id' => 'reset-user-session']);
     }
 
     public function test_admin_can_delete_another_user(): void

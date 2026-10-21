@@ -256,8 +256,8 @@ class DeviceBackupHealthTest extends TestCase
 
         $this->actingAs(User::factory()->viewer()->create());
         $this->get(route('devices.index'))->assertOk()
-            ->assertDontSee('Policy 1')
-            ->assertSee('Coleta via SSH')
+            ->assertSee('Policy 1')
+            ->assertDontSee('Coleta via SSH')
             ->assertSee('Saudável')
             ->assertSee('Não avaliado');
     }
@@ -281,7 +281,7 @@ class DeviceBackupHealthTest extends TestCase
         $this->assertNotNull($row['last_backup_at']);
 
         $this->actingAs(User::factory()->viewer()->create());
-        $this->get(route('devices.index'))->assertOk()->assertSee('Envio via FTP');
+        $this->get(route('devices.index'))->assertOk()->assertSee('Huawei FTP');
     }
 
     public function test_device_list_shows_both_active_backup_methods(): void
@@ -294,7 +294,7 @@ class DeviceBackupHealthTest extends TestCase
 
         $this->actingAs(User::factory()->viewer()->create());
         $this->get(route('devices.index'))->assertOk()
-            ->assertSee('Coleta via SSH · Envio via FTP');
+            ->assertSee('Huawei FTP · Policy 1');
     }
 
     public function test_affected_device_list_includes_devices_beyond_first_page(): void

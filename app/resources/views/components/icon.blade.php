@@ -152,6 +152,17 @@
         @case('refresh')
             <path d="M20 11a8 8 0 1 1-2.3-5.7M20 4v6h-6" />
             @break
+        @case('edit')
+            <path d="M13 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-8" />
+            <path d="m8 16 4-.8 8-8-3.2-3.2-8 8L8 16Z" />
+            @break
+        @case('disable')
+            <circle cx="12" cy="12" r="9" />
+            <path d="M6 6 18 18" />
+            @break
+        @case('delete')
+            <path d="M4 7h16M9 7V4h6v3m3 0-1 14H7L6 7M10 11v6m4-6v6" />
+            @break
         @case('archive')
             <rect x="4" y="4" width="16" height="5" rx="1" />
             <rect x="4" y="10" width="16" height="5" rx="1" />

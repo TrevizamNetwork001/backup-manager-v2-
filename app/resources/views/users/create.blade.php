@@ -19,7 +19,7 @@
         <div class="card__header">
             <div>
                 <h2 class="card__title" id="user-create-title">Dados do usuário</h2>
-                <p class="card__description">Defina identificação, papel e senha inicial.</p>
+                <p class="card__description">Defina identificação, perfil de acesso e senha inicial.</p>
             </div>
         </div>
         <div class="card__body">

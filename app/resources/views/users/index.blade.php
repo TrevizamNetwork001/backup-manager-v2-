@@ -2,13 +2,13 @@
 
 @section('title', 'Usuários — Backup Manager')
 @section('page-title', 'Usuários')
-@section('page-description', 'Gerencie contas, papéis e acesso ao sistema.')
+@section('page-description', 'Gerencie contas e perfis de acesso ao sistema.')
 
 @section('page-header')
 <header class="page-header">
     <div class="page-header__content">
         <h1 class="page-header__title">Usuários</h1>
-        <p class="page-header__description">Gerencie contas, papéis e acesso ao sistema.</p>
+        <p class="page-header__description">Gerencie contas e perfis de acesso ao sistema.</p>
     </div>
     <div class="page-header__actions">
         @can('users.manage')
@@ -47,7 +47,7 @@
                 <tr>
                     <th>Nome</th>
                     <th>E-mail</th>
-                    <th>Papel</th>
+                    <th>Perfil de acesso</th>
                     <th>Status</th>
                     <th>Criado em</th>
                     <th class="table-actions-column">Ações</th>
@@ -76,22 +76,20 @@
                         <td>{{ app(\App\Services\InstanceTimezone::class)->format($user->created_at, 'd/m/Y') }}</td>
                         <td>
                             <div class="table-actions">
-                                <a href="{{ route('users.edit', $user) }}" class="btn btn--ghost btn--sm">Editar</a>
+                                <a href="{{ route('users.edit', $user) }}" class="btn btn--ghost btn--sm btn--icon" aria-label="Editar usuário {{ $user->name }}" title="Editar usuário"><x-icon name="edit" /></a>
                                 @if($user->id !== auth()->id())
                                     <form method="POST" action="{{ route('users.status', $user) }}"
                                         onsubmit="return confirm('{{ $user->is_active ? 'Desativar' : 'Ativar' }} este usuário?');">
                                         @csrf
                                         @method('PATCH')
                                         <input type="hidden" name="is_active" value="{{ $user->is_active ? '0' : '1' }}">
-                                        <button type="submit" class="btn btn--ghost btn--sm {{ $user->is_active ? 'table-actions__danger' : '' }}">
-                                            {{ $user->is_active ? 'Desativar' : 'Ativar' }}
-                                        </button>
+                                        <button type="submit" class="btn btn--ghost btn--sm btn--icon {{ $user->is_active ? 'table-actions__danger' : '' }}" aria-label="{{ $user->is_active ? 'Desativar' : 'Ativar' }} usuário {{ $user->name }}" title="{{ $user->is_active ? 'Desativar' : 'Ativar' }} usuário"><x-icon :name="$user->is_active ? 'disable' : 'check-circle'" /></button>
                                     </form>
                                     @can('users.manage')
                                         <form method="POST" action="{{ route('users.destroy', $user) }}" onsubmit="return confirm('Excluir este usuário? A conta e suas sessões serão removidas. O histórico de auditoria será preservado.');">
                                             @csrf
                                             @method('DELETE')
-                                            <button type="submit" class="btn btn--ghost btn--sm table-actions__danger">Excluir</button>
+                                            <button type="submit" class="btn btn--ghost btn--sm btn--icon table-actions__danger" aria-label="Excluir usuário {{ $user->name }}" title="Excluir usuário"><x-icon name="delete" /></button>
                                         </form>
                                     @endcan
                                 @endif
@@ -112,7 +110,7 @@
 <dialog class="modal form-create-modal" id="user-create-dialog" aria-labelledby="user-create-title">
     <div class="modal__surface">
         <div class="modal__header">
-            <div><h2 class="modal__title" id="user-create-title">Novo usuário</h2><p class="modal__description">Cadastre uma nova conta e defina o papel de acesso.</p></div>
+            <div><h2 class="modal__title" id="user-create-title">Novo usuário</h2><p class="modal__description">Cadastre uma conta e defina seu perfil de acesso.</p></div>
             <button type="button" class="modal__close" data-close-user-create aria-label="Fechar"><x-icon name="close" /></button>
         </div>
         <form method="POST" action="{{ route('users.store') }}">
@@ -156,6 +154,7 @@
                     <div class="form-field">
                         <label class="form-label" for="reset-password">Nova senha *</label>
                         <input class="form-control" id="reset-password" name="password" type="password" minlength="10" maxlength="72" autocomplete="new-password" required>
+                        <small class="form-help">Mínimo de 10 caracteres, com letra, número e caractere especial.</small>
                     </div>
                     <div class="form-field">
                         <label class="form-label" for="reset-password-confirmation">Confirmar nova senha *</label>

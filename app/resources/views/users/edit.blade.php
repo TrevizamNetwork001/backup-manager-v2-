@@ -2,13 +2,13 @@
 
 @section('title', 'Editar usuário — Backup Manager')
 @section('page-title', 'Editar usuário')
-@section('page-description', 'Atualize dados, papel e senha desta conta.')
+@section('page-description', 'Atualize dados, perfil de acesso e senha desta conta.')
 
 @section('page-header')
 <header class="page-header">
     <div class="page-header__content">
         <h1 class="page-header__title">Editar usuário</h1>
-        <p class="page-header__description">Atualize dados, papel e senha desta conta.</p>
+        <p class="page-header__description">Atualize dados, perfil de acesso e senha desta conta.</p>
     </div>
     <div class="page-header__actions"><a href="{{ route('users.index') }}" class="btn btn--ghost">Voltar aos usuários</a></div>
 </header>
@@ -47,7 +47,7 @@
                 </div>
 
                 <div class="form-field">
-                    <label class="form-label" for="role">Papel *</label>
+                    <label class="form-label" for="role">Perfil de acesso *</label>
                     <select class="form-control" id="role" name="role" required>
                         @foreach(\App\Support\Rbac::ROLES as $role)
                             <option value="{{ $role }}" @selected(old('role', $user->role) === $role)>{{ \App\Support\Rbac::roleLabel($role) }}</option>
@@ -55,7 +55,7 @@
                     </select>
                     @error('role')<span class="form-error">{{ $message }}</span>@enderror
                     @if($user->isLastActiveAdmin())
-                        <p class="muted-text">Este é o último administrador ativo — o papel não pode ser alterado.</p>
+                        <p class="muted-text">Este é o último administrador ativo — o perfil de acesso não pode ser alterado.</p>
                     @endif
                 </div>
             </div>
@@ -81,6 +81,7 @@
                 <div class="form-field">
                     <label class="form-label" for="password">Nova senha *</label>
                     <input class="form-control" id="password" name="password" type="password" minlength="10" maxlength="72" autocomplete="new-password" required>
+                    <small class="form-help">Mínimo de 10 caracteres, com letra, número e caractere especial.</small>
                     @error('password')<span class="form-error">{{ $message }}</span>@enderror
                 </div>
                 <div class="form-field">

@@ -28,7 +28,7 @@
     </div>
 
     <div class="form-field">
-        <label class="form-label" for="role">Papel *</label>
+        <label class="form-label" for="role">Perfil de acesso *</label>
         <select class="form-control" id="role" name="role" @error('role') aria-invalid="true" aria-describedby="user-role-error" @enderror required>
             @foreach(\App\Support\Rbac::ROLES as $role)
                 <option value="{{ $role }}" @selected(old('role', $editingUser->role ?? null) === $role)>{{ \App\Support\Rbac::roleLabel($role) }}</option>
@@ -36,20 +36,26 @@
         </select>
         @error('role')<span class="form-error" id="user-role-error">{{ $message }}</span>@enderror
         @if(($editingUser ?? null)?->isLastActiveAdmin())
-            <small class="form-help">Este é o último administrador ativo — o papel não pode ser alterado.</small>
+            <small class="form-help">Este é o último administrador ativo — o perfil de acesso não pode ser alterado.</small>
         @endif
     </div>
 
     @unless($editingUser ?? false)
     <div class="form-field">
         <label class="form-label" for="password">Senha *</label>
-        <input class="form-control" id="password" name="password" type="password" minlength="10" maxlength="72" autocomplete="new-password" @error('password') aria-invalid="true" aria-describedby="user-password-error" @enderror required>
+        <input class="form-control" id="password" name="password" type="password" minlength="8" maxlength="72" autocomplete="new-password" aria-describedby="user-password-requirements @error('password') user-password-error @enderror" @error('password') aria-invalid="true" @enderror data-user-password required>
+        <div class="user-password-requirements" id="user-password-requirements" aria-label="Requisitos da senha">
+            <span data-password-check="length">8 caracteres ou mais</span>
+            <span data-password-check="letter">Uma letra</span>
+            <span data-password-check="number">Um número</span>
+            <span data-password-check="symbol">Um caractere especial</span>
+        </div>
         @error('password')<span class="form-error" id="user-password-error">{{ $message }}</span>@enderror
     </div>
 
     <div class="form-field">
         <label class="form-label" for="password_confirmation">Confirmar senha *</label>
-        <input class="form-control" id="password_confirmation" name="password_confirmation" type="password" minlength="10" maxlength="72" autocomplete="new-password" required>
+        <input class="form-control" id="password_confirmation" name="password_confirmation" type="password" minlength="8" maxlength="72" autocomplete="new-password" required>
     </div>
 
     <div class="form-field user-create-span">
@@ -61,6 +67,30 @@
     </div>
     @endunless
 </div>
+
+@unless($editingUser ?? false)
+<script>
+(() => {
+    const input = document.querySelector('[data-user-password]');
+    if (!input) return;
+    const requirements = input.parentElement.querySelector('[id="user-password-requirements"]');
+    const update = () => {
+        const value = input.value;
+        const checks = {
+            length: value.length >= 8,
+            letter: /[\p{L}]/u.test(value),
+            number: /\p{N}/u.test(value),
+            symbol: /[\p{P}\p{S}]/u.test(value),
+        };
+        requirements.querySelectorAll('[data-password-check]').forEach(item => {
+            item.dataset.met = String(checks[item.dataset.passwordCheck]);
+        });
+    };
+    input.addEventListener('input', update);
+    update();
+})();
+</script>
+@endunless
 
 @if(($createModal ?? false) || ($editModal ?? false))
     </div>
