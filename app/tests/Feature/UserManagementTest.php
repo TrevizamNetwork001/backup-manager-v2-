@@ -52,6 +52,24 @@ class UserManagementTest extends TestCase
         $this->assertTrue(Hash::check('ValidPassword123!', $user->password));
     }
 
+    public function test_only_admin_and_operator_can_be_assigned_to_new_users(): void
+    {
+        $this->admin();
+
+        foreach ([Rbac::ROLE_VIEWER, Rbac::ROLE_AUDITOR] as $role) {
+            $this->post(route('users.store'), [
+                'name' => 'Conta Antiga', 'email' => 'conta.antiga@example.com',
+                'role' => $role, 'password' => 'ValidPassword123!', 'is_active' => '1',
+            ])->assertSessionHasErrors('role');
+        }
+
+        $this->get(route('users.index'))->assertOk()
+            ->assertSee('value="admin"', false)
+            ->assertSee('value="operator"', false)
+            ->assertDontSee('value="viewer"', false)
+            ->assertDontSee('value="auditor"', false);
+    }
+
     public function test_new_user_password_requires_eight_characters_letters_numbers_and_special_character(): void
     {
         $this->admin();
@@ -59,14 +77,14 @@ class UserManagementTest extends TestCase
         foreach (['Ab1!xyz', '1234567!', 'Abcdefg!', 'Abc12345'] as $password) {
             $this->post(route('users.store'), [
                 'name' => 'Conta Teste', 'email' => 'conta.teste@example.com',
-                'role' => Rbac::ROLE_VIEWER, 'password' => $password,
+                'role' => Rbac::ROLE_OPERATOR, 'password' => $password,
                 'password_confirmation' => $password, 'is_active' => '1',
             ])->assertSessionHasErrors('password');
         }
 
         $this->post(route('users.store'), [
             'name' => 'Conta Teste', 'email' => 'conta.teste@example.com',
-            'role' => Rbac::ROLE_VIEWER, 'password' => 'Abc123!x', 'is_active' => '1',
+            'role' => Rbac::ROLE_OPERATOR, 'password' => 'Abc123!x', 'is_active' => '1',
         ])->assertRedirect(route('users.index'));
 
         $this->assertDatabaseHas('users', ['email' => 'conta.teste@example.com']);
@@ -75,7 +93,7 @@ class UserManagementTest extends TestCase
     public function test_admin_can_edit_user_name_and_email(): void
     {
         $this->admin();
-        $user = User::factory()->viewer()->create();
+        $user = User::factory()->operator()->create();
 
         $this->put(route('users.update', $user), [
             'name' => 'Nome Atualizado', 'email' => $user->email, 'role' => $user->role,
@@ -212,7 +230,7 @@ class UserManagementTest extends TestCase
         $admin = $this->admin();
 
         $response = $this->put(route('users.update', $admin), [
-            'name' => $admin->name, 'email' => $admin->email, 'role' => Rbac::ROLE_VIEWER,
+            'name' => $admin->name, 'email' => $admin->email, 'role' => Rbac::ROLE_OPERATOR,
         ]);
 
         $response->assertSessionHasErrors('role');
@@ -225,10 +243,10 @@ class UserManagementTest extends TestCase
         User::factory()->admin()->create();
 
         $this->put(route('users.update', $admin), [
-            'name' => $admin->name, 'email' => $admin->email, 'role' => Rbac::ROLE_VIEWER,
+            'name' => $admin->name, 'email' => $admin->email, 'role' => Rbac::ROLE_OPERATOR,
         ])->assertRedirect(route('users.index'));
 
-        $this->assertSame(Rbac::ROLE_VIEWER, $admin->fresh()->role);
+        $this->assertSame(Rbac::ROLE_OPERATOR, $admin->fresh()->role);
     }
 
     public function test_last_active_admin_model_check(): void
@@ -283,7 +301,7 @@ class UserManagementTest extends TestCase
         $this->admin();
 
         $this->post(route('users.store'), [
-            'name' => 'Auditado', 'email' => 'auditado@example.com', 'role' => Rbac::ROLE_VIEWER,
+            'name' => 'Auditado', 'email' => 'auditado@example.com', 'role' => Rbac::ROLE_OPERATOR,
             'password' => 'SuperSecret123!', 'password_confirmation' => 'SuperSecret123!', 'is_active' => '1',
         ]);
 

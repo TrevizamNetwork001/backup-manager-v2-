@@ -2,6 +2,8 @@
 
 namespace Tests\Feature;
 
+use App\Models\Device;
+use App\Models\Site;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
@@ -77,19 +79,19 @@ class AuditTest extends TestCase
         $this->assertSame(1, $response->viewData('security')['distinct_ips']);
     }
 
-    public function test_non_admin_is_blocked_from_audit_index(): void
+    public function test_operator_can_view_audit_index(): void
     {
         $this->actingAs(User::factory()->create(['is_admin' => false]));
 
-        $this->get(route('audit.index'))->assertForbidden();
+        $this->get(route('audit.index'))->assertOk();
     }
 
-    public function test_non_admin_is_blocked_from_audit_show(): void
+    public function test_operator_can_view_audit_detail(): void
     {
         $id = $this->insertEvent();
         $this->actingAs(User::factory()->create(['is_admin' => false]));
 
-        $this->get(route('audit.show', $id))->assertForbidden();
+        $this->get(route('audit.show', $id))->assertOk();
     }
 
     // LISTAGEM
@@ -347,8 +349,8 @@ class AuditTest extends TestCase
     public function test_ftp_account_lifecycle_emits_global_audit_events(): void
     {
         $admin = $this->admin();
-        $site = \App\Models\Site::firstOrCreate(['name' => 'Lab'], ['is_active' => true]);
-        $device = \App\Models\Device::create(['site_id' => $site->id, 'name' => 'OLT-audit', 'management_ip' => '192.0.2.50',
+        $site = Site::firstOrCreate(['name' => 'Lab'], ['is_active' => true]);
+        $device = Device::create(['site_id' => $site->id, 'name' => 'OLT-audit', 'management_ip' => '192.0.2.50',
             'vendor' => 'Huawei', 'platform' => 'olt', 'is_active' => true]);
 
         $this->post(route('ftp.store'), ['device_id' => $device->id, 'username' => 'oltaudit',

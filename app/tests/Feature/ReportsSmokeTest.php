@@ -99,8 +99,8 @@ class ReportsSmokeTest extends TestCase
             $audit->record('report.exported', 'report', 'devices', 'devices', 'success', ['filters' => [], 'row_count' => 1], $user->id);
             $response = $this->actingAs($user)->get(route('reports.index'))->assertOk();
             $recent = $response->viewData('recentReports');
-            if ($role === 'auditor') {
-                $this->assertCount(3, $recent);
+            if (in_array($role, ['operator', 'auditor'], true)) {
+                $this->assertCount($role === 'operator' ? 2 : 3, $recent);
                 $response->assertSee('Ver todos');
             } else {
                 $this->assertSame([$user->id], $recent->pluck('actor_user_id')->all());

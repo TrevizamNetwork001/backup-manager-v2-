@@ -11,6 +11,7 @@ Esta revisão complementa [a investigação de segurança](INVESTIGACAO_SEGURANC
 | Usuários, cadastro | O cadastro tem um único campo de senha e exibe, durante a digitação, os requisitos de 8 caracteres, letra, número e caractere especial. O servidor exige os mesmos requisitos. A redefinição administrativa mantém mínimo de 10 caracteres e também exige letra, número e caractere especial. |
 | Usuários, textos | “Papel” foi substituído por “Perfil de acesso” nas telas de criação, listagem e edição. |
 | Usuários, alinhamento | Os campos Perfil de acesso e Senha no modal de cadastro passaram a alinhar rótulo e controle pelo topo; a lista de requisitos da senha pode crescer sem esticar o campo ao lado. |
+| Perfis de acesso | O cadastro e a edição passam a oferecer somente Administrador e Operador. Operador reúne as funções operacionais e a consulta de auditoria. A migração converte os perfis antigos para Operador, registra a alteração e exige novo login dessas contas. |
 | Testes de equipamentos | Três expectativas antigas foram atualizadas para os nomes de políticas efetivamente mostrados na lista de equipamentos. |
 
 ## Proteções confirmadas
@@ -22,7 +23,8 @@ Esta revisão complementa [a investigação de segurança](INVESTIGACAO_SEGURANC
 
 ## Verificação
 
-- Laravel: 519 testes aprovados, 1 ignorado, 3431 asserções na execução final. Os 22 testes de gestão de usuários passaram com 104 asserções, incluindo a senha mínima válida e quatro formatos inválidos. Pint passou nos arquivos PHP alterados. O aviso de cache de resultados do PHPUnit decorre do sistema de arquivos de leitura do contêiner e não afetou o resultado dos testes.
+- A migração de perfis foi aplicada à instância: 2 contas Administrador, 2 Operador e nenhuma conta nos perfis antigos. Antes da migração havia 1 conta Auditor e nenhuma Somente leitura ou Operador. A conta convertida teve sessões e token de lembrar acesso revogados.
+- Laravel: após a unificação, 521 testes aprovados, 1 ignorado e 3446 asserções. Os 22 testes de gestão de usuários passaram com 104 asserções, incluindo a senha mínima válida e quatro formatos inválidos. Pint passou nos arquivos PHP alterados. O aviso de cache de resultados do PHPUnit decorre do sistema de arquivos de leitura do contêiner e não afetou o resultado dos testes.
 - Engine Python: 131 testes aprovados.
 - FTP Python: 21 testes de `test_admin.py` aprovados. O teste de integração adicional não concluiu porque o servidor de teste não conseguiu reservar portas de dados (`425 All reserved TCP ports are busy`); este resultado não indica falha confirmada do receptor em produção.
 - `git diff --check` passou; o cache de views foi limpo depois da alteração do ícone.

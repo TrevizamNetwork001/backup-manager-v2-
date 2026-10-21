@@ -82,7 +82,7 @@ class RbacTest extends TestCase
 
         // Operator lacks the destructive/administrative permissions.
         $this->delete(route('ftp.delete', $this->ftpAccount($device)), [])->assertForbidden();
-        $this->get(route('audit.index'))->assertForbidden();
+        $this->get(route('audit.index'))->assertOk();
         $this->get(route('settings.edit'))->assertForbidden();
         $this->get(route('users.index'))->assertForbidden();
     }
@@ -272,5 +272,33 @@ class RbacTest extends TestCase
         $this->actingAs($admin);
         $this->get(route('settings.edit'))->assertOk();
         $this->get(route('users.index'))->assertOk();
+    }
+
+    public function test_role_unification_migrates_legacy_users_and_ends_their_sessions(): void
+    {
+        $viewer = User::factory()->viewer()->create(['remember_token' => 'viewer-token']);
+        $auditor = User::factory()->auditor()->create(['remember_token' => 'auditor-token']);
+
+        foreach ([$viewer, $auditor] as $user) {
+            DB::table('sessions')->insert([
+                'id' => 'legacy-session-'.$user->id,
+                'user_id' => $user->id,
+                'payload' => '',
+                'last_activity' => time(),
+            ]);
+        }
+
+        $migration = require database_path('migrations/2026_10_21_193519_unify_user_roles.php');
+        $migration->up();
+
+        foreach ([$viewer, $auditor] as $user) {
+            $this->assertSame(Rbac::ROLE_OPERATOR, $user->fresh()->role);
+            $this->assertNull($user->fresh()->remember_token);
+            $this->assertDatabaseMissing('sessions', ['id' => 'legacy-session-'.$user->id]);
+            $this->assertDatabaseHas('audit_events', [
+                'action' => 'user.role_changed',
+                'resource_id' => (string) $user->id,
+            ]);
+        }
     }
 }

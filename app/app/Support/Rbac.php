@@ -11,11 +11,14 @@ namespace App\Support;
 class Rbac
 {
     public const ROLE_ADMIN = 'admin';
+
     public const ROLE_OPERATOR = 'operator';
+
     public const ROLE_VIEWER = 'viewer';
+
     public const ROLE_AUDITOR = 'auditor';
 
-    public const ROLES = [self::ROLE_ADMIN, self::ROLE_OPERATOR, self::ROLE_VIEWER, self::ROLE_AUDITOR];
+    public const ROLES = [self::ROLE_ADMIN, self::ROLE_OPERATOR];
 
     public const ROLE_LABELS = [
         self::ROLE_ADMIN => 'Administrador',
@@ -49,6 +52,7 @@ class Rbac
         'backup_policies.view', 'backup_policies.manage',
         'backup_executions.view', 'backup_executions.run',
         'backup_artifacts.view', 'backup_artifacts.download',
+        'audit.view',
         'system_health.view',
         'reports.view', 'reports.export',
     ];

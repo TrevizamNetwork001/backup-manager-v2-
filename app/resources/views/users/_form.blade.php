@@ -35,6 +35,7 @@
             @endforeach
         </select>
         @error('role')<span class="form-error" id="user-role-error">{{ $message }}</span>@enderror
+        <small class="form-help">Operador: equipamentos, backups e auditoria. Administrador: acesso completo.</small>
         @if(($editingUser ?? null)?->isLastActiveAdmin())
             <small class="form-help">Este é o último administrador ativo — o perfil de acesso não pode ser alterado.</small>
         @endif

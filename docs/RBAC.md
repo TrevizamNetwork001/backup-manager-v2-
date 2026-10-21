@@ -1,5 +1,13 @@
 # RBAC — Usuários, papéis e permissões (ADMIN-2)
 
+## Estado atual — 21/10/2026
+
+O cadastro e a edição de usuários oferecem somente **Administrador** e **Operador**. Administrador tem todas as permissões. Operador pode consultar auditoria, operar equipamentos, FTP, políticas e backups, baixar artefatos e exportar relatórios; não pode administrar usuários ou configurações nem executar exclusões definitivas. A matriz atual é `App\Support\Rbac::ROLES` e `permissionsForRole()`.
+
+A migração `2026_10_21_193519_unify_user_roles` converte as contas antigas `viewer` e `auditor` para `operator`, encerra suas sessões, revoga o token de lembrar acesso e registra cada mudança na auditoria. As constantes e permissões dos perfis antigos continuam no código apenas para compatibilidade com migrações históricas, testes e registros antigos; esses perfis não podem ser atribuídos pelo cadastro ou edição.
+
+As seções abaixo documentam a implantação original de quatro perfis e devem ser lidas como histórico.
+
 ## Propósito
 
 Até esta fase, autorização era binária: `users.is_admin` (booleano) decidia
