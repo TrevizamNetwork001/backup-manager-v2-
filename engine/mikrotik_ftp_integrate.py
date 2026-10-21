@@ -21,7 +21,7 @@ from errors import BackupError
 
 SCRIPT_NAME = 'backup-manager-v2-ftp'
 MARKER = '# backup-manager-v2-ftp device='
-NAMING_MARKER = '# backup-manager-v2-ftp naming=2'
+NAMING_MARKER = '# backup-manager-v2-ftp naming=3'
 
 
 def quote(value):
@@ -94,11 +94,8 @@ def script_source(data, major):
         config_marker(data),
         NAMING_MARKER,
         ':global backupManagerV2FtpRunning',
-        ':global backupManagerV2FtpSequence',
         ':if ($backupManagerV2FtpRunning = true) do={ :error "backup-manager-v2 already running" }',
         ':set backupManagerV2FtpRunning true',
-        ':if ([:typeof $backupManagerV2FtpSequence] != "num") do={ :set backupManagerV2FtpSequence 0 }',
-        ':set backupManagerV2FtpSequence ($backupManagerV2FtpSequence + 1)',
         f':local bmHost {quote(data["ftp_host"])}',
         f':local bmUser {quote(data["ftp_username"])}',
         f':local bmPassword {quote(data["ftp_secret"])}',
@@ -107,11 +104,25 @@ def script_source(data, major):
         ':local bmSlashOne [:find $bmDate "/"]',
         ':if ([:typeof $bmSlashOne] = "num") do={',
         '  :local bmSlashTwo [:find $bmDate "/" ($bmSlashOne + 1)]',
-        '  :set bmDateSafe ([:pick $bmDate ($bmSlashTwo + 1) [:len $bmDate]] . "-" . [:pick $bmDate 0 $bmSlashOne] . "-" . [:pick $bmDate ($bmSlashOne + 1) $bmSlashTwo])',
+        '  :local bmMonth [:pick $bmDate 0 $bmSlashOne]',
+        '  :local bmDay [:pick $bmDate ($bmSlashOne + 1) $bmSlashTwo]',
+        '  :if ([:len $bmDay] = 1) do={ :set bmDay ("0" . $bmDay) }',
+        '  :if ($bmMonth = "jan") do={ :set bmMonth "01" }',
+        '  :if ($bmMonth = "feb") do={ :set bmMonth "02" }',
+        '  :if ($bmMonth = "mar") do={ :set bmMonth "03" }',
+        '  :if ($bmMonth = "apr") do={ :set bmMonth "04" }',
+        '  :if ($bmMonth = "may") do={ :set bmMonth "05" }',
+        '  :if ($bmMonth = "jun") do={ :set bmMonth "06" }',
+        '  :if ($bmMonth = "jul") do={ :set bmMonth "07" }',
+        '  :if ($bmMonth = "aug") do={ :set bmMonth "08" }',
+        '  :if ($bmMonth = "sep") do={ :set bmMonth "09" }',
+        '  :if ($bmMonth = "oct") do={ :set bmMonth "10" }',
+        '  :if ($bmMonth = "nov") do={ :set bmMonth "11" }',
+        '  :if ($bmMonth = "dec") do={ :set bmMonth "12" }',
+        '  :if ([:len $bmMonth] != 2) do={ :error "unknown month" }',
+        '  :set bmDateSafe ([:pick $bmDate ($bmSlashTwo + 1) [:len $bmDate]] . "-" . $bmMonth . "-" . $bmDay)',
         '}',
-        ':local bmTime [/system clock get time]',
-        ':local bmTimeSafe ([:pick $bmTime 0 2] . [:pick $bmTime 3 5] . [:pick $bmTime 6 8])',
-        f':local bmBase ({quote(device_label(data) + "-backup-")} . $bmDateSafe . "-" . $bmTimeSafe . "-" . $backupManagerV2FtpSequence)',
+        f':local bmBase ({quote(device_label(data) + "-backup-")} . $bmDateSafe)',
         ':local bmFile ($bmBase . ".rsc")',
         ':do {',
         f'  {export}',
