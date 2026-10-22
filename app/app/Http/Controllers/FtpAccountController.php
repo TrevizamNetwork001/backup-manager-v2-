@@ -4,11 +4,16 @@ namespace App\Http\Controllers;
 
 use App\Models\Device;
 use App\Models\FtpAccount;
+use App\Models\Site;
+use App\Services\HuaweiFtpBackupPolicy;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class FtpAccountController extends Controller
 {
@@ -18,20 +23,24 @@ class FtpAccountController extends Controller
         abort_unless(Schema::hasTable('ftp_accounts'), 503);
         abort_unless(Schema::hasColumn('ftp_accounts', 'account_uuid'), 503, 'A criação de contas FTP aguarda a migration FTP-CORE-1.');
         abort_unless($device->isHuaweiFtpEligible(), 422);
-        abort_if($device->ftpAccount()->exists(), 409);
         $validated = $this->credentials($request, $device);
         $secret = $validated['password'];
-        $account = new FtpAccount(['device_id' => $device->id, 'account_uuid' => (string) \Illuminate\Support\Str::uuid(),
+        $account = new FtpAccount(['device_id' => $device->id, 'account_uuid' => (string) Str::uuid(),
             'purpose' => 'backup', 'home_layout' => 'account', 'username' => $validated['username'], 'is_active' => true]);
         $account->secret = $secret;
-        \Illuminate\Support\Facades\DB::transaction(function () use ($account, $device) {
+        DB::transaction(function () use ($account, $device) {
+            $lockedDevice = Device::query()->lockForUpdate()->findOrFail($device->id);
+            if ($lockedDevice->ftpAccount()->exists()) {
+                throw ValidationException::withMessages(['username' => 'Este equipamento já possui uma conta FTP.']);
+            }
             $account->save();
-            app(\App\Services\HuaweiFtpBackupPolicy::class)->ensure($device);
+            app(HuaweiFtpBackupPolicy::class)->ensure($lockedDevice);
         });
+
         return $this->oneTime($device, $secret);
     }
 
-    public function update(Request $request, Device $device): \Illuminate\Http\RedirectResponse
+    public function update(Request $request, Device $device): RedirectResponse
     {
         $this->authorize('ftp.manage');
         abort_unless(Schema::hasTable('ftp_accounts'), 503);
@@ -41,6 +50,7 @@ class FtpAccountController extends Controller
         $account->fill($validated);
         $account->provisioned_at = null;
         $account->save();
+
         return redirect()->route('devices.edit', $device);
     }
 
@@ -55,6 +65,7 @@ class FtpAccountController extends Controller
         $account->provisioned_at = null;
         $account->save();
         $this->resetWizard($device);
+
         return $this->oneTime($device, $secret);
     }
 
@@ -79,16 +90,18 @@ class FtpAccountController extends Controller
         if ($credentialsChanged) {
             $this->resetWizard($device);
         }
+
         return $this->oneTime($device, $secret);
     }
 
-    public function retry(Device $device): \Illuminate\Http\RedirectResponse
+    public function retry(Device $device): RedirectResponse
     {
         $this->authorize('ftp.manage');
         $account = $device->ftpAccount()->firstOrFail();
         abort_if($account->deletion_mode, 409, 'Conta em exclusão.');
         DB::table('ftp_accounts')->where('id', $account->id)
             ->update(['provisioned_at' => null, 'sync_error' => null]);
+
         return redirect()->route('devices.edit', [$device, 'olt_wizard' => 1]);
     }
 
@@ -115,8 +128,9 @@ class FtpAccountController extends Controller
     private function oneTime(Device $device, string $ftpSecret): Response
     {
         $device->refresh();
-        $sites = \App\Models\Site::query()->where(fn ($query) => $query
+        $sites = Site::query()->where(fn ($query) => $query
             ->where('is_active', true)->orWhere('id', $device->site_id))->orderBy('name')->get();
+
         return response()->view('devices.edit', compact('device', 'sites', 'ftpSecret'))
             ->header('Cache-Control', 'no-store, private')
             ->header('Pragma', 'no-cache')

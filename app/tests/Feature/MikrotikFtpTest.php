@@ -13,6 +13,7 @@ use App\Models\User;
 use App\Services\ArtifactStorage;
 use App\Services\EngineJobService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Tests\TestCase;
@@ -89,8 +90,66 @@ class MikrotikFtpTest extends TestCase
         } finally {
             exec('rm -rf '.escapeshellarg($root));
         }
+        $zip = app(EngineJobService::class)->receiveFtp($zte->id, str_repeat('e', 32), 'ZXAN_20261022100305.zip', time(), $worker);
+        $this->assertSame('running', $zip['status']);
+        $this->assertStringEndsWith('.zip', $zip['relative_path']);
         $rejected = app(EngineJobService::class)->receiveFtp($zte->id, str_repeat('d', 32), 'unexpected.rsc', time(), $worker);
         $this->assertSame('invalid_file', $rejected['error_code']);
+    }
+
+    public function test_zte_content_analysis_recognizes_configuration_and_patch_list_without_exposing_values(): void
+    {
+        [$device] = $this->fixture();
+        $zte = Device::create(['site_id' => $device->site_id, 'name' => 'ZTE-C350', 'management_ip' => '192.0.2.63',
+            'vendor' => 'ZTE', 'platform' => 'olt', 'is_active' => true]);
+        $policy = BackupPolicy::create(['name' => 'ZTE FTP', 'method' => 'ftp_push',
+            'artifact_mode' => 'config', 'schedule_type' => 'manual', 'retention_days' => 30, 'is_active' => true]);
+        $account = new FtpAccount(['device_id' => $zte->id, 'account_uuid' => (string) Str::uuid(),
+            'home_layout' => 'account', 'purpose' => 'backup', 'username' => 'ztebackup', 'is_active' => true]);
+        $account->secret = 'SyntheticPassword123!';
+        $account->provisioned_at = now();
+        $account->save();
+        DeviceBackupPolicy::create(['device_id' => $zte->id, 'backup_policy_id' => $policy->id,
+            'credential_id' => null, 'is_active' => true]);
+
+        $root = sys_get_temp_dir().'/zte-analysis-test-'.bin2hex(random_bytes(8));
+        mkdir($root, 0700);
+        config()->set('backup.storage_root', $root);
+        $config = "olleh\ntimestamp_write: 00:45:00 oct 22 2026\nconfig-version 1\n!\nadd-rack 1\nadd-shelf 1\ninterface gpon-olt_1/1/1\nonu 1 type X\nusername secret-value\n!\n12DFD0512DFD0512DFD05";
+        $cases = [
+            'startrun.dat' => [$config, 'recognized', 'zte_c350_config'],
+            'startrun.sav' => [substr($config, 0, -21), 'warning', 'zte_config_structure_incomplete'],
+            'patch.cfg' => ["package active firmware.bin with 1\npatch active patch01 with 2\n", 'recognized', 'zte_patch_list'],
+            'unknown.cfg' => ['unrelated file', 'unknown', 'unrecognized_format'],
+        ];
+        try {
+            foreach ($cases as $filename => [$contents, $status, $message]) {
+                $worker = bin2hex(random_bytes(16));
+                $received = app(EngineJobService::class)->receiveFtp($zte->id, bin2hex(random_bytes(16)),
+                    $filename, time(), $worker);
+                $extension = pathinfo($filename, PATHINFO_EXTENSION);
+                $relative = substr($received['relative_path'], 0, -strlen($extension) - 1).'-exec-'.$received['id'].'.'.$extension;
+                if (! is_dir(dirname($root.'/'.$relative))) {
+                    mkdir(dirname($root.'/'.$relative), 0700, true);
+                }
+                file_put_contents($root.'/'.$relative, $contents);
+                app(EngineJobService::class)->complete($received['id'], $relative, $worker);
+
+                $metadata = DB::table('audit_events')->where('action', 'backup.content_analyzed')
+                    ->where('resource_id', (string) $received['id'])->value('metadata');
+                $analysis = json_decode($metadata, true);
+                $this->assertSame($status, $analysis['status']);
+                $this->assertSame($message, $analysis['message']);
+                $this->assertStringNotContainsString('secret-value', $metadata);
+                $this->assertSame('succeeded', BackupExecution::findOrFail($received['id'])->status);
+                if ($filename === 'startrun.dat') {
+                    $this->actingAs(User::factory()->create())->get(route('backup-executions.show', $received['id']))
+                        ->assertOk()->assertSee('Configuração C350 reconhecida')->assertSee('A análise não comprova restauração.');
+                }
+            }
+        } finally {
+            exec('rm -rf '.escapeshellarg($root));
+        }
     }
 
     public function test_rsc_upload_becomes_a_backup_and_binary_upload_is_rejected(): void

@@ -165,6 +165,40 @@ class DeviceTest extends TestCase
             ->assertSessionHasErrors('management_ip');
     }
 
+    public function test_device_name_must_be_unique_even_with_different_ip_or_letter_case(): void
+    {
+        $site = Site::create(['name' => 'POP Principal', 'is_active' => true]);
+        Device::create(['site_id' => $site->id, 'name' => 'OLT-VARAN', 'management_ip' => '192.0.2.10',
+            'vendor' => 'ZTE', 'platform' => 'olt', 'is_active' => true]);
+        $this->actingAs(User::factory()->create())
+            ->from(route('devices.index'))
+            ->post(route('devices.store'), ['site_id' => $site->id, 'name' => '  olt-varan  ',
+                'management_ip' => '192.0.2.11', 'vendor' => 'ZTE', 'device_kind' => 'olt', 'is_active' => '1'])
+            ->assertRedirect(route('devices.index'))
+            ->assertSessionHasErrors(['name' => 'Já existe um equipamento com este nome.']);
+        $this->assertDatabaseCount('devices', 1);
+    }
+
+    public function test_device_edit_cannot_use_another_name_and_can_keep_its_own(): void
+    {
+        $site = Site::create(['name' => 'POP Principal', 'is_active' => true]);
+        Device::create(['site_id' => $site->id, 'name' => 'OLT-VARAN', 'management_ip' => '192.0.2.10',
+            'vendor' => 'ZTE', 'platform' => 'olt', 'is_active' => true]);
+        $other = Device::create(['site_id' => $site->id, 'name' => 'OLT-LIBANESA', 'management_ip' => '192.0.2.11',
+            'vendor' => 'ZTE', 'platform' => 'olt', 'is_active' => true]);
+        $this->actingAs(User::factory()->create())
+            ->from(route('devices.edit', $other))
+            ->put(route('devices.update', $other), ['site_id' => $site->id, 'name' => 'olt-varan',
+                'management_ip' => '192.0.2.11', 'vendor' => 'ZTE', 'device_kind' => 'olt', 'is_active' => '1'])
+            ->assertRedirect(route('devices.edit', $other))
+            ->assertSessionHasErrors('name');
+        $this->assertSame('OLT-LIBANESA', $other->fresh()->name);
+
+        $this->put(route('devices.update', $other), ['site_id' => $site->id, 'name' => 'OLT-LIBANESA',
+            'management_ip' => '192.0.2.11', 'vendor' => 'ZTE', 'device_kind' => 'olt', 'is_active' => '1'])
+            ->assertRedirect(route('devices.index'));
+    }
+
     public function test_device_requires_valid_ip(): void
     {
         $user = User::factory()->create();
@@ -314,7 +348,8 @@ class DeviceTest extends TestCase
         foreach ($cases as $index => $vendor) {
             $ip = '192.0.2.'.(10 + $index);
             $interface = Device::normalizeVendor($vendor) === 'A10 Networks' ? 'management' : null;
-            $this->post(route('devices.store'), array_replace($data, ['vendor' => $vendor, 'management_ip' => $ip,
+            $this->post(route('devices.store'), array_replace($data, ['name' => 'Router '.$index,
+                'vendor' => $vendor, 'management_ip' => $ip,
                 'a10_transfer_interface' => $interface]))
                 ->assertRedirect(route('devices.index'))->assertSessionHasNoErrors();
             $this->assertDatabaseHas('devices', ['management_ip' => $ip, 'vendor' => Device::normalizeVendor($vendor),
@@ -459,11 +494,11 @@ class DeviceTest extends TestCase
         $this->assertDatabaseHas('devices', ['id' => $device->id, 'name' => 'NE8000 M4',
             'device_kind' => 'router', 'device_function' => 'BNG', 'platform' => 'network']);
 
-        $this->post(route('devices.store'), array_replace($data, ['management_ip' => '192.0.2.11',
+        $this->post(route('devices.store'), array_replace($data, ['name' => 'NE8000 OLT', 'management_ip' => '192.0.2.11',
             'device_kind' => 'olt', 'device_function' => 'Acesso']))->assertSessionHasNoErrors();
         $this->assertDatabaseHas('devices', ['management_ip' => '192.0.2.11', 'device_kind' => 'olt',
             'device_function' => 'Acesso', 'platform' => 'olt']);
-        $this->post(route('devices.store'), array_replace($data, ['management_ip' => '192.0.2.13',
+        $this->post(route('devices.store'), array_replace($data, ['name' => 'NE8000 Firewall', 'management_ip' => '192.0.2.13',
             'device_kind' => 'firewall', 'device_function' => 'Firewall']))->assertSessionHasNoErrors();
         $this->assertDatabaseHas('devices', ['management_ip' => '192.0.2.13', 'device_kind' => 'firewall',
             'platform' => 'network']);

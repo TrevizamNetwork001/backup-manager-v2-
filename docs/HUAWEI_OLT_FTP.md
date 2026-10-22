@@ -1,5 +1,7 @@
 # Huawei OLT por FTP Push
 
+Para um roteiro de instalação e conferência em formato de wiki, veja [Configurar Huawei OLT](WIKI_HUAWEI_OLT.md). A [wiki de equipamentos](WIKI_EQUIPAMENTOS.md) reúne os demais fabricantes; esta página preserva os detalhes técnicos e o histórico de campo.
+
 ## Como validar pelo painel
 
 ### Validar o agendamento na própria OLT

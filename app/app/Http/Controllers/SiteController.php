@@ -5,7 +5,9 @@ namespace App\Http\Controllers;
 use App\Models\Site;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
 class SiteController extends Controller
@@ -40,7 +42,10 @@ class SiteController extends Controller
             'is_active' => ['required', 'boolean'],
         ]);
 
-        Site::create($validated);
+        DB::transaction(function () use ($validated): void {
+            $this->ensureNameAvailable($validated['name']);
+            Site::create($validated);
+        });
 
         return redirect()
             ->route('sites.index')
@@ -75,7 +80,12 @@ class SiteController extends Controller
             'is_active' => ['required', 'boolean'],
         ]);
 
-        $site->update($validated);
+        DB::transaction(function () use ($site, $validated): void {
+            if (mb_strtolower($site->name) !== mb_strtolower($validated['name'])) {
+                $this->ensureNameAvailable($validated['name'], $site->id);
+            }
+            $site->update($validated);
+        });
 
         return redirect()
             ->route('sites.index', ['page' => $request->query('page')])
@@ -107,11 +117,25 @@ class SiteController extends Controller
         $code = trim((string) $request->input('code'));
 
         $request->merge([
-            'name' => trim((string) $request->input('name')),
+            'name' => preg_replace('/\s+/u', ' ', trim((string) $request->input('name'))),
             'code' => $code !== '' ? strtoupper($code) : null,
             'location' => trim((string) $request->input('location')) ?: null,
             'description' => trim((string) $request->input('description')) ?: null,
             'is_active' => $request->boolean('is_active'),
         ]);
+    }
+
+    private function ensureNameAvailable(string $name, ?int $exceptSiteId = null): void
+    {
+        $normalizedName = mb_strtolower($name);
+        if (DB::getDriverName() === 'pgsql') {
+            DB::select('SELECT pg_advisory_xact_lock(hashtext(?))', [$normalizedName]);
+        }
+
+        $exists = Site::query()->whereRaw('LOWER(name) = ?', [$normalizedName])
+            ->when($exceptSiteId, fn ($query) => $query->where('id', '!=', $exceptSiteId))->exists();
+        if ($exists) {
+            throw ValidationException::withMessages(['name' => 'Já existe um Site / POP com este nome.']);
+        }
     }
 }

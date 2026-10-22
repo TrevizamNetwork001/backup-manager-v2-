@@ -135,7 +135,8 @@ class FtpDeletionTest extends TestCase
     private function requestAndFinalize(FtpAccount $account, string $mode): void
     {
         $phrase = ['account' => 'EXCLUIR ', 'ftp_data' => 'EXCLUIR DADOS ', 'all' => 'APAGAR TUDO '][$mode].$account->username;
-        $this->delete(route('ftp.delete', $account), ['mode' => $mode, 'confirmation' => $phrase])->assertRedirect();
+        $this->delete(route('ftp.delete', $account), ['mode' => $mode, 'confirmation' => $phrase])
+            ->assertRedirect(route('ftp.index'));
         $this->assertFalse($account->fresh()->is_active);
         Artisan::call('ftp:accounts');
         $rows = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
@@ -154,6 +155,19 @@ class FtpDeletionTest extends TestCase
             }
         }
         app(FtpAccountDeletionService::class)->finalize($account->fresh(), $this->privilegedResult($account));
+    }
+
+    public function test_delete_returns_to_ftp_list_while_revocation_runs_in_background(): void
+    {
+        $account = $this->account('backup', 'account', 'olt_typo');
+
+        $this->followingRedirects()->delete(route('ftp.delete', $account), [
+            'mode' => 'account', 'confirmation' => 'EXCLUIR olt_typo',
+        ])->assertOk()->assertSee('Exclusão solicitada.')
+            ->assertSee('toast-notice', false)
+            ->assertSee('data-auto-dismiss data-toast="true"', false)
+            ->assertSee('Exclusão em andamento');
+        $this->assertSame('account', $account->fresh()->deletion_mode);
     }
 
     public function test_preview_and_account_only_preserve_backups_and_release_device(): void
@@ -341,6 +355,23 @@ class FtpDeletionTest extends TestCase
         }
         $this->assertTrue($account->fresh()->is_active);
         $this->assertNull($account->fresh()->deletion_mode);
+    }
+
+    public function test_delete_form_requires_explicit_mode_selection(): void
+    {
+        $account = $this->account();
+
+        $response = $this->get(route('ftp.show', ['ftpAccount' => $account, 'deletion_preview' => 1]));
+
+        $response->assertOk()
+            ->assertSee('id="ftp-delete-phrase">Selecione um modo de exclusão.', false)
+            ->assertSee('id="ftp-delete-submit"', false)
+            ->assertSee('>Selecione o modo de exclusão</button>', false)
+            ->assertSee('value="account" required', false)
+            ->assertDontSee('value="account" required checked', false)
+            ->assertDontSee('value="ftp_data" checked', false)
+            ->assertDontSee('value="all" checked', false)
+            ->assertSee("all: 'Apagar tudo da conta'", false);
     }
 
     public function test_delete_error_reopens_modal_with_selected_mode_and_correct_phrase(): void

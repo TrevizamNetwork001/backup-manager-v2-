@@ -143,7 +143,9 @@ class FtpAdminController extends Controller
         ]);
         $deletion->request($ftpAccount, $data['mode'], $data['confirmation'], $request->user()->id, $request->ip());
 
-        return redirect()->route('ftp.show', $ftpAccount)->with('status', 'Exclusão solicitada. Aguardando confirmação de revogação pelo PureDB.');
+        return redirect()->route('ftp.index')
+            ->with('status', 'Exclusão solicitada. A verificação e a revogação da conta FTP continuarão em segundo plano.')
+            ->with('ftp_deletion_requested', true);
     }
 
     public function store(Request $request, FtpAccountManager $manager): Response
@@ -199,7 +201,11 @@ class FtpAdminController extends Controller
 
     private function once(FtpAccount $account, string $secret, string $message, bool $isRotation): Response
     {
-        return response()->view('ftp.once', compact('account', 'secret', 'message', 'isRotation'))
+        $device = $account->device;
+        $policyMissing = $account->purpose === 'backup' && $device?->isBackupFtpEligible() &&
+            app(HuaweiFtpBackupPolicy::class)->active($device) === null;
+
+        return response()->view('ftp.once', compact('account', 'secret', 'message', 'isRotation', 'policyMissing'))
             ->header('Cache-Control', 'no-store, private')
             ->header('Pragma', 'no-cache')
             ->header('Referrer-Policy', 'no-referrer');

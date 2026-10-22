@@ -111,6 +111,38 @@ class SiteTest extends TestCase
             ->assertSessionHasErrors('code');
     }
 
+    public function test_duplicate_pop_name_is_rejected_even_with_different_code_case_or_spacing(): void
+    {
+        Site::create(['name' => 'POP-LIBANESA', 'code' => 'SUZ-01', 'is_active' => true]);
+        $this->actingAs(User::factory()->create())
+            ->from(route('sites.index'))
+            ->post(route('sites.store'), [
+                'name' => '  pop-libanesa  ', 'code' => 'SUZ-02', 'is_active' => '1',
+            ])
+            ->assertRedirect(route('sites.index'))
+            ->assertSessionHasErrors(['name' => 'Já existe um Site / POP com este nome.']);
+
+        $this->assertDatabaseCount('sites', 1);
+    }
+
+    public function test_edit_cannot_take_another_pop_name_but_can_keep_its_own(): void
+    {
+        Site::create(['name' => 'POP-LIBANESA', 'code' => 'SUZ-01', 'is_active' => true]);
+        $other = Site::create(['name' => 'POP-BATISTINI', 'code' => 'SBC-01', 'is_active' => true]);
+        $this->actingAs(User::factory()->create())
+            ->from(route('sites.edit', $other))
+            ->put(route('sites.update', $other), [
+                'name' => 'pop-libanesa', 'code' => 'SBC-01', 'is_active' => '1',
+            ])
+            ->assertRedirect(route('sites.edit', $other))
+            ->assertSessionHasErrors('name');
+        $this->assertSame('POP-BATISTINI', $other->fresh()->name);
+
+        $this->put(route('sites.update', $other), [
+            'name' => 'POP-BATISTINI', 'code' => 'SBC-01', 'is_active' => '1',
+        ])->assertRedirect(route('sites.index'));
+    }
+
     public function test_authenticated_user_can_update_site(): void
     {
         $user = User::factory()->create();

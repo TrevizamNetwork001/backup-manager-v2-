@@ -11,11 +11,20 @@
 @section('content')
 @php
     $server = app(\App\Services\FtpServerSettings::class)->get();
-    $selectedDeletionMode = session()->hasOldInput('mode') ? old('mode') : ($errors->has('mode') ? null : 'account');
+    $selectedDeletionMode = old('mode');
     $readyToReceive = $isFtpBackup
         ? $accountReady && $pureDbReady && $policyReady
         : ($ftpAccount->purpose ?? 'backup') === 'file_server' && $ftpAccount->is_active && !$ftpAccount->deletion_mode
             && $ftpAccount->provisioned_at !== null && !$ftpAccount->sync_error;
+    $readinessIssues = [];
+    if ($ftpAccount->deletion_mode) $readinessIssues[] = 'A conta está em exclusão.';
+    if (!$ftpAccount->is_active) $readinessIssues[] = 'Ative a conta FTP.';
+    if ($isFtpBackup && !$ftpAccount->device->is_active) $readinessIssues[] = 'Ative o equipamento vinculado.';
+    if ($ftpAccount->sync_error) $readinessIssues[] = 'Corrija a falha de sincronização da conta FTP: '.$ftpAccount->sync_error;
+    elseif (!$ftpAccount->provisioned_at) $readinessIssues[] = 'Aguarde a publicação da conta no PureDB.';
+    if ($isFtpBackup && !$policyReady) $readinessIssues[] = mb_strtolower(trim($ftpAccount->device->vendor)) === 'zte'
+        ? 'Falta vincular a política ZTE FTP à OLT. Arquivos enviados antes disso entram em quarentena e não geram backup.'
+        : 'Falta vincular uma política FTP Push ativa ao equipamento. Arquivos enviados antes disso entram em quarentena e não geram backup.';
 @endphp
 <div class="ftp-page ftp-detail-page">
 @if (($ftpAccount->purpose ?? 'backup') === 'backup' && !$isFtpBackup)
@@ -27,8 +36,23 @@
 @if ($impact['deletion_mode'] && $impact['safety_error']) <div class="alert alert--warning" role="alert">Preview incompleto: {{ $impact['safety_error'] }}. Exclusão bloqueada até corrigir o path.</div> @endif
 @if ($impact['deletion_mode'] && $impact['unattributed_stored_files']) <div class="alert alert--warning" role="alert">{{ $impact['unattributed_stored_files'] }} arquivo(s) do servidor de arquivos sem vínculo seguro. Eles serão preservados.</div> @endif
 @if ($impact['deletion_mode'] && $impact['blocker']) <div class="alert alert--warning" role="alert">{{ $impact['blocker'] }}</div> @endif
+@if(!$readyToReceive && $readinessIssues && !$ftpAccount->deletion_mode)
+<div class="alert alert--warning" role="alert">
+    <strong>Esta conta ainda não está pronta para receber {{ $isFtpBackup ? 'backups' : 'arquivos' }}.</strong>
+    <ul>
+        @foreach($readinessIssues as $issue)
+            <li>{{ $issue }}</li>
+        @endforeach
+    </ul>
+    @if($isFtpBackup && !$policyReady)
+        @can('backup_policies.manage')
+            <a href="{{ route('devices.index').'#device-policy-'.$ftpAccount->device_id }}">Vincular política de backup ao equipamento</a>
+        @endcan
+    @endif
+</div>
+@endif
 <div class="ftp-detail-stats">
-    <article class="ftp-detail-stat"><span class="ftp-detail-stat__icon {{ $readyToReceive ? 'is-ready' : 'is-pending' }}"><x-icon :name="$readyToReceive ? 'check-circle' : 'alert'" /></span><div><p>Pronto para receber</p><strong>{{ $readyToReceive ? 'SIM' : 'NÃO' }}</strong><small>{{ $readyToReceive ? (($ftpAccount->purpose ?? 'backup') === 'backup' ? 'Conta apta para receber backups.' : 'Conta apta para receber arquivos.') : 'Confira o status e a configuração da conta.' }}</small></div></article>
+    <article class="ftp-detail-stat"><span class="ftp-detail-stat__icon {{ $readyToReceive ? 'is-ready' : 'is-pending' }}"><x-icon :name="$readyToReceive ? 'check-circle' : 'alert'" /></span><div><p>Pronto para receber</p><strong>{{ $readyToReceive ? 'SIM' : 'NÃO' }}</strong><small>{{ $readyToReceive ? (($ftpAccount->purpose ?? 'backup') === 'backup' ? 'Conta apta para receber backups.' : 'Conta apta para receber arquivos.') : ($readinessIssues[0] ?? 'Confira o status e a configuração da conta.') }}</small></div></article>
     <article class="ftp-detail-stat"><span class="ftp-detail-stat__icon"><x-icon name="server" /></span><div><p>Equipamento</p><strong>{{ $ftpAccount->device?->name ?? 'Nenhum' }}</strong><small>{{ $ftpAccount->device ? 'Equipamento vinculado a esta conta.' : 'Conta sem equipamento vinculado.' }}</small></div></article>
     <article class="ftp-detail-stat"><span class="ftp-detail-stat__icon is-receipt"><x-icon name="clock" /></span><div><p>Último recebimento</p><strong>{{ $lastReceipt ? app(\App\Services\InstanceTimezone::class)->format(\Illuminate\Support\Carbon::parse($lastReceipt->received_at), 'd/m/Y H:i') : 'Nunca recebeu' }}</strong></div></article>
 </div>
@@ -56,7 +80,7 @@
 </section>
 @endif
 @if($ftpAccount->purpose === 'backup' && $ftpAccount->credential_changed_at && (!$lastReceipt || $lastReceipt->received_at <= $ftpAccount->credential_changed_at->toDateTimeString()))<p class="alert alert--warning">Credencial alterada; aguardando novo recebimento. Atualize a senha no equipamento.</p>@endif
-<section class="ftp-detail-receipts" aria-labelledby="ftp-receipts-title"><div class="ftp-detail-receipts__heading"><h2 id="ftp-receipts-title"><x-icon name="file" /> Recebimentos recentes</h2>@if($history->count() > 5)<button type="button" class="ftp-detail-history-toggle" aria-expanded="false" aria-controls="ftp-receipts-body" hidden>Ver todos <span aria-hidden="true">→</span></button>@endif</div>@if($history->isEmpty())<p class="ftp-detail-empty">Nenhum arquivo recebido.</p>@else<div class="table-shell" role="region" aria-label="Recebimentos recentes da conta FTP" tabindex="0"><table class="data-table ftp-detail-table"><thead><tr><th>Data e hora</th><th>Arquivo</th><th>Tamanho</th><th>Status</th><th>Destino / erro</th></tr></thead><tbody id="ftp-receipts-body">@foreach($history as $item)@php($receiptTone = match ($item->status) { 'stored' => 'success', 'quarantined' => 'warning', 'failed', 'error' => 'danger', default => 'neutral' })<tr><td data-label="Data e hora">{{ app(\App\Services\InstanceTimezone::class)->format(\Illuminate\Support\Carbon::parse($item->received_at), 'd/m/Y H:i:s') }}</td><td data-label="Arquivo">{{ $item->original_filename }}</td><td data-label="Tamanho">{{ $item->size_bytes }} bytes</td><td data-label="Status"><span class="ftp-receipt-status ftp-receipt-status--{{ $receiptTone }}">{{ \App\Support\OperationalLabels::FTP_STATUSES[$item->status] ?? $item->status }}</span></td><td data-label="Destino / erro"><span class="ftp-detail-destination" title="{{ $item->relative_path ?? $item->error_code ?? '—' }}">{{ $item->relative_path ?? $item->error_code ?? '—' }}</span></td></tr>@endforeach</tbody></table></div>@endif</section>
+<section class="ftp-detail-receipts" aria-labelledby="ftp-receipts-title"><div class="ftp-detail-receipts__heading"><h2 id="ftp-receipts-title"><x-icon name="file" /> Recebimentos recentes</h2>@if($history->count() > 5)<button type="button" class="ftp-detail-history-toggle" aria-expanded="false" aria-controls="ftp-receipts-body" hidden>Ver todos <span aria-hidden="true">→</span></button>@endif</div>@if($history->isEmpty())<p class="ftp-detail-empty">Nenhum arquivo recebido.</p>@else<div class="table-shell" role="region" aria-label="Recebimentos recentes da conta FTP" tabindex="0"><table class="data-table ftp-detail-table"><thead><tr><th>Data e hora</th><th>Arquivo</th><th>Tamanho</th><th>Status</th><th>Destino / erro</th></tr></thead><tbody id="ftp-receipts-body">@foreach($history as $item)@php($receiptTone = match ($item->status) { 'stored' => 'success', 'quarantined' => 'warning', 'failed', 'error' => 'danger', default => 'neutral' })@php($receiptDestination = $item->relative_path ?? ($item->error_code ? (\App\Support\OperationalLabels::FTP_ERRORS[$item->error_code] ?? $item->error_code) : '—'))<tr><td data-label="Data e hora">{{ app(\App\Services\InstanceTimezone::class)->format(\Illuminate\Support\Carbon::parse($item->received_at), 'd/m/Y H:i:s') }}</td><td data-label="Arquivo">{{ $item->original_filename }}</td><td data-label="Tamanho">{{ $item->size_bytes }} bytes</td><td data-label="Status"><span class="ftp-receipt-status ftp-receipt-status--{{ $receiptTone }}">{{ \App\Support\OperationalLabels::FTP_STATUSES[$item->status] ?? $item->status }}</span></td><td data-label="Destino / erro"><span class="ftp-detail-destination" title="{{ $receiptDestination }}">{{ $receiptDestination }}</span></td></tr>@endforeach</tbody></table></div>@endif</section>
 <div class="ftp-detail-accordions">
 <details class="ftp-detail-accordion" id="ftp-account-details"><summary><x-icon name="user" /><strong>Detalhes da conta</strong><span>Usuário, finalidade, status e informações gerais.</span><x-icon name="chevron-down" class="ftp-detail-chevron" /></summary><div class="ftp-detail-accordion__body"><section class="ftp-detail-section"><h2>Identificação</h2><dl class="ftp-detail-list"><div><dt>Usuário</dt><dd><code>{{ $ftpAccount->username }}</code></dd></div><div><dt>Finalidade</dt><dd>{{ ($ftpAccount->purpose ?? 'backup') === 'backup' ? 'Backup' : 'Servidor de arquivos' }}</dd></div><div><dt>Equipamento</dt><dd>{{ $ftpAccount->device?->name ?? 'Nenhum' }}</dd></div><div><dt>Status</dt><dd>{{ $ftpAccount->is_active ? 'Ativa' : 'Desativada' }}</dd></div></dl></section>
 </div></details>
@@ -156,7 +180,7 @@
 @if($impact['stored_paths'])<details><summary>Caminhos do servidor de arquivos</summary><ul>@foreach($impact['stored_paths'] as $path)<li><code>{{ $path }}</code></li>@endforeach</ul></details>@endif
 <fieldset @if($errors->has('mode')) aria-describedby="ftp-delete-error" @endif><legend>Modo de exclusão</legend><label><input type="radio" name="mode" value="account" required @checked($selectedDeletionMode === 'account')> Somente conta</label><p>Revoga o acesso FTP e libera o equipamento. Backups existentes permanecem.</p><label><input type="radio" name="mode" value="ftp_data" @checked($selectedDeletionMode === 'ftp_data')> Conta + dados FTP</label><p>Também remove arquivos e histórico próprios da conta FTP. Backups processados permanecem.</p><label><input type="radio" name="mode" value="all" @checked($selectedDeletionMode === 'all')> Conta + todos os dados associados</label><p>Também remove execuções, artefatos e arquivos finais relacionados. Esta ação não pode ser desfeita.</p></fieldset>
 <div class="form-field"><label class="form-label" for="ftp-delete-confirmation">Frase de confirmação: <strong id="ftp-delete-phrase">{{ $confirmationPhrases[$selectedDeletionMode] ?? 'Selecione um modo de exclusão.' }}</strong></label><input class="form-control" id="ftp-delete-confirmation" name="confirmation" autocomplete="off" required @if($errors->has('confirmation')) aria-invalid="true" aria-describedby="ftp-delete-error" @endif></div>
-</div><div class="modal__footer ftp-modal-footer"><button type="button" class="btn btn--ghost" data-close-delete>Cancelar</button><button type="submit" class="btn btn--danger" @if($impact['blocker'] || $impact['safety_error']) disabled @endif>Excluir definitivamente</button></div></form></div></dialog>
+</div><div class="modal__footer ftp-modal-footer"><button type="button" class="btn btn--ghost" data-close-delete>Cancelar</button><button type="submit" class="btn btn--danger" id="ftp-delete-submit" @if($impact['blocker'] || $impact['safety_error']) disabled @endif>Selecione o modo de exclusão</button></div></form></div></dialog>
 @endcan
 @can('ftp.manage')
 <dialog class="modal modal--sm" id="ftp-reveal-dialog" aria-labelledby="ftp-reveal-title"><div class="modal__surface"><div class="modal__header"><h2 class="modal__title" id="ftp-reveal-title">Acesso FTP atual</h2><button type="button" class="modal__close" data-close-reveal aria-label="Fechar"><x-icon name="close" size="sm" /></button></div><div class="modal__body ftp-modal-body"><dl class="ftp-detail-list"><div><dt>Usuário</dt><dd><code>{{ $ftpAccount->username }}</code></dd></div><div><dt>Senha</dt><dd><code id="ftp-reveal-secret">••••••••</code></dd></div></dl><p id="ftp-reveal-feedback" role="status" aria-live="polite"></p></div><div class="modal__footer ftp-modal-footer"><button type="button" class="btn btn--ghost" data-close-reveal>Fechar</button><button type="button" class="btn btn--primary" id="ftp-reveal-button">Mostrar senha</button></div></div></dialog>
@@ -208,10 +232,13 @@
     const dialog = document.getElementById('ftp-delete-dialog');
     const phrase = document.getElementById('ftp-delete-phrase');
     const confirmation = document.getElementById('ftp-delete-confirmation');
+    const submit = document.getElementById('ftp-delete-submit');
     const phrases = @json($confirmationPhrases);
+    const submitLabels = { account: 'Excluir somente a conta', ftp_data: 'Excluir conta e dados FTP', all: 'Apagar tudo da conta' };
     const syncPhrase = () => {
         const mode = dialog.querySelector('input[name="mode"]:checked')?.value;
         phrase.textContent = phrases[mode] ?? 'Selecione um modo de exclusão.';
+        submit.textContent = submitLabels[mode] ?? 'Selecione o modo de exclusão';
     };
     document.getElementById('ftp-delete-open').addEventListener('click', () => { @if (!$deletionPreview) location.href = @json(route('ftp.show', ['ftpAccount' => $ftpAccount, 'deletion_preview' => 1])); return; @endif syncPhrase(); dialog.showModal(); });
     dialog.querySelectorAll('[data-close-delete]').forEach(button => button.addEventListener('click', () => dialog.close()));

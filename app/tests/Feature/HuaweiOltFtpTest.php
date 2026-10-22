@@ -489,6 +489,9 @@ class HuaweiOltFtpTest extends TestCase
             ->assertOk()->assertSee('Strong!Pass12345')->assertHeader('Cache-Control', 'no-store, private');
         $account = $device->ftpAccount()->firstOrFail();
         $this->assertSame('olt_lab', $account->username);
+        $this->post(route('devices.ftp-account.store', $device), array_replace($payload, ['username' => 'olt_extra']))
+            ->assertSessionHasErrors(['username' => 'Este equipamento já possui uma conta FTP.']);
+        $this->assertSame($account->id, $device->ftpAccount()->firstOrFail()->id);
         $this->assertNotSame($payload['password'], DB::table('ftp_accounts')->where('id', $account->id)->value('secret'));
         $this->get(route('devices.edit', $device))->assertDontSee($payload['password']);
 

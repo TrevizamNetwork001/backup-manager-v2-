@@ -8,6 +8,15 @@
 <div class="ftp-once-page"><article class="ftp-once-content">
     <div class="ftp-once-heading"><span class="ftp-success-mark" aria-hidden="true"><x-icon name="check" /></span><div><h2>{{ $isRotation ? 'Nova senha pronta' : 'Conta FTP criada' }}</h2><p>{{ $message }}</p></div></div>
     <div class="alert alert--warning" role="status">Guarde esta senha antes de fechar. Quem administra a conta FTP também poderá consultá-la na página da conta.</div>
+    @if($policyMissing)
+        <div class="alert alert--warning" role="alert">
+            <strong>Falta vincular a política de backup ao equipamento.</strong>
+            <span>Antes de enviar arquivos, associe {{ mb_strtolower(trim($account->device->vendor)) === 'zte' ? 'a política ZTE FTP' : 'uma política FTP Push ativa' }}. Sem isso, o arquivo irá para quarentena e não será registrado como backup.</span>
+            @can('backup_policies.manage')
+                <a href="{{ route('devices.index').'#device-policy-'.$account->device_id }}">Vincular política de backup</a>
+            @endcan
+        </div>
+    @endif
     @if ($isRotation && $account->purpose === 'backup')<p class="alert alert--info">Atualize a credencial no equipamento antes do próximo envio.</p>@endif
     <dl class="ftp-access-list">
         <div><dt>Servidor</dt><dd class="tech-value" id="ftp-access-server">{{ $server['host'] ?: 'Não configurado' }}</dd></div>

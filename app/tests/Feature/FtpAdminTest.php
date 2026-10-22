@@ -2,7 +2,9 @@
 
 namespace Tests\Feature;
 
+use App\Models\BackupPolicy;
 use App\Models\Device;
+use App\Models\DeviceBackupPolicy;
 use App\Models\FtpAccount;
 use App\Models\Site;
 use App\Models\User;
@@ -146,6 +148,37 @@ class FtpAdminTest extends TestCase
         $this->assertDatabaseCount('backup_artifacts', 0);
     }
 
+    public function test_zte_account_explains_missing_policy_and_quarantined_receipt(): void
+    {
+        $this->admin();
+        $device = $this->device();
+        $device->update(['vendor' => 'ZTE']);
+        $this->post(route('ftp.store'), ['device_id' => $device->id, 'username' => 'ztebackup',
+            'password' => 'ValidPassword123!', 'password_confirmation' => 'ValidPassword123!'])->assertOk()
+            ->assertSee('Falta vincular a política de backup ao equipamento.')
+            ->assertSee('a política ZTE FTP');
+        $account = $device->ftpAccount()->firstOrFail();
+        DB::table('ftp_accounts')->where('id', $account->id)->update(['provisioned_at' => now()]);
+        DB::table('ftp_received_files')->insert(['ftp_account_id' => $account->id,
+            'claim_token' => str_repeat('a', 32), 'original_filename' => 'startrun.dat', 'size_bytes' => 1024,
+            'status' => 'quarantined', 'error_code' => 'missing_backup_policy',
+            'received_at' => now(), 'created_at' => now(), 'updated_at' => now()]);
+
+        $this->get(route('ftp.show', $account))->assertOk()
+            ->assertSee('Falta vincular a política ZTE FTP à OLT.')
+            ->assertSee(route('devices.index').'#device-policy-'.$device->id)
+            ->assertSee('Falta vincular uma política de backup FTP ao equipamento.')
+            ->assertDontSee('Conta apta para receber backups.');
+
+        $policy = BackupPolicy::create(['name' => 'ZTE FTP', 'method' => 'ftp_push',
+            'artifact_mode' => 'config', 'schedule_type' => 'manual', 'is_active' => true]);
+        DeviceBackupPolicy::create(['device_id' => $device->id, 'backup_policy_id' => $policy->id,
+            'credential_id' => null, 'is_active' => true]);
+        $this->get(route('ftp.show', $account))->assertOk()
+            ->assertSee('Conta apta para receber backups.')
+            ->assertDontSee('Falta vincular a política ZTE FTP à OLT.');
+    }
+
     public function test_new_accounts_reject_automatic_username_and_missing_username(): void
     {
         $this->admin();
@@ -167,9 +200,25 @@ class FtpAdminTest extends TestCase
         $second = $this->device('OLT 2');
         $data = ['username' => 'shareduser', 'password' => 'ValidPassword123!', 'password_confirmation' => 'ValidPassword123!'];
         $this->post(route('ftp.store'), ['device_id' => $first->id] + $data)->assertOk();
-        $this->post(route('ftp.store'), ['device_id' => $second->id] + $data)->assertSessionHasErrors('username');
+        $this->post(route('ftp.store'), ['device_id' => $second->id] + array_replace($data, ['username' => 'SHAREDUSER']))
+            ->assertSessionHasErrors(['username' => 'Este usuário FTP já está em uso. Escolha outro nome.']);
         $this->post(route('ftp.store'), ['device_id' => $first->id, 'username' => 'otheruser',
             'password' => 'ValidPassword123!', 'password_confirmation' => 'ValidPassword123!'])->assertSessionHasErrors('device_id');
+        $this->assertDatabaseCount('ftp_accounts', 1);
+    }
+
+    public function test_duplicate_ftp_account_error_is_visible_in_creation_dialog(): void
+    {
+        $this->admin();
+        $device = $this->device();
+        $payload = ['device_id' => $device->id, 'username' => 'oltbackup',
+            'password' => 'ValidPassword123!', 'password_confirmation' => 'ValidPassword123!'];
+        $this->post(route('ftp.store'), $payload)->assertOk();
+
+        $this->from(route('ftp.index'))->followingRedirects()
+            ->post(route('ftp.store'), array_replace($payload, ['username' => 'otheruser']))
+            ->assertOk()->assertSee('Este equipamento já possui uma conta FTP.')
+            ->assertSee('dialog.showModal();', false);
         $this->assertDatabaseCount('ftp_accounts', 1);
     }
 

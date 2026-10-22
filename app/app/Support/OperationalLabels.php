@@ -22,5 +22,10 @@ class OperationalLabels
         'error' => 'Erro', 'deleted' => 'Removido',
     ];
 
+    public const FTP_ERRORS = [
+        'missing_backup_policy' => 'Falta vincular uma política de backup FTP ao equipamento.',
+        'invalid_backup_policy' => 'A política de backup FTP está inativa ou incompatível.',
+    ];
+
     public const FTP_LAYOUTS = ['legacy' => 'Legado', 'account' => 'Por conta', 'account_uuid' => 'Por conta'];
 }

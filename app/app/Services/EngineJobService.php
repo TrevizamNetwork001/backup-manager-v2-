@@ -98,7 +98,7 @@ class EngineJobService
             if (mb_strtolower(trim($device->vendor)) === 'mikrotik' && ! preg_match('/\.rsc\z/i', $filename)) {
                 return ['status' => 'rejected', 'error_code' => 'invalid_file', 'ftp_account_id' => $account->id];
             }
-            if (mb_strtolower(trim($device->vendor)) === 'zte' && ! preg_match('/\.(?:sav|cfg|dat)\z/i', $filename)) {
+            if (mb_strtolower(trim($device->vendor)) === 'zte' && ! preg_match('/\.(?:sav|cfg|dat|zip)\z/i', $filename)) {
                 return ['status' => 'rejected', 'error_code' => 'invalid_file', 'ftp_account_id' => $account->id];
             }
             $policyService = app(HuaweiFtpBackupPolicy::class);
@@ -513,7 +513,8 @@ class EngineJobService
         $analysisData = null;
         $analysisVendor = null;
         $analysisPlatform = null;
-        $artifact = DB::transaction(function () use ($id, $relative, $workerId, &$analysisData, &$analysisVendor, &$analysisPlatform) {
+        $analysisFilename = null;
+        $artifact = DB::transaction(function () use ($id, $relative, $workerId, &$analysisData, &$analysisVendor, &$analysisPlatform, &$analysisFilename) {
             $job = BackupExecution::query()->lockForUpdate()->findOrFail($id);
             if ($job->status !== 'running' || ($workerId !== null && $job->worker_id !== $workerId) ||
                 ! $this->matchesFinalPath($job, $relative) || $job->artifact()->exists()) {
@@ -574,6 +575,7 @@ class EngineJobService
                 $analysisData = $contents;
                 $analysisVendor = $vendor;
                 $analysisPlatform = $payload['platform'];
+                $analysisFilename = $artifact->original_filename;
             }
             $job->status = 'succeeded';
             $job->finished_at = now();
@@ -585,7 +587,7 @@ class EngineJobService
         $this->audit('backup_execution.succeeded', $id, 'success', []);
         if ($analysisData !== null) {
             try {
-                $analysis = $this->analyzeContent($analysisData, $analysisVendor, $analysisPlatform);
+                $analysis = $this->analyzeContent($analysisData, $analysisVendor, $analysisPlatform, $analysisFilename);
                 if (Schema::hasTable('audit_events')) {
                     app(AuditEvents::class)->record('backup.content_analyzed', 'backup_execution', (string) $id,
                         null, $analysis['status'], $analysis);
@@ -598,8 +600,11 @@ class EngineJobService
         return $artifact;
     }
 
-    private function analyzeContent(string $contents, string $vendor, string $platform): array
+    private function analyzeContent(string $contents, string $vendor, string $platform, ?string $filename = null): array
     {
+        if ($vendor === 'zte' && $platform === 'olt') {
+            return $this->analyzeZteOltContent($contents, $filename);
+        }
         if ($vendor === 'mikrotik' && $platform === 'network' && str_starts_with(ltrim($contents), '#')) {
             $header = '';
             foreach (preg_split('/\R/', substr($contents, 0, 4096)) as $line) {
@@ -625,6 +630,52 @@ class EngineJobService
         }
 
         return ['status' => 'unknown', 'message' => 'unrecognized_format'];
+    }
+
+    private function analyzeZteOltContent(string $contents, ?string $filename): array
+    {
+        if (str_contains($contents, "\0") || ! mb_check_encoding($contents, 'UTF-8')) {
+            return ['status' => 'unknown', 'message' => 'binary_or_unknown_encoding'];
+        }
+
+        if (strtolower($filename ?? '') === 'patch.cfg') {
+            $lines = array_values(array_filter(preg_split('/\R/', trim($contents)), static fn (string $line): bool => trim($line) !== ''));
+            $packageCount = 0;
+            $patchCount = 0;
+            foreach ($lines as $line) {
+                if (preg_match('/^package\s+active\s+\S+/i', $line)) {
+                    $packageCount++;
+                } elseif (preg_match('/^patch\s+active\s+\S+/i', $line)) {
+                    $patchCount++;
+                } else {
+                    return ['status' => 'unknown', 'message' => 'unrecognized_format'];
+                }
+            }
+
+            if ($packageCount === 0 || $patchCount === 0 || ! str_starts_with(strtolower($lines[0]), 'package ')) {
+                return ['status' => 'warning', 'message' => 'zte_patch_list_incomplete',
+                    'package_count' => $packageCount, 'patch_count' => $patchCount];
+            }
+
+            return ['status' => 'recognized', 'message' => 'zte_patch_list',
+                'package_count' => $packageCount, 'patch_count' => $patchCount];
+        }
+
+        if (! in_array(strtolower(pathinfo($filename ?? '', PATHINFO_EXTENSION)), ['dat', 'sav', 'cfg'], true) ||
+            ! preg_match('/\Aolleh\r?\ntimestamp_write:\s*[^\r\n]+\r?\nconfig-version\s+\S+/i', $contents)) {
+            return ['status' => 'unknown', 'message' => 'unrecognized_format'];
+        }
+
+        $interfaceCount = preg_match_all('/^[ \t]*interface\s+\S+/mi', $contents);
+        $onuCount = preg_match_all('/^[ \t]*onu\s+\S+/mi', $contents);
+        $hasHardware = (bool) preg_match('/^add-rack\s+\S+/mi', $contents) &&
+            (bool) preg_match('/^add-shelf\s+\S+/mi', $contents);
+        $hasTrailer = (bool) preg_match('/(?:^|\n)!\r?\n[0-9A-F]{21}\s*\z/i', $contents);
+        $completeShape = $hasHardware && $interfaceCount > 0 && $hasTrailer;
+
+        return ['status' => $completeShape ? 'recognized' : 'warning',
+            'message' => $completeShape ? 'zte_c350_config' : 'zte_config_structure_incomplete',
+            'interface_count' => $interfaceCount, 'onu_count' => $onuCount];
     }
 
     public function fail(int $id, string $code, ?string $workerId = null): void

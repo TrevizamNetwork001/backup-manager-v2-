@@ -96,7 +96,10 @@ class DeviceController extends Controller
         if (Device::pushesOnlyOnConfigChange($validated['vendor'], $validated['platform'] ?? null)) {
             $validated['expected_ftp_interval_hours'] = null; // silence is normal for change-driven push
         }
-        Device::create($validated);
+        DB::transaction(function () use ($validated): void {
+            $this->ensureNameAvailable($validated['name']);
+            Device::create($validated);
+        });
 
         return redirect()
             ->route('devices.index')
@@ -157,6 +160,7 @@ class DeviceController extends Controller
         }
         DB::transaction(function () use ($device, $validated) {
             $locked = Device::query()->lockForUpdate()->findOrFail($device->id);
+            $this->ensureNameAvailable($validated['name'], $locked->id);
             $classificationChanged = $locked->vendor !== $validated['vendor'] ||
                 ($locked->platform ?? 'network') !== ($validated['platform'] ?? 'network');
             if ($classificationChanged && (
@@ -241,7 +245,7 @@ class DeviceController extends Controller
     private function normalize(Request $request): void
     {
         $request->merge([
-            'name' => trim((string) $request->input('name')),
+            'name' => preg_replace('/\s+/u', ' ', trim((string) $request->input('name'))),
             'management_ip' => trim((string) $request->input('management_ip')),
             'vendor' => is_string($request->input('vendor'))
                 ? Device::normalizeVendor($request->input('vendor'))
@@ -277,6 +281,20 @@ class DeviceController extends Controller
         }
         if ($validated['vendor'] === 'A10 Networks' && empty($validated['a10_transfer_interface'])) {
             throw ValidationException::withMessages(['a10_transfer_interface' => 'Escolha a interface de saída do backup A10.']);
+        }
+    }
+
+    private function ensureNameAvailable(string $name, ?int $exceptDeviceId = null): void
+    {
+        $normalizedName = mb_strtolower($name);
+        if (DB::getDriverName() === 'pgsql') {
+            DB::select('SELECT pg_advisory_xact_lock(hashtext(?))', [$normalizedName]);
+        }
+
+        $exists = Device::query()->whereRaw('lower(trim(name)) = ?', [$normalizedName])
+            ->when($exceptDeviceId, fn ($query) => $query->where('id', '!=', $exceptDeviceId))->exists();
+        if ($exists) {
+            throw ValidationException::withMessages(['name' => 'Já existe um equipamento com este nome.']);
         }
     }
 }

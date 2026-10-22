@@ -2,6 +2,10 @@
 
 Instalação inicial para a equipe que administra os servidores. O painel pode ser acessado por domínio ou por IPv4. A URL usa HTTPS; para acesso por IP, o instalador pode gerar um certificado local.
 
+## Guias por equipamento
+
+A [wiki de backup por equipamento](docs/WIKI_EQUIPAMENTOS.md) reúne os procedimentos de configuração e validação para ZTE, Huawei OLT, Huawei de rede, MikroTik, VSOL e A10. Cada guia distingue testes manuais da confirmação de agendamentos.
+
 ## 1. Preparar o servidor
 
 - Use Debian ou Ubuntu com acesso administrativo.

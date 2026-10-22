@@ -119,6 +119,11 @@
                         <div class="execution-detail-field"><dt>Armazenamento</dt><dd>OK</dd></div>
                         <div class="execution-detail-field"><dt>Integridade</dt><dd>OK</dd></div>
                         <div class="execution-detail-field"><dt>Análise de conteúdo</dt><dd>{{ ['recognized' => 'Reconhecido', 'warning' => 'Aviso', 'unknown' => 'Não reconhecido'][$contentAnalysis['status'] ?? ''] ?? 'Indisponível' }}</dd></div>
+                        @if(in_array($contentAnalysis['message'] ?? '', ['zte_c350_config', 'zte_config_structure_incomplete'], true))
+                            <div class="execution-detail-field execution-detail-field--wide"><dt>Estrutura ZTE</dt><dd>{{ $contentAnalysis['message'] === 'zte_c350_config' ? 'Configuração C350 reconhecida' : 'Configuração com estrutura incompleta' }} · {{ $contentAnalysis['interface_count'] }} interfaces · {{ $contentAnalysis['onu_count'] }} ONUs. A análise não comprova restauração.</dd></div>
+                        @elseif(in_array($contentAnalysis['message'] ?? '', ['zte_patch_list', 'zte_patch_list_incomplete'], true))
+                            <div class="execution-detail-field execution-detail-field--wide"><dt>Estrutura ZTE</dt><dd>{{ $contentAnalysis['message'] === 'zte_patch_list' ? 'Lista de patches reconhecida' : 'Lista de patches incompleta' }} · {{ $contentAnalysis['package_count'] }} pacote(s) · {{ $contentAnalysis['patch_count'] }} patch(es).</dd></div>
+                        @endif
                     @endif
                 </dl>
                 @if($backupExecution->artifact->deleted_at)
