@@ -1,6 +1,6 @@
 # Backup Manager V2
 
-Instalação inicial para a equipe que administra os servidores. O painel pode ser acessado por domínio ou por IPv4. A URL usa HTTPS; para acesso por IP, o instalador pode gerar um certificado local.
+Instalação inicial para a equipe que administra os servidores. O painel pode ser acessado por domínio ou por IPv4. A URL usa HTTPS; sem certificado fornecido, o instalador gera um certificado local.
 
 ## Guias por equipamento
 
@@ -8,10 +8,9 @@ A [wiki de backup por equipamento](docs/WIKI_EQUIPAMENTOS.md) reúne os procedim
 
 ## 1. Preparar o servidor
 
-- Use Debian ou Ubuntu com acesso administrativo.
-- Instale Docker Engine com o plugin `docker compose` pelo guia oficial para [Debian](https://docs.docker.com/engine/install/debian/) ou [Ubuntu](https://docs.docker.com/engine/install/ubuntu/).
-- Instale os programas do host: `sudo apt-get install nginx python3 openssl git iptables logrotate`.
-- Para domínio, separe um certificado TLS e a chave privada. Para IP, você pode fornecê-los ou deixar o instalador criar um certificado local. O navegador avisará que esse certificado local não tem autoridade confiável; confira o IP e a impressão digital antes de aceitá-lo, ou instale sua CA interna nos computadores que abrirão o painel.
+- Use Debian ou Ubuntu com systemd, apt, acesso administrativo e acesso à internet para os pacotes e imagens. O instalador instala os programas do host que faltarem e, em servidor novo, configura o repositório oficial do Docker para instalar Engine e Compose.
+- Se já houver Docker instalado sem Compose, ou pacotes Docker conflitantes, o instalador interrompe a operação para preservar os outros serviços do host.
+- Opcionalmente, forneça certificado TLS e chave privada. Sem eles, o instalador gera um certificado local para o domínio ou IP informado. O navegador avisará que esse certificado não tem autoridade confiável; confira o endereço e a impressão digital antes de aceitá-lo, ou instale sua CA interna nos computadores que abrirão o painel.
 - Defina a interface de entrada do FTP, o IPv4 de destino visto pelo servidor após NAT e pelo menos um CIDR de origem autorizado. Abra no firewall externo apenas as portas necessárias: HTTPS e, para as origens autorizadas, FTP TCP 21 e 30000–30009.
 
 O instalador exige o checkout em `/opt/backup-manager-v2`. A equipe deve ter acesso ao repositório pelo GitHub:
@@ -35,17 +34,19 @@ sudo bash install.sh \
   --ftp-allow-cidr 192.168.1.0/24
 ```
 
-Para um domínio, use `--url https://backup.exemplo.com` com `--tls-cert /caminho/fullchain.pem --tls-key /caminho/privkey.pem`; para porta HTTPS alternativa, acrescente `:8443` à URL. A porta HTTP 80 redireciona para a URL HTTPS. O instalador cria os segredos, constrói as imagens, instala as dependências da aplicação, inicia banco e containers, configura o proxy Nginx, a rotação de logs e o firewall de origens FTP. Docker, Nginx e os demais programas do host precisam estar instalados antes da execução. Ele não modifica instalações existentes sem `--resume` e nunca troca a `APP_KEY` ao retomar.
+Para um domínio, use `--url https://backup.exemplo.com`; você também pode informar `--tls-cert /caminho/fullchain.pem --tls-key /caminho/privkey.pem`. Para porta HTTPS alternativa, acrescente `:8443` à URL. A porta HTTP 80 redireciona para a URL HTTPS. O instalador instala os programas necessários, cria os segredos, constrói as imagens, instala as dependências da aplicação, inicia banco e containers, aplica migrações e políticas padrão, configura o proxy Nginx, a rotação de logs e o firewall de origens FTP. Ele não modifica instalações existentes sem `--resume` e nunca troca a `APP_KEY` ao retomar.
 
 Na instalação nova, entre pelo navegador com usuário `backup_manager` e senha `backup_manager`. O sistema exige e-mail e senha nova (mínimo de 12 caracteres com maiúsculas, minúsculas, número e símbolo), encerra a sessão e pede login com esses dados. Não há código de ativação no terminal. Restrinja a porta HTTPS no firewall às suas origens até concluir essa troca. O certificado local fica em `/etc/backup-manager-v2/tls/`; `--resume` o reutiliza e não troca a chave.
 
-A sessão do painel expira após 30 minutos sem interação. Um aviso aparece no último minuto e permite continuar conectado; o navegador encerra a sessão ao terminar o prazo. O instalador compila as views com o usuário da aplicação e só anuncia a instalação pronta depois que o login responde no proxy interno.
+A sessão do painel expira após 30 minutos sem interação. Um aviso aparece no último minuto e permite continuar conectado; o navegador encerra a sessão ao terminar o prazo. O instalador compila as views com o usuário da aplicação e só anuncia a instalação pronta depois de verificar os serviços, o receptor FTP, o login e o CSS no proxy interno. As páginas e os arquivos estáticos do painel já fazem parte do checkout.
 
 Se uma etapa falhar, corrija a causa e execute o mesmo comando com `--resume`. Depois do primeiro acesso, ajuste a lista de origens em **Configurações → Origens permitidas no FTP**; o timer do host aplica as mudanças.
 
 Para mostrar país, bandeira e ASN dos IPs na Auditoria, o instalador reutiliza as bases `GeoLite2-Country.mmdb` e `GeoLite2-ASN.mmdb` já presentes em `/usr/share/GeoIP`. Em um servidor novo, forneça os dois arquivos locais com `--geoip-country-db` e `--geoip-asn-db`, ou um ZIP privado com ambos na raiz usando `--geoip-archive /caminho/GeoIP.zip`. O instalador copia as bases para `/usr/share/GeoIP` e as monta somente para leitura no container. Sem elas, a instalação continua e a Auditoria indica país e ASN não identificados. Mantenha as bases atualizadas e fora do Git; um ZIP não muda as regras de redistribuição da [MaxMind](https://www.maxmind.com/en/geolite/eula).
 
 Após as migrations, o instalador cria as políticas padrão em banco novo, incluindo **MikroTik FTP** e **ZTE FTP**, antes de iniciar engine e scheduler. Nenhum equipamento ou conta FTP é criado automaticamente; associe a política e a conta conforme a [wiki de equipamentos](docs/WIKI_EQUIPAMENTOS.md). Em uma instalação existente, o seeder preserva o catálogo já configurado.
+
+Para usar o backup A10 via SFTP, acrescente `--a10-sftp` na instalação nova. O instalador prepara a conta SFTP restrita no SSH do host e habilita o recurso nos containers. Por padrão, o A10 enviará ao IPv4 de `--ftp-destination`; se usar outro endereço alcançável pelo equipamento, informe `--a10-sftp-host ENDEREÇO`. Restrinja a porta SSH/TCP 22 às origens autorizadas. Cadastre o equipamento, sua credencial e uma política A10 no painel; o fluxo aceita o modelo e a versão homologados na [wiki A10](docs/WIKI_A10.md).
 
 ## 3. Conferir e preservar
 

@@ -12,6 +12,8 @@ TLS_KEY=''
 GEOIP_COUNTRY_DB=''
 GEOIP_ASN_DB=''
 GEOIP_ARCHIVE=''
+A10_SFTP=false
+A10_TRANSFER_HOST=''
 RESUME=false
 PREFLIGHT=false
 FTP_CIDRS=()
@@ -24,13 +26,18 @@ Usage: sudo bash install.sh --url https://HOST[:PORT] \
   [--tls-cert /absolute/fullchain.pem --tls-key /absolute/privkey.pem] \
   [--geoip-country-db /absolute/GeoLite2-Country.mmdb --geoip-asn-db /absolute/GeoLite2-ASN.mmdb] \
   [--geoip-archive /absolute/GeoIP.zip] \
+  [--a10-sftp [--a10-sftp-host IPv4_OR_DNS]] \
   [--resume] [--preflight]
 
-Requires a clean checkout at /opt/backup-manager-v2, Docker with Compose v2,
-Nginx, Python 3, OpenSSL and Git. For IPv4 without a supplied TLS pair,
-generates a local certificate with the IP in SAN. DNS requires a supplied pair.
+Requires a clean checkout at /opt/backup-manager-v2 on Debian or Ubuntu.
+Installs missing host packages and Docker Engine with Compose from the official
+Docker repository. Without a supplied TLS pair, generates a local certificate
+with the IPv4 address or DNS name in SAN (browsers will not trust it by default).
 --resume keeps existing secrets and creates initial access only if no users exist.
 --preflight validates requirements and parameters without changing the host.
+--a10-sftp prepares a restricted SSH/SFTP inbox and enables the A10 integration.
+Its transfer host defaults to --ftp-destination; override it when A10 uses
+a different reachable address.
 GeoIP: existing files in /usr/share/GeoIP are reused; optional file paths copy
 your own Country and ASN databases there for local-only IP lookup in Audit.
 Alternatively, --geoip-archive accepts a private ZIP containing exactly
@@ -40,7 +47,7 @@ HELP
 
 while (($#)); do
     case "$1" in
-        --url|--tls-cert|--tls-key|--ftp-interface|--ftp-destination|--ftp-allow-cidr|--geoip-country-db|--geoip-asn-db|--geoip-archive)
+        --url|--tls-cert|--tls-key|--ftp-interface|--ftp-destination|--ftp-allow-cidr|--geoip-country-db|--geoip-asn-db|--geoip-archive|--a10-sftp-host)
             if (($# < 2)); then usage >&2; exit 2; fi
             case "$1" in
                 --url) URL=$2 ;;
@@ -52,9 +59,11 @@ while (($#)); do
                 --geoip-country-db) GEOIP_COUNTRY_DB=$2 ;;
                 --geoip-asn-db) GEOIP_ASN_DB=$2 ;;
                 --geoip-archive) GEOIP_ARCHIVE=$2 ;;
+                --a10-sftp-host) A10_TRANSFER_HOST=$2 ;;
             esac
             shift 2 ;;
         --resume) RESUME=true; shift ;;
+        --a10-sftp) A10_SFTP=true; shift ;;
         --preflight) PREFLIGHT=true; shift ;;
         --help|-h) usage; exit 0 ;;
         *) usage >&2; exit 2 ;;
@@ -64,18 +73,15 @@ done
 if ((EUID != 0)); then echo 'Execute como root.' >&2; exit 1; fi
 if [[ ! -f /etc/os-release ]]; then echo 'Sistema operacional não reconhecido.' >&2; exit 1; fi
 source /etc/os-release
-if [[ " ${ID:-} ${ID_LIKE:-} " != *' debian '* && " ${ID:-} ${ID_LIKE:-} " != *' ubuntu '* ]]; then
+if [[ "${ID:-}" != debian && "${ID:-}" != ubuntu ]]; then
     echo 'Somente Debian ou Ubuntu.' >&2; exit 1
 fi
 if [[ "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)" != "$PROJECT" ]]; then
     echo "Instale o checkout em $PROJECT." >&2; exit 1
 fi
-for program in docker git python3 openssl nginx systemctl iptables logrotate; do
-    if ! command -v "$program" >/dev/null 2>&1; then
-        echo "Falta $program. Instale os requisitos do host antes de continuar." >&2; exit 1
-    fi
-done
-docker compose version >/dev/null
+if ! command -v systemctl >/dev/null 2>&1 || ! command -v apt-get >/dev/null 2>&1; then
+    echo 'A instalação requer systemd e apt.' >&2; exit 1
+fi
 if [[ ! -f "$PROJECT/app/composer.lock" || ! -f "$PROJECT/compose.yml" ]]; then
     echo 'Checkout incompleto.' >&2; exit 1
 fi
@@ -91,9 +97,55 @@ elif [[ -f "$PROJECT/.env" || -f "$PROJECT/app/.env" ]]; then
 elif [[ "$RESUME" == true ]]; then
     echo 'Nenhuma instalação anterior para retomar.' >&2; exit 1
 fi
+if [[ "$RESUME" == true && -f "$PROJECT/.env" ]]; then
+    if grep -Fxq 'BACKUP_A10_ENABLED=true' "$PROJECT/.env"; then
+        A10_SFTP=true
+    elif [[ "$A10_SFTP" == true ]]; then
+        echo 'A instalação existente não tem A10 habilitado. --resume não altera recursos opcionais.' >&2; exit 1
+    fi
+fi
+if [[ "$PREFLIGHT" != true && "$RESUME" != true ]] && command -v git >/dev/null 2>&1 &&
+    [[ -n "$(git -C "$PROJECT" status --porcelain)" ]]; then
+    echo 'Use um checkout limpo para a primeira instalação.' >&2; exit 1
+fi
+if [[ "$PREFLIGHT" == true ]]; then
+    for program in python3 openssl; do
+        if ! command -v "$program" >/dev/null 2>&1; then
+            echo "O modo --preflight requer $program para validar os parâmetros sem alterar o host." >&2; exit 1
+        fi
+    done
+else
+    host_packages=()
+    for requirement in ca-certificates:ca-certificates curl:curl git:git python3:python3 openssl:openssl nginx:nginx iptables:iptables logrotate:logrotate; do
+        program=${requirement%%:*}
+        package=${requirement#*:}
+        if [[ "$program" == ca-certificates ]]; then
+            if [[ ! -f /etc/ssl/certs/ca-certificates.crt ]]; then host_packages+=("$package"); fi
+        elif ! command -v "$program" >/dev/null 2>&1; then
+            host_packages+=("$package")
+        fi
+    done
+    if ((${#host_packages[@]})); then
+        apt-get update
+        DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${host_packages[@]}"
+    fi
+    if [[ "$A10_SFTP" == true ]]; then
+        a10_packages=()
+        if ! command -v sshd >/dev/null 2>&1; then a10_packages+=(openssh-server); fi
+        if ! command -v mountpoint >/dev/null 2>&1 || ! command -v findmnt >/dev/null 2>&1; then a10_packages+=(util-linux); fi
+        if ! command -v useradd >/dev/null 2>&1 || ! command -v groupadd >/dev/null 2>&1 || ! command -v chpasswd >/dev/null 2>&1; then a10_packages+=(passwd); fi
+        if ((${#a10_packages[@]})); then
+            apt-get update
+            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${a10_packages[@]}"
+        fi
+    fi
+fi
 
 if [[ -z "$URL" || -z "$FTP_INTERFACE" || -z "$FTP_DESTINATION" || ${#FTP_CIDRS[@]} -eq 0 ]]; then
     usage >&2; exit 2
+fi
+if [[ -n "$A10_TRANSFER_HOST" && "$A10_SFTP" != true ]]; then
+    echo 'Use --a10-sftp-host somente com --a10-sftp.' >&2; exit 1
 fi
 if [[ -n "$TLS_CERT" && -z "$TLS_KEY" || -z "$TLS_CERT" && -n "$TLS_KEY" ]]; then
     echo 'Informe certificado e chave TLS juntos.' >&2; exit 1
@@ -184,17 +236,37 @@ if ((${#URL_PARTS[@]} != 2)); then echo 'Parâmetros de rede inválidos.' >&2; e
 HOST=${URL_PARTS[0]}
 HTTPS_PORT=${URL_PARTS[1]}
 if ((HTTPS_PORT < 1 || HTTPS_PORT > 65535)); then echo 'Porta HTTPS inválida.' >&2; exit 1; fi
+if [[ "$A10_SFTP" == true ]]; then
+    A10_TRANSFER_HOST=${A10_TRANSFER_HOST:-$FTP_DESTINATION}
+    python3 - "$A10_TRANSFER_HOST" <<'PY'
+import ipaddress
+import re
+import sys
+
+host = sys.argv[1]
+try:
+    address = ipaddress.ip_address(host)
+except ValueError:
+    if not re.fullmatch(r'[A-Za-z0-9.-]{1,253}', host) or '..' in host or host.startswith(('-', '.')) or host.endswith(('-', '.')):
+        raise SystemExit('Host de transferência A10 inválido.')
+else:
+    if address.version != 4:
+        raise SystemExit('Host de transferência A10 deve ser IPv4 ou DNS.')
+PY
+fi
 if [[ "$HOST" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     CERT_CHECK=(-checkip "$HOST")
 else
     CERT_CHECK=(-checkhost "$HOST")
 fi
 if [[ -z "$TLS_CERT" ]]; then
-    if [[ "${CERT_CHECK[0]}" != '-checkip' ]]; then
-        echo 'Para domínio, informe --tls-cert e --tls-key.' >&2; exit 1
+    if [[ "${CERT_CHECK[0]}" == '-checkip' ]]; then
+        TLS_CERT=/etc/backup-manager-v2/tls/ip-cert.pem
+        TLS_KEY=/etc/backup-manager-v2/tls/ip-key.pem
+    else
+        TLS_CERT=/etc/backup-manager-v2/tls/dns-cert.pem
+        TLS_KEY=/etc/backup-manager-v2/tls/dns-key.pem
     fi
-    TLS_CERT=/etc/backup-manager-v2/tls/ip-cert.pem
-    TLS_KEY=/etc/backup-manager-v2/tls/ip-key.pem
     GENERATE_TLS=true
 else
     GENERATE_TLS=false
@@ -221,8 +293,25 @@ if [[ "$GENERATE_TLS" != true || -e "$TLS_CERT" ]]; then
     validate_tls
 fi
 if [[ "$PREFLIGHT" == true ]]; then
+    if ! command -v docker >/dev/null 2>&1 || ! docker compose version >/dev/null 2>&1; then
+        if command -v docker >/dev/null 2>&1 && ! dpkg-query -W -f='${Status}' docker-ce 2>/dev/null | grep -q 'install ok installed'; then
+            echo 'Docker existente sem Compose oficial. Revise essa instalação antes de prosseguir.' >&2; exit 1
+        fi
+        for conflicting_package in docker.io docker-compose docker-compose-v2 docker-doc docker-buildx podman-docker containerd runc; do
+            if dpkg-query -W -f='${Status}' "$conflicting_package" 2>/dev/null | grep -q 'install ok installed'; then
+                echo "O pacote $conflicting_package conflita com Docker Engine oficial; revise o host antes de prosseguir." >&2; exit 1
+            fi
+        done
+    fi
+    if [[ "$A10_SFTP" == true ]] && command -v sshd >/dev/null 2>&1; then
+        bash "$PROJECT/scripts/a10_sftp_host.sh" --check
+    fi
     echo "Pré-verificação aprovada para $URL. Nenhuma alteração feita."
-    if [[ "$GENERATE_TLS" == true ]]; then echo 'Na instalação será criado um certificado local para o IP.'; fi
+    if ! command -v docker >/dev/null 2>&1 || ! docker compose version >/dev/null 2>&1; then
+        echo 'Na instalação, Docker Engine e Compose serão instalados pelo repositório oficial.'
+    fi
+    if [[ "$GENERATE_TLS" == true ]]; then echo "Na instalação será criado um certificado local para $HOST."; fi
+    if [[ "$A10_SFTP" == true ]]; then echo 'A instalação preparará a conta SFTP restrita do A10 e habilitará a integração.'; fi
     if [[ -n "$GEOIP_COUNTRY_DB" || -n "$GEOIP_ARCHIVE" ]]; then
         echo 'Na instalação, as bases GeoIP informadas serão copiadas para /usr/share/GeoIP.'
     elif [[ ! -f /usr/share/GeoIP/GeoLite2-Country.mmdb || ! -f /usr/share/GeoIP/GeoLite2-ASN.mmdb ]]; then
@@ -235,6 +324,41 @@ cd "$PROJECT"
 if [[ "$RESUME" != true && -n "$(git status --porcelain)" ]]; then
     echo 'Use um checkout limpo para a primeira instalação.' >&2; exit 1
 fi
+
+if ! command -v docker >/dev/null 2>&1 || ! docker compose version >/dev/null 2>&1; then
+    if command -v docker >/dev/null 2>&1 && ! dpkg-query -W -f='${Status}' docker-ce 2>/dev/null | grep -q 'install ok installed'; then
+        echo 'Docker existente sem Compose oficial. Revise essa instalação antes de prosseguir.' >&2; exit 1
+    fi
+    for conflicting_package in docker.io docker-compose docker-compose-v2 docker-doc docker-buildx podman-docker containerd runc; do
+        if dpkg-query -W -f='${Status}' "$conflicting_package" 2>/dev/null | grep -q 'install ok installed'; then
+            echo "O pacote $conflicting_package conflita com Docker Engine oficial; revise o host antes de prosseguir." >&2; exit 1
+        fi
+    done
+    install -d -m 0755 /etc/apt/keyrings
+    if [[ ! -f /etc/apt/keyrings/docker.asc ]]; then
+        docker_key_temp=$(mktemp)
+        curl -fsSL "https://download.docker.com/linux/$ID/gpg" -o "$docker_key_temp"
+        install -m 0644 "$docker_key_temp" /etc/apt/keyrings/docker.asc
+        rm -f "$docker_key_temp"
+    fi
+    if [[ ! -f /etc/apt/sources.list.d/docker.sources ]]; then
+        docker_codename=${UBUNTU_CODENAME:-$VERSION_CODENAME}
+        cat > /etc/apt/sources.list.d/docker.sources <<EOF
+Types: deb
+URIs: https://download.docker.com/linux/$ID
+Suites: $docker_codename
+Components: stable
+Architectures: $(dpkg --print-architecture)
+Signed-By: /etc/apt/keyrings/docker.asc
+EOF
+    fi
+    apt-get update
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+fi
+systemctl enable --now docker
+docker compose version >/dev/null
+docker info >/dev/null
 
 if [[ "$RESUME" == true ]]; then
     EXISTING_URL=$(sed -n 's/^APP_URL=//p' app/.env | tail -1)
@@ -287,8 +411,13 @@ fi
 
 if [[ "$GENERATE_TLS" == true && ! -e "$TLS_CERT" ]]; then
     install -d -m 700 /etc/backup-manager-v2/tls
+    if [[ "${CERT_CHECK[0]}" == '-checkip' ]]; then
+        certificate_san="IP:$HOST"
+    else
+        certificate_san="DNS:$HOST"
+    fi
     openssl req -x509 -newkey rsa:3072 -noenc -sha256 -days 365 \
-        -subj "/CN=$HOST" -addext "subjectAltName=IP:$HOST" \
+        -subj "/CN=$HOST" -addext "subjectAltName=$certificate_san" \
         -addext 'basicConstraints=critical,CA:FALSE' \
         -addext 'keyUsage=critical,digitalSignature,keyEncipherment' \
         -addext 'extendedKeyUsage=serverAuth' \
@@ -310,7 +439,11 @@ REDIS_PASSWORD=$REDIS_SECRET
 BACKUP_FTP_PASSIVE_ADDRESS=$FTP_DESTINATION
 BACKUP_FTP_HOST=$FTP_DESTINATION
 BACKUP_RETENTION_ENABLED=false
-BACKUP_A10_ENABLED=false
+BACKUP_A10_ENABLED=$A10_SFTP
+BACKUP_A10_TRANSPORT=sftp
+BACKUP_A10_TRANSFER_HOST=$A10_TRANSFER_HOST
+BACKUP_A10_SFTP_USER=a10backup
+BACKUP_A10_SFTP_GID=25001
 EOF
     cat > app/.env <<EOF
 APP_NAME="Backup Manager"
@@ -339,6 +472,11 @@ SESSION_LIFETIME=30
 EOF
     chown 65534:65534 app/.env
     chmod 600 .env app/.env
+fi
+if [[ "$A10_SFTP" == true ]]; then
+    systemctl enable --now ssh
+    bash scripts/a10_sftp_host.sh --check
+    bash scripts/a10_sftp_host.sh --apply
 fi
 
 install -d -m 700 /etc/backup-manager-v2
@@ -429,10 +567,34 @@ else
 fi
 
 docker compose exec -T app php artisan engine:health
+for service in postgres redis app engine scheduler ftp-admin ftp nginx; do
+    if ! docker compose ps --services --status running | grep -Fxq "$service"; then
+        echo "Serviço $service não está em execução após a instalação." >&2
+        exit 1
+    fi
+done
+FTP_READY=false
+for attempt in {1..15}; do
+    if docker compose exec -T app php -r '$socket = @fsockopen("ftp", 21, $errorNumber, $errorMessage, 2); if ($socket === false) { exit(1); } fclose($socket);' >/dev/null 2>&1; then
+        FTP_READY=true
+        break
+    fi
+    sleep 2
+done
+if [[ "$FTP_READY" != true ]]; then
+    echo 'O receptor FTP não respondeu na rede interna após a instalação.' >&2
+    exit 1
+fi
 HTTP_STATUS=$(docker compose exec -T nginx curl --silent --output /dev/null --write-out '%{http_code}' \
     --header "Host: $HOST:$HTTPS_PORT" http://127.0.0.1/login)
 if [[ "$HTTP_STATUS" != 200 ]]; then
     echo "A página de login não respondeu corretamente no proxy interno (HTTP $HTTP_STATUS)." >&2
+    exit 1
+fi
+ASSET_STATUS=$(docker compose exec -T nginx curl --silent --output /dev/null --write-out '%{http_code}' \
+    --header "Host: $HOST:$HTTPS_PORT" http://127.0.0.1/assets/app.css)
+if [[ "$ASSET_STATUS" != 200 ]]; then
+    echo "O CSS do painel não respondeu corretamente no proxy interno (HTTP $ASSET_STATUS)." >&2
     exit 1
 fi
 echo "Instalação pronta em $URL."
