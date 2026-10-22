@@ -61,15 +61,38 @@ class DeferredFtpTest(unittest.TestCase):
                  patch.object(ftp_acl_host.os, 'chdir'), \
                  patch.object(ftp_acl_host, 'requested', return_value=(data, True)), \
                  patch.object(ftp_acl_host, 'apply', side_effect=lambda _: events.append('firewall')), \
+                 patch.object(ftp_acl_host, 'wait_for_ftp', side_effect=lambda: events.append('ready')), \
                  patch.object(ftp_acl_host, 'persist', side_effect=lambda _: events.append('persist')), \
                  patch.object(ftp_acl_host, 'command', side_effect=lambda *args, **kwargs: events.append(args)):
                 ftp_acl_host.main()
 
             self.assertEqual(events[0], 'firewall')
             self.assertEqual(events[1][:5], ('docker', 'compose', 'up', '-d', '--build'))
-            self.assertEqual(events[2], 'persist')
-            self.assertEqual(events[3][:5], ('docker', 'compose', 'exec', '-T', 'app'))
+            self.assertEqual(events[2], 'ready')
+            self.assertEqual(events[3], 'persist')
+            self.assertEqual(events[4][:5], ('docker', 'compose', 'exec', '-T', 'app'))
             self.assertFalse(marker.exists())
+
+    def test_failed_ftp_start_keeps_activation_pending(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            marker = Path(temporary, 'deferred')
+            marker.touch()
+            data = {'cidrs': ['192.0.2.0/24'], 'revision': 1}
+            with patch.object(ftp_acl_host, 'DEFER_MARKER', marker), \
+                 patch.object(ftp_acl_host, 'LOCK', Path(temporary, 'lock')), \
+                 patch.object(ftp_acl_host, 'validate_host_settings'), \
+                 patch.object(ftp_acl_host.os, 'geteuid', return_value=0), \
+                 patch.object(ftp_acl_host.os, 'chdir'), \
+                 patch.object(ftp_acl_host, 'requested', return_value=(data, True)), \
+                 patch.object(ftp_acl_host, 'apply'), \
+                 patch.object(ftp_acl_host, 'wait_for_ftp', side_effect=RuntimeError('ftp_not_ready')), \
+                 patch.object(ftp_acl_host, 'persist') as persist, \
+                 patch.object(ftp_acl_host, 'command'):
+                with self.assertRaisesRegex(RuntimeError, 'ftp_not_ready'):
+                    ftp_acl_host.main()
+
+            persist.assert_not_called()
+            self.assertTrue(marker.exists())
 
 
 if __name__ == '__main__':

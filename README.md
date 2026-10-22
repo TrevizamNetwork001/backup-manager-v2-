@@ -24,7 +24,7 @@ O usuário que executa o clone precisa de uma chave com acesso de leitura ao rep
 
 ## 2. Instalar
 
-Na VM limpa, o modo guiado pede a URL HTTPS e confirma a interface e o IPv4 do FTP detectados no host. Ele instala os serviços, mas deixa o receptor FTP desligado e sem regra de firewall até um administrador salvar as origens permitidas em **Configurações → Origens permitidas no FTP**. O timer do host aplica a regra antes de iniciar o receptor. Para conferir os dados sem instalar, use `sudo bash setup.sh --preflight`.
+Na VM limpa, o modo guiado pede a URL HTTPS e confirma a interface e o IPv4 recebido pelo host após NAT. Se os equipamentos acessarem outro IPv4 público, informe-o como endereço passivo do FTP; caso contrário, aceite o valor sugerido. O assistente instala os serviços, mas deixa o receptor FTP desligado e sem regra de firewall até um administrador salvar as origens permitidas em **Configurações → Origens permitidas no FTP**. O timer do host aplica a regra antes de iniciar o receptor. Para conferir os dados sem instalar, use `sudo bash setup.sh --preflight`.
 
 ```bash
 sudo bash setup.sh
@@ -42,7 +42,7 @@ sudo bash install.sh \
   --ftp-allow-cidr 192.168.1.0/24
 ```
 
-Para um domínio, use `--url https://backup.exemplo.com`; você também pode informar `--tls-cert /caminho/fullchain.pem --tls-key /caminho/privkey.pem`. Para porta HTTPS alternativa, acrescente `:8443` à URL. A porta HTTP 80 redireciona para a URL HTTPS. O instalador instala os programas necessários, cria os segredos, constrói as imagens, instala as dependências da aplicação, detecta a sub-rede Docker para configurar os proxies confiáveis, inicia banco e containers, aplica migrações e políticas padrão, configura o proxy Nginx, a rotação de logs e o firewall de origens FTP. Ele não modifica instalações existentes sem `--resume` e nunca troca a `APP_KEY` ao retomar.
+Para um domínio, use `--url https://backup.exemplo.com`; você também pode informar `--tls-cert /caminho/fullchain.pem --tls-key /caminho/privkey.pem`. Para porta HTTPS alternativa, acrescente `:8443` à URL. Se o IPv4 público anunciado aos equipamentos for diferente do IPv4 recebido pela VM após NAT, use `--ftp-passive-address IPV4_PUBLICO`; `--ftp-destination` continua sendo o endereço recebido pelo host. A porta HTTP 80 redireciona para a URL HTTPS. O instalador instala os programas necessários, cria os segredos, constrói as imagens, instala as dependências da aplicação, detecta a sub-rede Docker para configurar os proxies confiáveis, inicia banco e containers, aplica migrações e políticas padrão, configura o proxy Nginx, a rotação de logs e o firewall de origens FTP. Ele não modifica instalações existentes sem `--resume` e nunca troca a `APP_KEY` ao retomar.
 
 Na instalação nova, entre pelo navegador com usuário `backup_manager` e a senha aleatória exibida ao final do instalador. O sistema exige e-mail e senha nova (mínimo de 12 caracteres com maiúsculas, minúsculas, número e símbolo), encerra a sessão e pede login com esses dados. A senha inicial não é fixa nem gravada em arquivo; se a conexão cair antes da troca, `--resume` gera outra senha e a mostra novamente. Restrinja a porta HTTPS no firewall às suas origens até concluir essa troca. O certificado local fica em `/etc/backup-manager-v2/tls/`; `--resume` o reutiliza e não troca a chave.
 

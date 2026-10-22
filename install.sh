@@ -7,6 +7,7 @@ PROJECT=/opt/backup-manager-v2
 URL=''
 FTP_INTERFACE=''
 FTP_DESTINATION=''
+FTP_PASSIVE_ADDRESS=''
 TLS_CERT=''
 TLS_KEY=''
 GEOIP_COUNTRY_DB=''
@@ -23,6 +24,7 @@ usage() {
     cat <<'HELP'
 Usage: sudo bash install.sh --url https://HOST[:PORT] \
   --ftp-interface INTERFACE --ftp-destination IPv4 \
+  [--ftp-passive-address IPv4] \
   [--ftp-allow-cidr IPv4/CIDR ... | --defer-ftp] \
   [--tls-cert /absolute/fullchain.pem --tls-key /absolute/privkey.pem] \
   [--geoip-country-db /absolute/GeoLite2-Country.mmdb --geoip-asn-db /absolute/GeoLite2-ASN.mmdb] \
@@ -38,6 +40,8 @@ with the IPv4 address or DNS name in SAN (browsers will not trust it by default)
 --preflight validates requirements and parameters without changing the host.
 --defer-ftp leaves FTP offline and its source firewall unset until an
 administrator saves allowed origins in the web panel.
+--ftp-destination is the IPv4 received by the host after NAT; the passive
+address is the IPv4 advertised to equipment and defaults to that destination.
 --a10-sftp prepares a restricted SSH/SFTP inbox and enables the A10 integration.
 Its transfer host defaults to --ftp-destination; override it when A10 uses
 a different reachable address.
@@ -50,7 +54,7 @@ HELP
 
 while (($#)); do
     case "$1" in
-        --url|--tls-cert|--tls-key|--ftp-interface|--ftp-destination|--ftp-allow-cidr|--geoip-country-db|--geoip-asn-db|--geoip-archive|--a10-sftp-host)
+        --url|--tls-cert|--tls-key|--ftp-interface|--ftp-destination|--ftp-passive-address|--ftp-allow-cidr|--geoip-country-db|--geoip-asn-db|--geoip-archive|--a10-sftp-host)
             if (($# < 2)); then usage >&2; exit 2; fi
             case "$1" in
                 --url) URL=$2 ;;
@@ -58,6 +62,7 @@ while (($#)); do
                 --tls-key) TLS_KEY=$2 ;;
                 --ftp-interface) FTP_INTERFACE=$2 ;;
                 --ftp-destination) FTP_DESTINATION=$2 ;;
+                --ftp-passive-address) FTP_PASSIVE_ADDRESS=$2 ;;
                 --ftp-allow-cidr) FTP_CIDRS+=("$2") ;;
                 --geoip-country-db) GEOIP_COUNTRY_DB=$2 ;;
                 --geoip-asn-db) GEOIP_ASN_DB=$2 ;;
@@ -128,6 +133,7 @@ fi
 if [[ "$DEFER_FTP" == true && ${#FTP_CIDRS[@]} -gt 0 ]]; then
     echo 'Use --defer-ftp sem --ftp-allow-cidr; configure as origens no painel.' >&2; exit 2
 fi
+FTP_PASSIVE_ADDRESS=${FTP_PASSIVE_ADDRESS:-$FTP_DESTINATION}
 if [[ -n "$A10_TRANSFER_HOST" && "$A10_SFTP" != true ]]; then
     echo 'Use --a10-sftp-host somente com --a10-sftp.' >&2; exit 1
 fi
@@ -189,13 +195,13 @@ PY
 fi
 
 # Validate all operator supplied network values before changing the host.
-URL_PARTS_OUTPUT=$(python3 - "$URL" "$FTP_INTERFACE" "$FTP_DESTINATION" "${FTP_CIDRS[@]}" <<'PY'
+URL_PARTS_OUTPUT=$(python3 - "$URL" "$FTP_INTERFACE" "$FTP_DESTINATION" "$FTP_PASSIVE_ADDRESS" "${FTP_CIDRS[@]}" <<'PY'
 import ipaddress
 import re
 import sys
 from urllib.parse import urlsplit
 
-url, interface, destination, *cidrs = sys.argv[1:]
+url, interface, destination, passive_address, *cidrs = sys.argv[1:]
 parsed = urlsplit(url)
 try:
     port = parsed.port if parsed.port is not None else 443
@@ -223,6 +229,12 @@ except ValueError:
     raise SystemExit('Destino FTP inválido.')
 if not isinstance(destination_ip, ipaddress.IPv4Address):
     raise SystemExit('Destino FTP deve ser IPv4.')
+try:
+    passive_ip = ipaddress.ip_address(passive_address)
+except ValueError:
+    raise SystemExit('Endereço passivo FTP inválido.')
+if not isinstance(passive_ip, ipaddress.IPv4Address):
+    raise SystemExit('Endereço passivo FTP deve ser IPv4.')
 for cidr in cidrs:
     try:
         network = ipaddress.ip_network(cidr, strict=True)
@@ -460,8 +472,8 @@ POSTGRES_DB=backup_manager
 POSTGRES_USER=backup_manager
 POSTGRES_PASSWORD=$POSTGRES_SECRET
 REDIS_PASSWORD=$REDIS_SECRET
-BACKUP_FTP_PASSIVE_ADDRESS=$FTP_DESTINATION
-BACKUP_FTP_HOST=$FTP_DESTINATION
+BACKUP_FTP_PASSIVE_ADDRESS=$FTP_PASSIVE_ADDRESS
+BACKUP_FTP_HOST=$FTP_PASSIVE_ADDRESS
 BACKUP_RETENTION_ENABLED=false
 BACKUP_A10_ENABLED=$A10_SFTP
 BACKUP_A10_TRANSPORT=sftp
@@ -504,7 +516,7 @@ if [[ "$A10_SFTP" == true ]]; then
 fi
 
 install -d -m 700 /etc/backup-manager-v2
-if [[ "$DEFER_FTP" == true ]]; then
+if [[ "$DEFER_FTP" == true && "$RESUME" != true ]]; then
     install -m 0600 /dev/null "$FTP_DEFER_MARKER"
 fi
 if [[ ! -f /etc/backup-manager-v2/ftp-acl.env ]]; then
@@ -554,10 +566,11 @@ install -m 0644 scripts/backup-manager-ftp-acl.service scripts/backup-manager-ft
 systemctl daemon-reload
 systemctl enable --now backup-manager-ftp-acl.timer
 systemctl start backup-manager-ftp-acl.service
-if [[ "$DEFER_FTP" != true ]]; then
-    docker compose up -d --build ftp
-else
+if [[ "$DEFER_FTP" == true && -f "$FTP_DEFER_MARKER" ]]; then
     docker compose stop ftp
+else
+    DEFER_FTP=false
+    docker compose up -d --build ftp
 fi
 
 install -m 0644 docker/nginx/host-audit-log.conf /etc/nginx/conf.d/backup-manager-audit-log.conf

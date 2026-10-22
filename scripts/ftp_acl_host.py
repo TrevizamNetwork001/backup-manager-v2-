@@ -9,6 +9,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 
@@ -100,6 +101,18 @@ def persist(data):
             os.unlink(temporary)
 
 
+def wait_for_ftp():
+    probe = '$socket = @fsockopen("ftp", 21, $errorNumber, $errorMessage, 2); if ($socket === false) { exit(1); } fclose($socket);'
+    for attempt in range(15):
+        try:
+            command('docker', 'compose', 'exec', '-T', 'app', 'php', '-r', probe, timeout=8)
+            return
+        except subprocess.SubprocessError:
+            if attempt < 14:
+                time.sleep(2)
+    raise RuntimeError('ftp_not_ready')
+
+
 def main():
     if os.geteuid() != 0:
         raise SystemExit('root_required')
@@ -118,6 +131,7 @@ def main():
         if from_panel:
             if DEFER_MARKER.exists():
                 command('docker', 'compose', 'up', '-d', '--build', 'ftp', timeout=300)
+                wait_for_ftp()
             persist(data)
             command('docker', 'compose', 'exec', '-T', 'app', 'php', 'artisan', 'ftp:acl-applied',
                     str(data['revision']), timeout=25)

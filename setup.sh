@@ -39,10 +39,12 @@ if [[ -f "$PROJECT/.env" || -f "$PROJECT/app/.env" ]]; then
     fi
     url=$(sed -n 's/^APP_URL=//p' "$PROJECT/app/.env" | tail -1)
     ftp_interface=$detected_interface
+    ftp_destination=$detected_ip
     if [[ -f /etc/backup-manager-v2/ftp-acl.env ]]; then
         ftp_interface=$(sed -n 's/^BACKUP_FTP_ACL_INTERFACE=//p' /etc/backup-manager-v2/ftp-acl.env | tail -1)
+        ftp_destination=$(sed -n 's/^BACKUP_FTP_ACL_DESTINATION=//p' /etc/backup-manager-v2/ftp-acl.env | tail -1)
     fi
-    ftp_destination=$(sed -n 's/^BACKUP_FTP_PASSIVE_ADDRESS=//p' "$PROJECT/.env" | tail -1)
+    ftp_passive_address=$(sed -n 's/^BACKUP_FTP_PASSIVE_ADDRESS=//p' "$PROJECT/.env" | tail -1)
 else
     if [[ ! -t 0 ]]; then
         echo 'Execute setup.sh em um terminal para informar os dados de rede.' >&2
@@ -52,11 +54,14 @@ else
     url=${url:-https://${detected_ip:-}}
     read -r -p "Interface de rede do FTP [${detected_interface:-informar}]: " ftp_interface
     ftp_interface=${ftp_interface:-$detected_interface}
-    read -r -p "IPv4 usado pelos equipamentos para FTP [${detected_ip:-informar}]: " ftp_destination
+    read -r -p "IPv4 recebido pela VM após NAT [${detected_ip:-informar}]: " ftp_destination
     ftp_destination=${ftp_destination:-$detected_ip}
+    read -r -p "IPv4 anunciado aos equipamentos no FTP [${ftp_destination:-informar}]: " ftp_passive_address
+    ftp_passive_address=${ftp_passive_address:-$ftp_destination}
 fi
 
-arguments=(--url "$url" --ftp-interface "$ftp_interface" --ftp-destination "$ftp_destination")
+arguments=(--url "$url" --ftp-interface "$ftp_interface" --ftp-destination "$ftp_destination"
+    --ftp-passive-address "$ftp_passive_address")
 if [[ "$RESUME" == true ]]; then
     arguments+=(--resume)
     if [[ ! -f /etc/backup-manager-v2/ftp-deferred ]]; then
