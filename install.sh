@@ -14,6 +14,7 @@ GEOIP_ASN_DB=''
 GEOIP_ARCHIVE=''
 A10_SFTP=false
 A10_TRANSFER_HOST=''
+DEFER_FTP=false
 RESUME=false
 PREFLIGHT=false
 FTP_CIDRS=()
@@ -22,7 +23,7 @@ usage() {
     cat <<'HELP'
 Usage: sudo bash install.sh --url https://HOST[:PORT] \
   --ftp-interface INTERFACE --ftp-destination IPv4 \
-  --ftp-allow-cidr IPv4/CIDR [--ftp-allow-cidr IPv4/CIDR ...] \
+  [--ftp-allow-cidr IPv4/CIDR ... | --defer-ftp] \
   [--tls-cert /absolute/fullchain.pem --tls-key /absolute/privkey.pem] \
   [--geoip-country-db /absolute/GeoLite2-Country.mmdb --geoip-asn-db /absolute/GeoLite2-ASN.mmdb] \
   [--geoip-archive /absolute/GeoIP.zip] \
@@ -35,6 +36,8 @@ Docker repository. Without a supplied TLS pair, generates a local certificate
 with the IPv4 address or DNS name in SAN (browsers will not trust it by default).
 --resume keeps existing secrets and renews initial access while setup is pending.
 --preflight validates requirements and parameters without changing the host.
+--defer-ftp leaves FTP offline and its source firewall unset until an
+administrator saves allowed origins in the web panel.
 --a10-sftp prepares a restricted SSH/SFTP inbox and enables the A10 integration.
 Its transfer host defaults to --ftp-destination; override it when A10 uses
 a different reachable address.
@@ -63,6 +66,7 @@ while (($#)); do
             esac
             shift 2 ;;
         --resume) RESUME=true; shift ;;
+        --defer-ftp) DEFER_FTP=true; shift ;;
         --a10-sftp) A10_SFTP=true; shift ;;
         --preflight) PREFLIGHT=true; shift ;;
         --help|-h) usage; exit 0 ;;
@@ -98,6 +102,14 @@ elif [[ -f "$PROJECT/.env" || -f "$PROJECT/app/.env" ]]; then
 elif [[ "$RESUME" == true ]]; then
     echo 'Nenhuma instalação anterior para retomar.' >&2; exit 1
 fi
+FTP_DEFER_MARKER=/etc/backup-manager-v2/ftp-deferred
+if [[ "$RESUME" == true ]]; then
+    if [[ -f "$FTP_DEFER_MARKER" ]]; then
+        DEFER_FTP=true
+    elif [[ "$DEFER_FTP" == true ]]; then
+        echo 'O FTP já foi ativado; --resume não pode desativá-lo.' >&2; exit 1
+    fi
+fi
 if [[ "$RESUME" == true && -f "$PROJECT/.env" ]]; then
     if grep -Fxq 'BACKUP_A10_ENABLED=true' "$PROJECT/.env"; then
         A10_SFTP=true
@@ -109,8 +121,12 @@ if [[ "$PREFLIGHT" != true && "$RESUME" != true ]] && command -v git >/dev/null 
     [[ -n "$(git -C "$PROJECT" status --porcelain)" ]]; then
     echo 'Use um checkout limpo para a primeira instalação.' >&2; exit 1
 fi
-if [[ -z "$URL" || -z "$FTP_INTERFACE" || -z "$FTP_DESTINATION" || ${#FTP_CIDRS[@]} -eq 0 ]]; then
+if [[ -z "$URL" || -z "$FTP_INTERFACE" || -z "$FTP_DESTINATION" ||
+      "$DEFER_FTP" != true && ${#FTP_CIDRS[@]} -eq 0 ]]; then
     usage >&2; exit 2
+fi
+if [[ "$DEFER_FTP" == true && ${#FTP_CIDRS[@]} -gt 0 ]]; then
+    echo 'Use --defer-ftp sem --ftp-allow-cidr; configure as origens no painel.' >&2; exit 2
 fi
 if [[ -n "$A10_TRANSFER_HOST" && "$A10_SFTP" != true ]]; then
     echo 'Use --a10-sftp-host somente com --a10-sftp.' >&2; exit 1
@@ -488,6 +504,9 @@ if [[ "$A10_SFTP" == true ]]; then
 fi
 
 install -d -m 700 /etc/backup-manager-v2
+if [[ "$DEFER_FTP" == true ]]; then
+    install -m 0600 /dev/null "$FTP_DEFER_MARKER"
+fi
 if [[ ! -f /etc/backup-manager-v2/ftp-acl.env ]]; then
     printf 'BACKUP_FTP_ACL_INTERFACE=%s\nBACKUP_FTP_ACL_DESTINATION=%s\n' "$FTP_INTERFACE" "$FTP_DESTINATION" > /etc/backup-manager-v2/ftp-acl.env
 fi
@@ -535,7 +554,11 @@ install -m 0644 scripts/backup-manager-ftp-acl.service scripts/backup-manager-ft
 systemctl daemon-reload
 systemctl enable --now backup-manager-ftp-acl.timer
 systemctl start backup-manager-ftp-acl.service
-docker compose up -d --build ftp
+if [[ "$DEFER_FTP" != true ]]; then
+    docker compose up -d --build ftp
+else
+    docker compose stop ftp
+fi
 
 install -m 0644 docker/nginx/host-audit-log.conf /etc/nginx/conf.d/backup-manager-audit-log.conf
 if [[ ! -e /etc/nginx/sites-available/backup-manager-v2.conf ]]; then
@@ -598,23 +621,29 @@ else
 fi
 
 docker compose exec -T app php artisan engine:health
-for service in postgres redis app engine scheduler ftp-admin ftp nginx; do
+for service in postgres redis app engine scheduler ftp-admin nginx; do
     if ! docker compose ps --services --status running | grep -Fxq "$service"; then
         echo "Serviço $service não está em execução após a instalação." >&2
         exit 1
     fi
 done
-FTP_READY=false
-for attempt in {1..15}; do
-    if docker compose exec -T app php -r '$socket = @fsockopen("ftp", 21, $errorNumber, $errorMessage, 2); if ($socket === false) { exit(1); } fclose($socket);' >/dev/null 2>&1; then
-        FTP_READY=true
-        break
+if [[ "$DEFER_FTP" != true ]]; then
+    if ! docker compose ps --services --status running | grep -Fxq ftp; then
+        echo 'Serviço ftp não está em execução após a instalação.' >&2
+        exit 1
     fi
-    sleep 2
-done
-if [[ "$FTP_READY" != true ]]; then
-    echo 'O receptor FTP não respondeu na rede interna após a instalação.' >&2
-    exit 1
+    FTP_READY=false
+    for attempt in {1..15}; do
+        if docker compose exec -T app php -r '$socket = @fsockopen("ftp", 21, $errorNumber, $errorMessage, 2); if ($socket === false) { exit(1); } fclose($socket);' >/dev/null 2>&1; then
+            FTP_READY=true
+            break
+        fi
+        sleep 2
+    done
+    if [[ "$FTP_READY" != true ]]; then
+        echo 'O receptor FTP não respondeu na rede interna após a instalação.' >&2
+        exit 1
+    fi
 fi
 HTTP_STATUS=$(docker compose exec -T nginx curl --silent --output /dev/null --write-out '%{http_code}' \
     --header "Host: $HOST:$HTTPS_PORT" http://127.0.0.1/login)
@@ -647,6 +676,9 @@ if [[ "$PUBLIC_ASSET_STATUS" != 200 ]]; then
     exit 1
 fi
 echo "Instalação pronta em $URL."
+if [[ "$DEFER_FTP" == true ]]; then
+    echo 'FTP aguardando configuração: salve as origens permitidas em Configurações no painel.'
+fi
 if [[ "$BOOTSTRAP_CREATED" == true ]]; then
     echo "Primeiro acesso: usuário backup_manager; senha $BOOTSTRAP_PASSWORD. Cadastre seu e-mail e nova senha no navegador."
 else

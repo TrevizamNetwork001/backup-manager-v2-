@@ -15,6 +15,7 @@ from pathlib import Path
 PROJECT = Path('/opt/backup-manager-v2')
 CONFIG = Path('/etc/backup-manager-v2/ftp-acl.json')
 LOCK = Path('/run/backup-manager-ftp-acl.lock')
+DEFER_MARKER = Path('/etc/backup-manager-v2/ftp-deferred')
 INTERFACE = os.environ.get('BACKUP_FTP_ACL_INTERFACE', 'ens192')
 DESTINATION = os.environ.get('BACKUP_FTP_ACL_DESTINATION', '45.239.157.250')
 PORTS = '21,30000:30009'
@@ -35,7 +36,7 @@ def command(*args, timeout=20):
 def validate(data):
     cidrs = data.get('cidrs')
     revision = data.get('revision')
-    if not isinstance(cidrs, list) or not 1 <= len(cidrs) <= 32 or not isinstance(revision, int) or revision < 0:
+    if not isinstance(cidrs, list) or len(cidrs) > 32 or not isinstance(revision, int) or revision < 0:
         raise ValueError('invalid_acl')
     networks = []
     for item in cidrs:
@@ -107,11 +108,20 @@ def main():
         fcntl.flock(lock, fcntl.LOCK_EX)
         os.chdir(PROJECT)
         data, from_panel = requested()
+        if DEFER_MARKER.exists() and not from_panel:
+            running = command('docker', 'compose', 'ps', '--services', '--status', 'running')
+            if 'ftp' in running.splitlines():
+                command('docker', 'compose', 'stop', 'ftp')
+            print('ftp_waiting_for_web_configuration')
+            return
         apply(data['cidrs'])
         if from_panel:
+            if DEFER_MARKER.exists():
+                command('docker', 'compose', 'up', '-d', '--build', 'ftp', timeout=300)
             persist(data)
             command('docker', 'compose', 'exec', '-T', 'app', 'php', 'artisan', 'ftp:acl-applied',
                     str(data['revision']), timeout=25)
+            DEFER_MARKER.unlink(missing_ok=True)
         print(f"ftp_acl_applied revision={data['revision']} networks={len(data['cidrs'])}")
 
 

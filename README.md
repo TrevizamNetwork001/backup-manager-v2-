@@ -24,6 +24,14 @@ O usuário que executa o clone precisa de uma chave com acesso de leitura ao rep
 
 ## 2. Instalar
 
+Na VM limpa, o modo guiado pede a URL HTTPS e confirma a interface e o IPv4 do FTP detectados no host. Ele instala os serviços, mas deixa o receptor FTP desligado e sem regra de firewall até um administrador salvar as origens permitidas em **Configurações → Origens permitidas no FTP**. O timer do host aplica a regra antes de iniciar o receptor. Para conferir os dados sem instalar, use `sudo bash setup.sh --preflight`.
+
+```bash
+sudo bash setup.sh
+```
+
+Se a conexão cair, execute `sudo bash setup.sh` novamente; o assistente detecta a instalação pendente e a retoma. Use o comando completo abaixo para opções avançadas, como TLS próprio, GeoIP ou A10 SFTP.
+
 Exemplo com IP privado; substitua os valores pela rede real:
 
 ```bash
@@ -58,7 +66,7 @@ sudo systemctl status backup-manager-ftp-acl.timer
 sudo bash scripts/system-backup.sh
 ```
 
-Confirme login, certificado HTTPS e conexão FTP a partir de uma origem autorizada e de uma não autorizada. Guarde a `APP_KEY` de `app/.env` em um cofre fora do servidor; faça cópia externa do dump de `database/backups/` e do volume de artefatos. O dump do banco sozinho não permite recuperação completa. Consulte [recuperação](docs/DISASTER_RECOVERY.md) e [atualização](docs/UPGRADE.md).
+Confirme login e certificado HTTPS. Depois de salvar as origens FTP pela web e ver **Aplicada no firewall**, confira a conexão FTP a partir de uma origem autorizada e de uma não autorizada. Guarde a `APP_KEY` de `app/.env` em um cofre fora do servidor; faça cópia externa do dump de `database/backups/` e do volume de artefatos. O dump do banco sozinho não permite recuperação completa. Consulte [recuperação](docs/DISASTER_RECOVERY.md) e [atualização](docs/UPGRADE.md).
 
 ## Atualizar
 
