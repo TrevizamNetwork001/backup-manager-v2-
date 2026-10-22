@@ -38,7 +38,7 @@ Para um domínio, use `--url https://backup.exemplo.com`; você também pode inf
 
 Na instalação nova, entre pelo navegador com usuário `backup_manager` e a senha aleatória exibida ao final do instalador. O sistema exige e-mail e senha nova (mínimo de 12 caracteres com maiúsculas, minúsculas, número e símbolo), encerra a sessão e pede login com esses dados. A senha inicial não é fixa nem gravada em arquivo; se a conexão cair antes da troca, `--resume` gera outra senha e a mostra novamente. Restrinja a porta HTTPS no firewall às suas origens até concluir essa troca. O certificado local fica em `/etc/backup-manager-v2/tls/`; `--resume` o reutiliza e não troca a chave.
 
-A sessão do painel expira após 30 minutos sem interação. Um aviso aparece no último minuto e permite continuar conectado; o navegador encerra a sessão ao terminar o prazo. O instalador compila as views com o usuário da aplicação e só anuncia a instalação pronta depois de verificar os serviços, o receptor FTP, o login e o CSS no proxy interno. As páginas e os arquivos estáticos do painel já fazem parte do checkout.
+A sessão do painel expira após 30 minutos sem interação. Um aviso aparece no último minuto e permite continuar conectado; o navegador encerra a sessão ao terminar o prazo. O instalador compila as views com o usuário da aplicação e só anuncia a instalação pronta depois de verificar os serviços, o receptor FTP, o login e o CSS no proxy interno e no HTTPS do host. As páginas e os arquivos estáticos do painel já fazem parte do checkout.
 
 Se uma etapa falhar, corrija a causa e execute o mesmo comando com `--resume`. Depois do primeiro acesso, ajuste a lista de origens em **Configurações → Origens permitidas no FTP**; o timer do host aplica as mudanças.
 

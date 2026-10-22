@@ -33,7 +33,7 @@ Requires a clean checkout at /opt/backup-manager-v2 on Debian or Ubuntu.
 Installs missing host packages and Docker Engine with Compose from the official
 Docker repository. Without a supplied TLS pair, generates a local certificate
 with the IPv4 address or DNS name in SAN (browsers will not trust it by default).
---resume keeps existing secrets and creates initial access only if no users exist.
+--resume keeps existing secrets and renews initial access while setup is pending.
 --preflight validates requirements and parameters without changing the host.
 --a10-sftp prepares a restricted SSH/SFTP inbox and enables the A10 integration.
 Its transfer host defaults to --ftp-destination; override it when A10 uses
@@ -82,7 +82,8 @@ fi
 if ! command -v systemctl >/dev/null 2>&1 || ! command -v apt-get >/dev/null 2>&1; then
     echo 'A instalação requer systemd e apt.' >&2; exit 1
 fi
-if [[ ! -f "$PROJECT/app/composer.lock" || ! -f "$PROJECT/compose.yml" ]]; then
+if [[ ! -f "$PROJECT/app/composer.lock" || ! -f "$PROJECT/compose.yml" ||
+      ! -f "$PROJECT/app/public/assets/app.css" || ! -f "$PROJECT/scripts/ftp_acl_host.py" ]]; then
     echo 'Checkout incompleto.' >&2; exit 1
 fi
 if [[ "$PREFLIGHT" == true ]]; then
@@ -625,6 +626,24 @@ ASSET_STATUS=$(docker compose exec -T nginx curl --silent --output /dev/null --w
     --header "Host: $HOST:$HTTPS_PORT" http://127.0.0.1/assets/app.css)
 if [[ "$ASSET_STATUS" != 200 ]]; then
     echo "O CSS do painel não respondeu corretamente no proxy interno (HTTP $ASSET_STATUS)." >&2
+    exit 1
+fi
+if ! PUBLIC_HTTP_STATUS=$(curl --silent --show-error --insecure --noproxy '*' --output /dev/null --write-out '%{http_code}' \
+    --connect-timeout 5 --max-time 15 --resolve "$HOST:$HTTPS_PORT:127.0.0.1" "$URL/login"); then
+    echo 'O login não respondeu pelo HTTPS do host.' >&2
+    exit 1
+fi
+if [[ "$PUBLIC_HTTP_STATUS" != 200 ]]; then
+    echo "O login não respondeu corretamente pelo HTTPS do host (HTTP $PUBLIC_HTTP_STATUS)." >&2
+    exit 1
+fi
+if ! PUBLIC_ASSET_STATUS=$(curl --silent --show-error --insecure --noproxy '*' --output /dev/null --write-out '%{http_code}' \
+    --connect-timeout 5 --max-time 15 --resolve "$HOST:$HTTPS_PORT:127.0.0.1" "$URL/assets/app.css"); then
+    echo 'O CSS não respondeu pelo HTTPS do host.' >&2
+    exit 1
+fi
+if [[ "$PUBLIC_ASSET_STATUS" != 200 ]]; then
+    echo "O CSS não respondeu corretamente pelo HTTPS do host (HTTP $PUBLIC_ASSET_STATUS)." >&2
     exit 1
 fi
 echo "Instalação pronta em $URL."
