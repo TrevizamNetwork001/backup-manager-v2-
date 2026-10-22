@@ -6,7 +6,7 @@ O Backup Manager suporta **SSH Pull** e, nos equipamentos Huawei de rede homolog
 
 ### Preparar no painel
 
-1. Cadastre o equipamento como **Huawei / Rede** e associe ao POP correto.
+1. Cadastre `SW-EXEMPLO`, `RTR-EXEMPLO` ou `BNG-EXEMPLO`, conforme o tipo, como **Huawei / Rede** e associe ao POP correto. Substitua o nome e o POP pelos dados reais.
 2. Crie uma conta FTP **Backup** própria para ele. Confirme que está ativa, provisionada e vinculada a uma política Huawei FTP `ftp_push/config/manual` ativa.
 3. Confira o host FTP e libere o IP de saída visto após NAT. O destino `203.0.113.10` abaixo é ilustrativo; use o host exibido no painel. O FTP usa TCP 21 e portas passivas TCP 30000–30009.
 

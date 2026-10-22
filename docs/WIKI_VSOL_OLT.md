@@ -1,10 +1,10 @@
 # Wiki: backup da OLT VSOL V1600GT
 
-**Modelo de campo:** OLT-SANCA, VSOL V1600GT. O método validado é **SSH Pull**. O teste de FTP nesse modelo falhou em campo; a conta e a associação FTP foram removidas e o cadastro de FTP para V1600GT está bloqueado.
+**Modelo de campo:** VSOL V1600GT. O método validado é **SSH Pull**. O teste de FTP nesse modelo falhou em campo; a conta e a associação FTP foram removidas e o cadastro de FTP para V1600GT está bloqueado. `OLT-EXEMPLO` é um nome fictício usado nos passos.
 
 ## Preparar no Backup Manager
 
-1. Cadastre a OLT como **VSOL / OLT**, no POP correto e com IP de gerenciamento alcançável.
+1. Cadastre `OLT-EXEMPLO` como **VSOL / OLT**, no POP correto e com IP de gerenciamento alcançável. Substitua o nome pelo do equipamento real.
 2. Cadastre a credencial SSH, confirme a chave de host e associe a política **OLT-VSOL** com método `ssh_pull/config`. Na instância de campo, a política tinha agendamento diário às **02:00**.
 3. Confira que o usuário consegue entrar no modo privilegiado e ler a configuração. O driver usa uma sessão SSH interativa e executa `show running-config`; se a conta não alcançar o prompt privilegiado, a coleta falhará.
 

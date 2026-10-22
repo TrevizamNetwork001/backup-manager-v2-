@@ -2,7 +2,16 @@
 
 Esta é a entrada dos procedimentos de campo do Backup Manager V2. Cada página separa **configuração no equipamento**, **preparação no painel**, **teste** e **critério de sucesso**. Use a página do modelo e firmware reais; comandos de uma família não devem ser aplicados a outra.
 
-Os IPs `192.0.2.0/24`, `198.51.100.0/24` e `203.0.113.0/24` e os nomes como `OLT-EXEMPLO` usados nos passos são fictícios. Antes de executar comandos, substitua IP, nome do equipamento, usuário FTP, senha e horário pelos valores do seu ambiente e confira o destino no painel.
+Os IPs `192.0.2.0/24`, `198.51.100.0/24` e `203.0.113.0/24` e os nomes abaixo são fictícios. Antes de executar comandos, substitua IP, nome do equipamento, usuário FTP, senha e horário pelos valores do seu ambiente e confira o destino no painel.
+
+| Tipo | Nome de exemplo no cadastro |
+| --- | --- |
+| Site / POP | `POP-EXEMPLO` |
+| OLT ZTE, Huawei ou VSOL | `OLT-EXEMPLO` |
+| Switch | `SW-EXEMPLO` |
+| Roteador ou BNG | `RTR-EXEMPLO` ou `BNG-EXEMPLO` |
+| MikroTik | `MK-EXEMPLO` |
+| A10 | `A10-EXEMPLO` |
 
 | Família | Método no Backup Manager | Quem inicia o backup | Guia |
 | --- | --- | --- | --- |

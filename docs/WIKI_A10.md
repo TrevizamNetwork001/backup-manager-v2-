@@ -4,7 +4,7 @@
 
 ## Preparar
 
-1. Cadastre o A10 como equipamento de rede com IP da interface **Management** e credencial SSH ativa. Confirme a chave de host. `192.0.2.20` é um IP ilustrativo; use o endereço real dessa interface.
+1. Cadastre `A10-EXEMPLO` como equipamento de rede com IP da interface **Management** e credencial SSH ativa. Substitua o nome pelo do equipamento real e confirme a chave de host. `192.0.2.20` é um IP ilustrativo; use o endereço real dessa interface.
 2. Associe a política A10 de método `a10_system`, formato binário e agenda **manual**. O servidor deve ter a integração A10 habilitada e o receptor SFTP restrito acessível a partir da interface Management do equipamento.
 3. Confirme conectividade da origem Management até o destino SFTP do Backup Manager na porta TCP 22. O FTP da porta 21 é outro serviço e não participa desse fluxo.
 

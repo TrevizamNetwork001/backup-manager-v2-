@@ -4,7 +4,7 @@
 
 ## Preparar no Backup Manager
 
-1. Cadastre a OLT como **Huawei / OLT**, ativa e no POP correto.
+1. Cadastre `OLT-EXEMPLO` como **Huawei / OLT**, ativa e no POP correto. Substitua o nome e o POP pelos dados reais.
 2. Crie uma conta FTP **Backup** vinculada a ela e aguarde o provisionamento. Confirme associação ativa à política Huawei FTP (`ftp_push/config/manual`).
 3. Consulte host, usuário e senha em **Contas FTP**. O destino `203.0.113.10` abaixo é ilustrativo; use o host exibido no painel. O FTP usa TCP 21 e portas passivas TCP 30000–30009. Libere o IP de origem visto após NAT em **Configurações → Origens permitidas no FTP**.
 
