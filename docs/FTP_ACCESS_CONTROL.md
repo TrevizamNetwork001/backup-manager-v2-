@@ -6,7 +6,18 @@ Atualizado em 02/10/2026. Este documento cobre o FTP de recebimento do Backup Ma
 
 Em **Configurações → Origens permitidas no FTP**, um administrador informa um IPv4 ou bloco CIDR por linha e clica em **Salvar origens FTP**. Para um único endereço, use `/32`, por exemplo `198.51.100.10/32`. Informe o **IP de origem visto pelo servidor depois do NAT**. A aplicação aceita de 1 a 32 entradas IPv4, com prefixo de `/8` a `/32`; normaliza endereços de rede e remove duplicatas. A alteração é auditada como `ftp.access.changed`. Outros papéis podem consultar a lista, mas não alterá-la.
 
-Lista aplicada em 02/10/2026:
+### Exemplo de preenchimento
+
+Suponha que uma OLT da rede interna chegue ao servidor com IP de origem `192.168.50.10` (RFC 1918) e outra chegue após NAT por um prefixo público. No campo **Redes e IPs permitidos**, digite uma entrada por linha:
+
+```text
+192.168.50.10/32
+198.51.100.0/24
+```
+
+`198.51.100.0/24` simula um prefixo público, mas é **reservado para documentação**; substitua pelo prefixo público real visto pelo servidor. Se somente um IP público deve acessar, use `/32`, por exemplo `198.51.100.10/32`. O IP `203.0.113.10` usado nos comandos das wikis representa o **destino FTP**, portanto não entra nesta lista de **origens**. Inclua um endereço RFC 1918 apenas se o servidor realmente enxergar esse endereço, por exemplo por uma rota privada ou VPN; quando houver NAT, informe o IP de saída após NAT. Clique **Salvar origens FTP** e aguarde o indicador **Aplicada no firewall** antes de testar o envio.
+
+Registro histórico da lista aplicada nesta instância em 02/10/2026 (não use como modelo para outra instalação):
 
 ```text
 10.0.0.0/8
