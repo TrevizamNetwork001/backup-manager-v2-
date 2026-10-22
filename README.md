@@ -45,6 +45,8 @@ Se uma etapa falhar, corrija a causa e execute o mesmo comando com `--resume`. D
 
 Para mostrar país, bandeira e ASN dos IPs na Auditoria, o instalador reutiliza as bases `GeoLite2-Country.mmdb` e `GeoLite2-ASN.mmdb` já presentes em `/usr/share/GeoIP`. Em um servidor novo, forneça os dois arquivos locais com `--geoip-country-db` e `--geoip-asn-db`, ou um ZIP privado com ambos na raiz usando `--geoip-archive /caminho/GeoIP.zip`. O instalador copia as bases para `/usr/share/GeoIP` e as monta somente para leitura no container. Sem elas, a instalação continua e a Auditoria indica país e ASN não identificados. Mantenha as bases atualizadas e fora do Git; um ZIP não muda as regras de redistribuição da [MaxMind](https://www.maxmind.com/en/geolite/eula).
 
+Após as migrations, o instalador cria as políticas padrão em banco novo, incluindo **MikroTik FTP** e **ZTE FTP**, antes de iniciar engine e scheduler. Nenhum equipamento ou conta FTP é criado automaticamente; associe a política e a conta conforme a [wiki de equipamentos](docs/WIKI_EQUIPAMENTOS.md). Em uma instalação existente, o seeder preserva o catálogo já configurado.
+
 ## 3. Conferir e preservar
 
 ```bash

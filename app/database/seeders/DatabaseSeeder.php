@@ -26,6 +26,8 @@ class DatabaseSeeder extends Seeder
             ['name' => 'Huawei Roteador SSH', 'method' => 'ssh_pull', 'artifact_mode' => 'config', 'schedule_type' => 'daily', 'schedule_time' => '03:00', 'retention_days' => 30, 'is_active' => true, 'created_at' => $now, 'updated_at' => $now],
             ['name' => 'Huawei FTP', 'method' => 'ftp_push', 'artifact_mode' => 'config', 'schedule_type' => 'manual', 'schedule_time' => null, 'retention_days' => 30, 'is_active' => true, 'created_at' => $now, 'updated_at' => $now],
             ['name' => 'OLT-VSOL', 'method' => 'ssh_pull', 'artifact_mode' => 'config', 'schedule_type' => 'daily', 'schedule_time' => '02:00', 'retention_days' => 30, 'is_active' => true, 'created_at' => $now, 'updated_at' => $now],
+            ['name' => 'MikroTik FTP', 'method' => 'ftp_push', 'artifact_mode' => 'config', 'schedule_type' => 'manual', 'schedule_time' => null, 'retention_days' => 30, 'is_active' => true, 'created_at' => $now, 'updated_at' => $now],
+            ['name' => 'ZTE FTP', 'method' => 'ftp_push', 'artifact_mode' => 'config', 'schedule_type' => 'manual', 'schedule_time' => null, 'retention_days' => 30, 'is_active' => true, 'created_at' => $now, 'updated_at' => $now],
         ]);
     }
 }

@@ -362,8 +362,10 @@ docker run --rm -e COMPOSER_ALLOW_SUPERUSER=1 -v "$PROJECT/app:/var/www/html" -w
     --entrypoint composer backup-manager-v2-app install --no-dev --no-interaction --prefer-dist --optimize-autoloader
 chown -R 65534:33 app/storage app/bootstrap/cache
 install -m 0644 docker/php/logrotate.conf /etc/logrotate.d/backup-manager-php-fpm
-docker compose up -d --build postgres redis app engine scheduler ftp-admin nginx
+docker compose up -d --build postgres redis app
 docker compose exec -T app php artisan migrate --force --no-interaction
+docker compose exec -T app php artisan db:seed --force --no-interaction
+docker compose up -d --build engine scheduler ftp-admin nginx
 docker compose exec -u 65534:33 -T app php artisan view:cache --no-interaction
 docker compose exec -T app php artisan system:recovery-check
 

@@ -21,13 +21,15 @@ class BackupPolicyTest extends TestCase
     public function test_default_policies_are_seeded_once_without_creating_a_user(): void
     {
         $this->seed();
-        $this->assertDatabaseCount('backup_policies', 5);
+        $this->assertDatabaseCount('backup_policies', 7);
         $this->assertDatabaseCount('users', 0);
         $this->assertDatabaseHas('backup_policies', ['name' => 'Huawei FTP', 'method' => 'ftp_push']);
+        $this->assertDatabaseHas('backup_policies', ['name' => 'MikroTik FTP', 'method' => 'ftp_push']);
+        $this->assertDatabaseHas('backup_policies', ['name' => 'ZTE FTP', 'method' => 'ftp_push']);
 
         BackupPolicy::query()->where('name', 'Huawei FTP')->update(['name' => 'FTP personalizado']);
         $this->seed();
-        $this->assertDatabaseCount('backup_policies', 5);
+        $this->assertDatabaseCount('backup_policies', 7);
         $this->assertDatabaseHas('backup_policies', ['name' => 'FTP personalizado']);
     }
 
