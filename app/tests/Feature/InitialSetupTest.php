@@ -3,7 +3,9 @@
 namespace Tests\Feature;
 
 use App\Models\User;
+use App\Support\Rbac;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Hash;
 use Tests\TestCase;
 
@@ -13,23 +15,26 @@ class InitialSetupTest extends TestCase
 
     public function test_bootstrap_account_only_exists_on_empty_installation(): void
     {
-        $this->artisan('app:create-admin', ['--bootstrap' => true])->assertSuccessful();
+        $password = $this->bootstrapPassword();
 
         $user = User::query()->sole();
         $this->assertSame('backup_manager', $user->name);
         $this->assertTrue($user->must_complete_setup);
-        $this->assertTrue(Hash::check('backup_manager', $user->password));
+        $this->assertTrue(Hash::check($password, $user->password));
+        $this->assertFalse(Hash::check('backup_manager', $user->password));
         $this->assertTrue($user->is_admin);
 
-        $this->artisan('app:create-admin', ['--bootstrap' => true])->assertFailed();
+        $newPassword = $this->bootstrapPassword();
+        $this->assertNotSame($password, $newPassword);
+        $this->assertTrue(Hash::check($newPassword, $user->fresh()->password));
         $this->assertSame(1, User::query()->count());
     }
 
     public function test_bootstrap_login_is_limited_to_initial_setup(): void
     {
-        $this->artisan('app:create-admin', ['--bootstrap' => true])->assertSuccessful();
+        $password = $this->bootstrapPassword();
 
-        $this->post(route('login.store'), ['email' => 'backup_manager', 'password' => 'backup_manager'])
+        $this->post(route('login.store'), ['email' => 'backup_manager', 'password' => $password])
             ->assertRedirect(route('initial-setup.edit'));
         $this->get(route('initial-setup.edit'))->assertOk()->assertSee('Configure seu acesso');
         $this->get(route('dashboard'))->assertRedirect(route('initial-setup.edit'));
@@ -39,7 +44,7 @@ class InitialSetupTest extends TestCase
 
     public function test_initial_setup_requires_valid_new_credentials_and_logs_out(): void
     {
-        $this->artisan('app:create-admin', ['--bootstrap' => true])->assertSuccessful();
+        $this->bootstrapPassword();
         $user = User::query()->sole();
         $this->actingAs($user);
 
@@ -73,5 +78,36 @@ class InitialSetupTest extends TestCase
         $this->actingAs($user)->get(route('dashboard'))->assertOk();
         $this->get(route('initial-setup.edit'))->assertRedirect(route('dashboard'));
         $this->artisan('app:create-admin', ['--bootstrap' => true])->assertFailed();
+    }
+
+    public function test_manual_admin_command_promotes_and_activates_an_existing_operator(): void
+    {
+        $user = User::factory()->create([
+            'email' => 'operador@example.com',
+            'role' => Rbac::ROLE_OPERATOR,
+            'is_admin' => false,
+            'is_active' => false,
+        ]);
+
+        $this->artisan('app:create-admin')
+            ->expectsQuestion('Nome', 'Administrador')
+            ->expectsQuestion('E-mail', 'operador@example.com')
+            ->expectsQuestion('Senha', 'SenhaNovaSegura123!')
+            ->expectsQuestion('Confirme a senha', 'SenhaNovaSegura123!')
+            ->assertSuccessful();
+
+        $user->refresh();
+        $this->assertSame(Rbac::ROLE_ADMIN, $user->role);
+        $this->assertTrue($user->is_admin);
+        $this->assertTrue($user->is_active);
+        $this->assertTrue(Hash::check('SenhaNovaSegura123!', $user->password));
+    }
+
+    private function bootstrapPassword(): string
+    {
+        $this->assertSame(0, Artisan::call('app:create-admin', ['--bootstrap' => true]));
+        $this->assertSame(1, preg_match('/Senha inicial: ([a-f0-9]{48})/', Artisan::output(), $matches));
+
+        return $matches[1];
     }
 }

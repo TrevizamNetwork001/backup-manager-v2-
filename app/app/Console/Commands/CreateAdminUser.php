@@ -17,23 +17,34 @@ class CreateAdminUser extends Command
     public function handle(): int
     {
         if ($this->option('bootstrap')) {
-            if (User::query()->exists()) {
-                $this->error('O acesso inicial só pode ser criado em um banco sem usuários.');
+            $existing = User::query()->limit(2)->get();
+            $bootstrap = $existing->first(fn (User $user): bool => $user->name === 'backup_manager' &&
+                $user->email === 'backup_manager@local.invalid' &&
+                $user->must_complete_setup
+            );
+            if ($existing->isNotEmpty() && ($existing->count() !== 1 || $bootstrap === null)) {
+                $this->error('O acesso inicial só pode ser criado ou renovado antes da configuração do primeiro usuário.');
 
                 return self::FAILURE;
             }
 
-            User::create([
+            $password = bin2hex(random_bytes(24));
+            $attributes = [
                 'name' => 'backup_manager',
                 'email' => 'backup_manager@local.invalid',
-                'password' => 'backup_manager',
+                'password' => $password,
                 'is_admin' => true,
                 'role' => Rbac::ROLE_ADMIN,
                 'is_active' => true,
                 'must_complete_setup' => true,
-            ]);
+            ];
+            if ($existing->isEmpty()) {
+                User::create($attributes);
+            } else {
+                $bootstrap->update($attributes);
+            }
 
-            $this->info('Acesso inicial criado. Usuário: backup_manager; senha: backup_manager. Troque os dados no primeiro login.');
+            $this->line('Senha inicial: '.$password);
 
             return self::SUCCESS;
         }
@@ -80,6 +91,8 @@ class CreateAdminUser extends Command
                 'name' => $name,
                 'password' => $password,
                 'is_admin' => true,
+                'role' => Rbac::ROLE_ADMIN,
+                'is_active' => true,
             ]
         );
 

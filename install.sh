@@ -108,39 +108,6 @@ if [[ "$PREFLIGHT" != true && "$RESUME" != true ]] && command -v git >/dev/null 
     [[ -n "$(git -C "$PROJECT" status --porcelain)" ]]; then
     echo 'Use um checkout limpo para a primeira instalação.' >&2; exit 1
 fi
-if [[ "$PREFLIGHT" == true ]]; then
-    for program in python3 openssl; do
-        if ! command -v "$program" >/dev/null 2>&1; then
-            echo "O modo --preflight requer $program para validar os parâmetros sem alterar o host." >&2; exit 1
-        fi
-    done
-else
-    host_packages=()
-    for requirement in ca-certificates:ca-certificates curl:curl git:git python3:python3 openssl:openssl nginx:nginx iptables:iptables logrotate:logrotate; do
-        program=${requirement%%:*}
-        package=${requirement#*:}
-        if [[ "$program" == ca-certificates ]]; then
-            if [[ ! -f /etc/ssl/certs/ca-certificates.crt ]]; then host_packages+=("$package"); fi
-        elif ! command -v "$program" >/dev/null 2>&1; then
-            host_packages+=("$package")
-        fi
-    done
-    if ((${#host_packages[@]})); then
-        apt-get update
-        DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${host_packages[@]}"
-    fi
-    if [[ "$A10_SFTP" == true ]]; then
-        a10_packages=()
-        if ! command -v sshd >/dev/null 2>&1; then a10_packages+=(openssh-server); fi
-        if ! command -v mountpoint >/dev/null 2>&1 || ! command -v findmnt >/dev/null 2>&1; then a10_packages+=(util-linux); fi
-        if ! command -v useradd >/dev/null 2>&1 || ! command -v groupadd >/dev/null 2>&1 || ! command -v chpasswd >/dev/null 2>&1; then a10_packages+=(passwd); fi
-        if ((${#a10_packages[@]})); then
-            apt-get update
-            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${a10_packages[@]}"
-        fi
-    fi
-fi
-
 if [[ -z "$URL" || -z "$FTP_INTERFACE" || -z "$FTP_DESTINATION" || ${#FTP_CIDRS[@]} -eq 0 ]]; then
     usage >&2; exit 2
 fi
@@ -156,6 +123,23 @@ fi
 if [[ -n "$GEOIP_ARCHIVE" && -n "$GEOIP_COUNTRY_DB" ]]; then
     echo 'Use --geoip-archive ou os dois arquivos .mmdb, não ambos.' >&2; exit 1
 fi
+if [[ "$PREFLIGHT" == true ]]; then
+    for program in python3 openssl; do
+        if ! command -v "$program" >/dev/null 2>&1; then
+            echo "O modo --preflight requer $program para validar os parâmetros sem alterar o host." >&2; exit 1
+        fi
+    done
+else
+    validation_packages=()
+    for program in python3 openssl git; do
+        if ! command -v "$program" >/dev/null 2>&1; then validation_packages+=("$program"); fi
+    done
+    if ((${#validation_packages[@]})); then
+        apt-get update
+        DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${validation_packages[@]}"
+    fi
+fi
+
 for geoip_file in "$GEOIP_COUNTRY_DB" "$GEOIP_ASN_DB"; do
     if [[ -n "$geoip_file" ]] && { [[ "$geoip_file" != /* || ! -f "$geoip_file" || -L "$geoip_file" || ! -r "$geoip_file" ]] || (( $(stat -c %s "$geoip_file") > 512 * 1024 * 1024 )); }; then
         echo 'Arquivo GeoIP inválido: use um arquivo regular, legível, absoluto e com até 512 MB.' >&2; exit 1
@@ -208,7 +192,11 @@ try:
     if parsed_ip.version != 4:
         raise SystemExit('Use um endereço IPv4 ou nome DNS na URL.')
 except ValueError:
-    if not re.fullmatch(r'[A-Za-z0-9.-]{1,253}', host):
+    labels = host.split('.')
+    if len(host) > 253 or re.fullmatch(r'[0-9.]+', host) or not all(
+        1 <= len(label) <= 63 and re.fullmatch(r'[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?', label)
+        for label in labels
+    ):
         raise SystemExit('Host inválido.')
 if not re.fullmatch(r'[A-Za-z0-9_.-]{1,15}', interface):
     raise SystemExit('Interface FTP inválida.')
@@ -247,7 +235,11 @@ host = sys.argv[1]
 try:
     address = ipaddress.ip_address(host)
 except ValueError:
-    if not re.fullmatch(r'[A-Za-z0-9.-]{1,253}', host) or '..' in host or host.startswith(('-', '.')) or host.endswith(('-', '.')):
+    labels = host.split('.')
+    if len(host) > 253 or re.fullmatch(r'[0-9.]+', host) or not all(
+        1 <= len(label) <= 63 and re.fullmatch(r'[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?', label)
+        for label in labels
+    ):
         raise SystemExit('Host de transferência A10 inválido.')
 else:
     if address.version != 4:
@@ -323,6 +315,21 @@ cd "$PROJECT"
 
 if [[ "$RESUME" != true && -n "$(git status --porcelain)" ]]; then
     echo 'Use um checkout limpo para a primeira instalação.' >&2; exit 1
+fi
+
+host_packages=()
+if [[ ! -f /etc/ssl/certs/ca-certificates.crt ]]; then host_packages+=(ca-certificates); fi
+for program in curl nginx iptables logrotate; do
+    if ! command -v "$program" >/dev/null 2>&1; then host_packages+=("$program"); fi
+done
+if [[ "$A10_SFTP" == true ]]; then
+    if ! command -v sshd >/dev/null 2>&1; then host_packages+=(openssh-server); fi
+    if ! command -v mountpoint >/dev/null 2>&1 || ! command -v findmnt >/dev/null 2>&1; then host_packages+=(util-linux); fi
+    if ! command -v useradd >/dev/null 2>&1 || ! command -v groupadd >/dev/null 2>&1 || ! command -v chpasswd >/dev/null 2>&1; then host_packages+=(passwd); fi
+fi
+if ((${#host_packages[@]})); then
+    apt-get update
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${host_packages[@]}"
 fi
 
 if ! command -v docker >/dev/null 2>&1 || ! docker compose version >/dev/null 2>&1; then
@@ -500,6 +507,22 @@ docker run --rm -e COMPOSER_ALLOW_SUPERUSER=1 -v "$PROJECT/app:/var/www/html" -w
     --entrypoint composer backup-manager-v2-app install --no-dev --no-interaction --prefer-dist --optimize-autoloader
 chown -R 65534:33 app/storage app/bootstrap/cache
 install -m 0644 docker/php/logrotate.conf /etc/logrotate.d/backup-manager-php-fpm
+docker compose up -d postgres redis
+DOCKER_SUBNET=$(docker network inspect backup-manager-v2 --format '{{(index .IPAM.Config 0).Subnet}}')
+python3 - "$DOCKER_SUBNET" <<'PY'
+import ipaddress
+import sys
+
+try:
+    network = ipaddress.ip_network(sys.argv[1], strict=True)
+except ValueError:
+    raise SystemExit('A rede Docker do Backup Manager não tem uma sub-rede IPv4 válida.')
+if network.version != 4:
+    raise SystemExit('A rede Docker do Backup Manager precisa ter uma sub-rede IPv4.')
+PY
+if ! grep -q '^BACKUP_TRUSTED_PROXIES=' .env; then
+    printf 'BACKUP_TRUSTED_PROXIES=%s,127.0.0.1,::1\n' "$DOCKER_SUBNET" >> .env
+fi
 docker compose up -d --build postgres redis app
 docker compose exec -T app php artisan migrate --force --no-interaction
 docker compose exec -T app php artisan db:seed --force --no-interaction
@@ -559,8 +582,15 @@ systemctl reload nginx
 
 USER_COUNT=$(docker compose exec -T app php artisan tinker --execute 'echo \App\Models\User::count();')
 if [[ ! "$USER_COUNT" =~ ^[0-9]+$ ]]; then echo 'Não foi possível verificar os usuários.' >&2; exit 1; fi
-if ((USER_COUNT == 0)); then
-    docker compose exec -T app php artisan app:create-admin --bootstrap
+BOOTSTRAP_PENDING=0
+if ((USER_COUNT == 1)); then
+    BOOTSTRAP_PENDING=$(docker compose exec -T app php artisan tinker --execute 'echo \App\Models\User::query()->where("name", "backup_manager")->where("email", "backup_manager@local.invalid")->where("must_complete_setup", true)->count();')
+    if [[ ! "$BOOTSTRAP_PENDING" =~ ^[01]$ ]]; then echo 'Não foi possível verificar o acesso inicial.' >&2; exit 1; fi
+fi
+if ((USER_COUNT == 0 || BOOTSTRAP_PENDING == 1)); then
+    BOOTSTRAP_OUTPUT=$(docker compose exec -T app php artisan app:create-admin --bootstrap)
+    BOOTSTRAP_PASSWORD=$(sed -n 's/^Senha inicial: //p' <<< "$BOOTSTRAP_OUTPUT")
+    if [[ ! "$BOOTSTRAP_PASSWORD" =~ ^[a-f0-9]{48}$ ]]; then echo 'Não foi possível recuperar a senha inicial.' >&2; exit 1; fi
     BOOTSTRAP_CREATED=true
 else
     BOOTSTRAP_CREATED=false
@@ -599,7 +629,7 @@ if [[ "$ASSET_STATUS" != 200 ]]; then
 fi
 echo "Instalação pronta em $URL."
 if [[ "$BOOTSTRAP_CREATED" == true ]]; then
-    echo 'Primeiro acesso: backup_manager / backup_manager. Cadastre seu e-mail e nova senha no navegador.'
+    echo "Primeiro acesso: usuário backup_manager; senha $BOOTSTRAP_PASSWORD. Cadastre seu e-mail e nova senha no navegador."
 else
     echo 'Acesse com as credenciais já configuradas.'
 fi
