@@ -2,10 +2,12 @@
 
 Esta é a entrada dos procedimentos de campo do Backup Manager V2. Cada página separa **configuração no equipamento**, **preparação no painel**, **teste** e **critério de sucesso**. Use a página do modelo e firmware reais; comandos de uma família não devem ser aplicados a outra.
 
+Os IPs `192.0.2.0/24`, `198.51.100.0/24` e `203.0.113.0/24` e os nomes como `OLT-EXEMPLO` usados nos passos são fictícios. Antes de executar comandos, substitua IP, nome do equipamento, usuário FTP, senha e horário pelos valores do seu ambiente e confira o destino no painel.
+
 | Família | Método no Backup Manager | Quem inicia o backup | Guia |
 | --- | --- | --- | --- |
 | ZTE C650 / Titan | FTP Push de configuração | OLT | [Configurar ZTE C650](WIKI_ZTE_C650.md) |
-| ZTE C350 | FTP Push de configuração | OLT | [Procedimento ZTE C350](ZTE_OLT_FTP.md#procedimento-c350--olt-libanesa) |
+| ZTE C350 | FTP Push de configuração | OLT | [Procedimento ZTE C350](ZTE_OLT_FTP.md#procedimento-c350--exemplo) |
 | Huawei MA5800 OLT | FTP Push de configuração | OLT | [Configurar Huawei OLT](WIKI_HUAWEI_OLT.md) |
 | Huawei VRP, switch, roteador e BNG | FTP Push ou SSH Pull, conforme a política ativa | Equipamento no FTP; Backup Manager no SSH | [Configurar Huawei de rede](WIKI_HUAWEI_VRP.md) |
 | MikroTik RouterOS 6/7 | FTP Push de `.rsc` ou SSH Pull | RouterOS no FTP; Backup Manager no SSH | [Configurar MikroTik](WIKI_MIKROTIK.md) |

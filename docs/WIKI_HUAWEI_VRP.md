@@ -1,6 +1,6 @@
 # Wiki: backup de roteadores, switches e BNG Huawei VRP
 
-O Backup Manager suporta **SSH Pull** e, nos equipamentos Huawei de rede homologados, **FTP Push espontâneo**. Escolha o método pela política ativa do equipamento. O `SWITCH-POP-IPE`, o `BGP-VS-ADMIN`, o `VS-01-BGP1` e o `BNG-NE8000` já tiveram recebimentos FTP reais registrados; Huawei VRP por SSH também foi homologado em campo.
+O Backup Manager suporta **SSH Pull** e, nos equipamentos Huawei de rede homologados, **FTP Push espontâneo**. Escolha o método pela política ativa do equipamento. Switches, roteadores e BNG Huawei já tiveram recebimentos FTP reais registrados; Huawei VRP por SSH também foi homologado em campo.
 
 ## Opção A — FTP Push periódico
 
@@ -8,7 +8,7 @@ O Backup Manager suporta **SSH Pull** e, nos equipamentos Huawei de rede homolog
 
 1. Cadastre o equipamento como **Huawei / Rede** e associe ao POP correto.
 2. Crie uma conta FTP **Backup** própria para ele. Confirme que está ativa, provisionada e vinculada a uma política Huawei FTP `ftp_push/config/manual` ativa.
-3. Confira o host FTP e libere o IP de saída visto após NAT. Nesta instância, o destino é `45.239.157.250`, TCP 21 e portas passivas TCP 30000–30009.
+3. Confira o host FTP e libere o IP de saída visto após NAT. O destino `203.0.113.10` abaixo é ilustrativo; use o host exibido no painel. O FTP usa TCP 21 e portas passivas TCP 30000–30009.
 
 ### Configurar no VRP
 
@@ -16,7 +16,7 @@ Use os dados da conta própria do equipamento. A linha do servidor configura o *
 
 ```text
 system-view
-set save-configuration backup-to-server server 45.239.157.250 transport-type ftp user <USUARIO_FTP> password <SENHA_FTP>
+set save-configuration backup-to-server server 203.0.113.10 transport-type ftp user <USUARIO_FTP> password <SENHA_FTP>
 set save-configuration interval 1440 delay 60
 commit
 ```

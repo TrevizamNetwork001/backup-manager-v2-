@@ -30,16 +30,16 @@ Na saída, confirme `auto-write everyday 00:30:00` e `startrun backup-to server 
 
 Após o próximo horário diário, compare `show startrun-backup history` com um **novo** recibo `stored`, uma execução `succeeded` e um artefato íntegro na conta `olt-varan`. Se não houver novo recebimento, investigue a transferência FTP, a origem liberada, a credencial e o relógio da OLT. Não use apenas o `success` de `show auto-write` como prova de envio remoto.
 
-## Procedimento C350 — OLT-LIBANESA
+## Procedimento C350 — exemplo
 
 ### 1. Preparar o Backup Manager
 
-1. Cadastre a OLT como fabricante **ZTE**, plataforma **OLT** e mantenha o equipamento ativo.
+1. Cadastre `OLT-EXEMPLO` como fabricante **ZTE**, plataforma **OLT**, usando o nome adequado no seu ambiente, e mantenha o equipamento ativo.
 2. Em **Equipamentos → Ações → Política de backup**, escolha **Criar conta FTP**. Crie uma conta de finalidade **Backup**, vinculada à OLT, com usuário e senha próprios. Aguarde a conta ficar ativa e provisionada.
 3. Volte à política do equipamento e associe **ZTE FTP**. A política usa `ftp_push`, artefato de configuração, agendamento **manual** no Backup Manager e retenção de 30 dias. O horário do envio é controlado pela OLT.
-4. Em **Configurações → Origens permitidas no FTP**, libere o IPv4 público de origem visto pelo servidor (após NAT) e confirme **Aplicada no firewall**. Nesta instalação, o FTP público usa `45.239.157.250`, TCP **21** e portas passivas **30000–30009**. O IP de gerenciamento pode ser diferente do IP de origem do FTP.
+4. Em **Configurações → Origens permitidas no FTP**, libere o IPv4 público de origem visto pelo servidor (após NAT) e confirme **Aplicada no firewall**. O destino `203.0.113.10` nos comandos é ilustrativo; use o host FTP exibido no painel. O FTP usa TCP **21** e portas passivas **30000–30009**. O IP de gerenciamento pode ser diferente do IP de origem do FTP.
 
-O usuário da conta da OLT-LIBANESA é `olt-libanesa`. Consulte a senha no painel; ela não fica nesta documentação. Substitua `<USUARIO_FTP>` e `<SENHA_FTP>` pelos dados da conta ao executar os comandos abaixo.
+`OLT-EXEMPLO` é um nome fictício. Consulte usuário e senha no painel; eles não ficam nesta documentação. Substitua o IP, `<USUARIO_FTP>` e `<SENHA_FTP>` pelos dados reais ao executar os comandos abaixo.
 
 ### 2. Configurar e testar o envio manual na OLT
 
@@ -47,7 +47,7 @@ Os servidores de backup **manual** e **automático** são configurações separa
 
 ```text
 ZXAN#configure terminal
-ZXAN(config)#file-server manual cfg server-index 1 ftp ipaddress 45.239.157.250 user <USUARIO_FTP> password <SENHA_FTP>
+ZXAN(config)#file-server manual cfg server-index 1 ftp ipaddress 203.0.113.10 user <USUARIO_FTP> password <SENHA_FTP>
 ZXAN(config)#end
 ZXAN#write
 ZXAN#show file-server manual-backup
@@ -65,7 +65,7 @@ Configure também o servidor do envio automático. O exemplo abaixo agenda o pri
 
 ```text
 ZXAN#configure terminal
-ZXAN(config)#file-server auto-backup cfg server-index 1 ftp ipaddress 45.239.157.250 user <USUARIO_FTP> password <SENHA_FTP>
+ZXAN(config)#file-server auto-backup cfg server-index 1 ftp ipaddress 203.0.113.10 user <USUARIO_FTP> password <SENHA_FTP>
 ZXAN(config)#auto-backup period cfg 00:45:00 oct 22 2026 interval 24
 ZXAN(config)#end
 ZXAN#write

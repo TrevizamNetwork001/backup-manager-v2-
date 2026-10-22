@@ -57,7 +57,7 @@ Use este procedimento para roteadores e switches Huawei com conta FTP `backup` a
    commit
    ```
 
-   Nesta instância o destino é `45.239.157.250`. A conta de cada equipamento é isolada; não acrescente `path` sem necessidade. No VRP que foi conferido em campo, a ajuda do comando informa intervalo de **30 a 43.200 minutos**. `1440` significa 24 horas; `14400`, 10 dias; `43200`, 30 dias. `interval` determina cadência, não um horário fixo da madrugada.
+   Como exemplo, o destino pode ser `203.0.113.10`, IP reservado para documentação. Use o host FTP exibido no painel. A conta de cada equipamento é isolada; não acrescente `path` sem necessidade. No VRP que foi conferido em campo, a ajuda do comando informa intervalo de **30 a 43.200 minutos**. `1440` significa 24 horas; `14400`, 10 dias; `43200`, 30 dias. `interval` determina cadência, não um horário fixo da madrugada.
 3. Confira no equipamento se **as duas linhas** aparecem na configuração aplicada e se o `commit` foi concluído. A consulta à ajuda com `?` mostra faixa e valor padrão, mas **não comprova** o intervalo efetivamente configurado. Ao compartilhar a saída, oculte a linha de senha ou envie apenas a linha `set save-configuration interval ...`.
 4. Aguarde a próxima tentativa e confira o log do equipamento. No painel, procure uma execução com origem **FTP recebido** (`ftp_received`), status `succeeded` e artifact disponível. Conta FTP autenticada ou destino configurado, isoladamente, não comprovam que o arquivo foi recebido. Caso não apareça recibo, examine o horário e o erro no VRP, além de conectividade, autenticação e destino FTP.
 

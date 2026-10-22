@@ -32,14 +32,14 @@ sudo bash setup.sh
 
 Se a conexão cair, execute `sudo bash setup.sh` novamente; o assistente detecta a instalação pendente e a retoma. Use o comando completo abaixo para opções avançadas, como TLS próprio, GeoIP ou A10 SFTP.
 
-Exemplo com IP privado; substitua os valores pela rede real:
+Exemplo com IPs reservados para documentação; substitua todos os endereços pela rede real:
 
 ```bash
 sudo bash install.sh \
-  --url https://192.168.1.10 \
+  --url https://192.0.2.10 \
   --ftp-interface eth0 \
-  --ftp-destination 192.168.1.10 \
-  --ftp-allow-cidr 192.168.1.0/24
+  --ftp-destination 192.0.2.10 \
+  --ftp-allow-cidr 192.0.2.0/24
 ```
 
 Para um domínio, use `--url https://backup.exemplo.com`; você também pode informar `--tls-cert /caminho/fullchain.pem --tls-key /caminho/privkey.pem`. Para porta HTTPS alternativa, acrescente `:8443` à URL. Se o IPv4 público anunciado aos equipamentos for diferente do IPv4 recebido pela VM após NAT, use `--ftp-passive-address IPV4_PUBLICO`; `--ftp-destination` continua sendo o endereço recebido pelo host. A porta HTTP 80 redireciona para a URL HTTPS. O instalador instala os programas necessários, cria os segredos, constrói as imagens, instala as dependências da aplicação, detecta a sub-rede Docker para configurar os proxies confiáveis, inicia banco e containers, aplica migrações e políticas padrão, configura o proxy Nginx, a rotação de logs e o firewall de origens FTP. Ele não modifica instalações existentes sem `--resume` e nunca troca a `APP_KEY` ao retomar.

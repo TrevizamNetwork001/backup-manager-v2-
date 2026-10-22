@@ -6,7 +6,7 @@
 
 1. Cadastre a OLT como **Huawei / OLT**, ativa e no POP correto.
 2. Crie uma conta FTP **Backup** vinculada a ela e aguarde o provisionamento. Confirme associação ativa à política Huawei FTP (`ftp_push/config/manual`).
-3. Consulte host, usuário e senha em **Contas FTP**. Nesta instalação, o destino público é `45.239.157.250`, com TCP 21 e portas passivas TCP 30000–30009. Libere o IP de origem visto após NAT em **Configurações → Origens permitidas no FTP**.
+3. Consulte host, usuário e senha em **Contas FTP**. O destino `203.0.113.10` abaixo é ilustrativo; use o host exibido no painel. O FTP usa TCP 21 e portas passivas TCP 30000–30009. Libere o IP de origem visto após NAT em **Configurações → Origens permitidas no FTP**.
 
 ## Configurar na OLT
 
@@ -14,7 +14,7 @@ O teste manual e o auto-backup usam destinos configurados separadamente. `ftp se
 
 ```text
 ftp set
-file-server auto-backup configuration primary 45.239.157.250 ftp user
+file-server auto-backup configuration primary 203.0.113.10 ftp user
 auto-backup period configuration interval 1 time 05:00
 auto-backup period configuration enable
 display file-server auto-backup configuration
@@ -29,7 +29,7 @@ save
 Para validar o destino manual configurado por `ftp set`, use um nome novo e verifique a confirmação na CLI:
 
 ```text
-backup configuration ftp 45.239.157.250 teste-config.zip format zip
+backup configuration ftp 203.0.113.10 teste-config.zip format zip
 ```
 
 Se a versão suportar, teste também **o destino do auto-backup** por `auto-backup manual configuration`. Confira a sintaxe com `auto-backup manual ?`; esse disparo é diferente do `backup configuration ftp` acima. Uma execução de teste aberta no painel que exige `bm-exec-<ID>.cfg` só termina com o nome exato indicado naquela tentativa.
