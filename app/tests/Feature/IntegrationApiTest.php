@@ -107,11 +107,18 @@ class IntegrationApiTest extends TestCase
             ->assertOk()->assertJsonPath('meta.total', 3)->assertJsonCount(1, 'data')
             ->assertDontSee('never-return-query-token');
         $this->getJson('/api/v1/backups/recent?per_page=1&page=2')
-            ->assertOk()->assertJsonPath('meta.total', 2)->assertJsonCount(1, 'data');
+            ->assertOk()->assertJsonPath('meta.total', 2)->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.policy.method', 'ssh_pull')
+            ->assertJsonPath('data.0.policy.method_label', 'Coleta via SSH')
+            ->assertJsonPath('data.0.status_label', 'Concluído')
+            ->assertJsonPath('data.0.error_label', null);
         $this->getJson('/api/v1/backups/recent?per_page=1&period=30d&token=never-return-query-token')
             ->assertOk()->assertSee('period=30d')->assertDontSee('never-return-query-token');
         $this->getJson('/api/v1/failures?per_page=1')
-            ->assertOk()->assertJsonPath('meta.total', 1)->assertJsonPath('data.0.error_code', 'SSH_TIMEOUT');
+            ->assertOk()->assertJsonPath('meta.total', 1)->assertJsonPath('data.0.error_code', 'SSH_TIMEOUT')
+            ->assertJsonPath('data.0.policy.method_label', 'Coleta via SSH')
+            ->assertJsonPath('data.0.status_label', 'Falhou')
+            ->assertJsonPath('data.0.error_label', 'Tempo limite SSH excedido.');
         $this->getJson('/api/v1/summary')->assertOk()->assertJsonPath('data.devices', 3);
         $this->getJson('/api/v1/health')->assertOk()->assertJsonStructure(['data' => ['status', 'checked_at']]);
 

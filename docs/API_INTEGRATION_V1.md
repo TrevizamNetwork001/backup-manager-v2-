@@ -19,10 +19,18 @@ Datas de execução e de saúde usam ISO 8601 com fuso. Campos de data podem ser
 | `GET /api/v1/health` | `status`, `checked_at` | Nenhum. `status` é o estado geral do serviço de saúde existente; detalhes internos dos checks não são expostos. |
 | `GET /api/v1/summary` | `sites`, `devices`, `active_device_health` (`healthy`, `warning`, `critical`, `unknown`), `backups_today` (`succeeded`, `failed`, `timed_out`, `pending_or_running`), `generated_at` | Nenhum. O dia segue o fuso configurado na instância. |
 | `GET /api/v1/devices` | Itens com `id`, `name`, `site_id`, `vendor`, `model`, `backup_status`, `backup_status_reason`, `policy_names`, `last_backup_at`, `last_success_at` | `site_id`, `vendor`, `status`, `page`, `per_page`. Lista apenas equipamentos ativos, usando a classificação do relatório existente. |
-| `GET /api/v1/backups/recent` | Itens com `id`, `device` (`id`, `name`, `site_id`), `policy` (`id`, `name`, `method`), `status`, `origin`, `error_code`, `artifact_size_bytes`, `created_at`, `finished_at` | `period`, `site_id`, `device_id`, `page`, `per_page`. Apenas execuções `succeeded`, ordenadas pelo ID mais recente. |
+| `GET /api/v1/backups/recent` | Itens com `id`, `device` (`id`, `name`, `site_id`), `policy` (`id`, `name`, `method`, `method_label`), `status`, `status_label`, `origin`, `error_code`, `error_label`, `artifact_size_bytes`, `created_at`, `finished_at` | `period`, `site_id`, `device_id`, `page`, `per_page`. Apenas execuções `succeeded`, ordenadas pelo ID mais recente. |
 | `GET /api/v1/failures` | Mesmo formato de item das execuções | Mesmos filtros. Apenas estados terminais `failed` e `timed_out`, ordenados pelo ID mais recente. |
 
 `period` aceita `today`, `7d`, `30d` ou `90d`; omitido, não há corte por data. A API nunca inclui senha, usuário de credencial, token, mensagem de erro livre, caminho/arquivo armazenado, hash do arquivo ou conteúdo do backup. A projeção é explícita nos recursos JSON.
+
+### Textos em português para o portal consumidor
+
+Nos itens de `/backups/recent` e `/failures`, `policy.method_label`, `status_label` e `error_label` são descrições em português. Por exemplo, `ssh_pull` acompanha `Coleta via SSH`, `failed` acompanha `Falhou` e `SSH_TIMEOUT` acompanha `Tempo limite SSH excedido.`. `error_label` é `null` quando não há código de erro. Os campos `method`, `status` e `error_code` permanecem como identificadores estáveis para filtros e integrações; a interface do portal deve mostrar os campos `*_label` ao usuário. A descrição de erro vem do catálogo de códigos da aplicação, sem expor a mensagem livre gravada na execução.
+
+As datas de execução continuam em ISO 8601 com o fuso do valor retornado. O consumidor deve converter cada instante para o fuso configurado para sua interface antes de exibi-lo. A tela **Auditoria administrativa** do portal externo não pertence a este repositório nem a estes endpoints; a conversão dos horários UTC exibidos nela ainda precisa ser implementada no próprio portal. Na instância conferida em 30/10/2026, o fuso configurado era `America/Sao_Paulo` (UTC−3 nessa data).
+
+Os rótulos foram verificados com `php artisan test --compact tests/Feature/IntegrationApiTest.php` (6 testes, 159 verificações) e com o recurso JSON carregado pelo contêiner da aplicação em execução.
 
 ## Erros e auditoria
 
